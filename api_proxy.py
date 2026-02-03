@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Bunq Dashboard API Proxy
-Flask backend for secure Bunq API integration
-Host this on your NAS to keep API keys server-side
+Bunq Dashboard API Proxy - Secure Edition
+Flask backend with Vaultwarden secret management
+READ-ONLY Bunq API access for maximum security
 """
 
 from flask import Flask, jsonify, request
@@ -13,35 +13,196 @@ from bunq.sdk.model.generated import endpoint
 from datetime import datetime, timedelta
 import os
 import json
+import requests
+import logging
+
+# ============================================
+# LOGGING CONFIGURATION
+# ============================================
+
+logging.basicConfig(
+    level=os.getenv('LOG_LEVEL', 'INFO'),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/bunq_api.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# ============================================
+# FLASK APP INITIALIZATION
+# ============================================
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend access
 
-# Configuration
-API_KEY = os.getenv('BUNQ_API_KEY', '')  # Set via environment variable
-CONFIG_FILE = 'bunq_production.conf'
-ENVIRONMENT = 'PRODUCTION'
+# CORS Configuration - Restrict to specific origins in production
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', '*').split(',')
+CORS(app, origins=ALLOWED_ORIGINS)
 
-# Initialize Bunq Context
-def init_bunq():
-    """Initialize Bunq API context"""
-    if not os.path.exists(CONFIG_FILE) and API_KEY:
-        api_context = ApiContext.create(
-            environment_type=ENVIRONMENT,
-            api_key=API_KEY,
-            device_description="NAS Dashboard API"
+# ============================================
+# VAULTWARDEN SECRET RETRIEVAL
+# ============================================
+
+def get_api_key_from_vaultwarden():
+    """
+    Securely retrieve Bunq API key from Vaultwarden vault.
+    
+    Returns:
+        str: Bunq API key or None if retrieval failed
+    """
+    
+    use_vaultwarden = os.getenv('USE_VAULTWARDEN', 'false').lower() == 'true'
+    
+    if not use_vaultwarden:
+        logger.info("📝 Vaultwarden disabled, using environment variable")
+        api_key = os.getenv('BUNQ_API_KEY', '')
+        if api_key:
+            logger.info(f"✅ API key loaded from environment: {api_key[:10]}...")
+        return api_key
+    
+    logger.info("🔐 Retrieving API key from Vaultwarden vault...")
+    
+    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80')
+    client_id = os.getenv('VAULTWARDEN_CLIENT_ID')
+    client_secret = os.getenv('VAULTWARDEN_CLIENT_SECRET')
+    item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key')
+    
+    # Validate credentials
+    if not client_id or not client_secret:
+        logger.error("❌ Vaultwarden credentials missing in environment!")
+        logger.error("   Required: VAULTWARDEN_CLIENT_ID and VAULTWARDEN_CLIENT_SECRET")
+        return None
+    
+    try:
+        # Step 1: Authenticate and get access token
+        logger.info("🔑 Authenticating with Vaultwarden...")
+        token_url = f"{vault_url}/identity/connect/token"
+        token_data = {
+            'grant_type': 'client_credentials',
+            'scope': 'api',
+            'client_id': client_id,
+            'client_secret': client_secret
+        }
+        
+        token_response = requests.post(
+            token_url, 
+            data=token_data,
+            timeout=10
         )
-        api_context.save(CONFIG_FILE)
-        print("✅ Bunq API context created")
-    elif os.path.exists(CONFIG_FILE):
-        api_context = ApiContext.restore(CONFIG_FILE)
-        print("✅ Bunq API context restored")
-    else:
-        print("⚠️ No API key found! Set BUNQ_API_KEY environment variable")
+        token_response.raise_for_status()
+        access_token = token_response.json()['access_token']
+        
+        logger.info("✅ Vaultwarden authentication successful")
+        
+        # Step 2: Retrieve all vault items
+        logger.info(f"🔍 Searching for vault item: '{item_name}'...")
+        items_url = f"{vault_url}/api/ciphers"
+        headers = {'Authorization': f'Bearer {access_token}'}
+        
+        items_response = requests.get(
+            items_url, 
+            headers=headers,
+            timeout=10
+        )
+        items_response.raise_for_status()
+        items = items_response.json().get('data', [])
+        
+        # Step 3: Find Bunq API Key item
+        for item in items:
+            if item.get('name') == item_name and item.get('type') == 1:  # Type 1 = Login
+                login_data = item.get('login', {})
+                api_key = login_data.get('password')
+                
+                if api_key:
+                    logger.info(f"✅ API key retrieved from vault: {api_key[:10]}...")
+                    return api_key
+                else:
+                    logger.error(f"❌ Item '{item_name}' found but password field is empty!")
+                    return None
+        
+        logger.error(f"❌ Item '{item_name}' not found in vault!")
+        logger.info(f"   Available items: {[item.get('name') for item in items]}")
+        return None
+        
+    except requests.exceptions.ConnectionError:
+        logger.error(f"❌ Cannot connect to Vaultwarden at {vault_url}")
+        logger.error("   Check if Vaultwarden container is running and accessible")
+        return None
+    except requests.exceptions.Timeout:
+        logger.error(f"❌ Vaultwarden request timeout")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Vaultwarden request error: {e}")
+        return None
+    except KeyError as e:
+        logger.error(f"❌ Unexpected Vaultwarden response format: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Unexpected error retrieving API key: {e}")
+        return None
+
+# ============================================
+# CONFIGURATION
+# ============================================
+
+API_KEY = get_api_key_from_vaultwarden()
+CONFIG_FILE = 'config/bunq_production.conf'
+ENVIRONMENT = os.getenv('BUNQ_ENVIRONMENT', 'PRODUCTION')
+
+# Validate API key before proceeding
+if not API_KEY:
+    logger.error("❌ No valid API key found!")
+    logger.error("   Set USE_VAULTWARDEN=true and configure Vaultwarden credentials,")
+    logger.error("   OR set BUNQ_API_KEY environment variable")
+    # Continue running for demo mode
+
+# ============================================
+# BUNQ API INITIALIZATION (READ-ONLY)
+# ============================================
+
+def init_bunq():
+    """
+    Initialize Bunq API context with READ-ONLY access.
+    
+    Security Note: This application ONLY uses list() and get() methods.
+    NO create(), update(), or delete() operations are ever called.
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not API_KEY:
+        logger.warning("⚠️ No API key available, running in demo mode only")
         return False
     
-    BunqContext.load_api_context(api_context)
-    return True
+    try:
+        if not os.path.exists(CONFIG_FILE):
+            logger.info("🔄 Creating new Bunq API context...")
+            api_context = ApiContext.create(
+                environment_type=ENVIRONMENT,
+                api_key=API_KEY,
+                device_description="Bunq Dashboard (READ-ONLY)"
+            )
+            api_context.save(CONFIG_FILE)
+            logger.info("✅ Bunq API context created and saved")
+        else:
+            logger.info("🔄 Restoring existing Bunq API context...")
+            api_context = ApiContext.restore(CONFIG_FILE)
+            logger.info("✅ Bunq API context restored")
+        
+        BunqContext.load_api_context(api_context)
+        logger.info("✅ Bunq API initialized successfully")
+        logger.info(f"   Environment: {ENVIRONMENT}")
+        logger.info(f"   Access Level: READ-ONLY")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Bunq API: {e}")
+        return False
+
+# ============================================
+# SECURITY: READ-ONLY API ENDPOINTS
+# ============================================
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -49,13 +210,26 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'version': '1.0.0'
+        'version': '2.0.0-vaultwarden',
+        'api_status': 'initialized' if API_KEY else 'demo_mode',
+        'security': 'READ-ONLY'
     })
 
 @app.route('/api/accounts', methods=['GET'])
 def get_accounts():
-    """Get all Bunq accounts"""
+    """
+    Get all Bunq accounts (READ-ONLY)
+    
+    Security: ONLY uses endpoint.MonetaryAccountBank.list()
+    """
+    if not API_KEY:
+        return jsonify({
+            'success': False,
+            'error': 'Demo mode - configure API key'
+        }), 503
+    
     try:
+        logger.info("📊 Fetching accounts list...")
         accounts = endpoint.MonetaryAccountBank.list().value
         
         account_data = []
@@ -68,12 +242,14 @@ def get_accounts():
                 'iban': account.alias[0].value if account.alias else None
             })
         
+        logger.info(f"✅ Retrieved {len(account_data)} accounts")
         return jsonify({
             'success': True,
             'data': account_data,
             'count': len(account_data)
         })
     except Exception as e:
+        logger.error(f"❌ Error fetching accounts: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -81,13 +257,24 @@ def get_accounts():
 
 @app.route('/api/transactions', methods=['GET'])
 def get_transactions():
-    """Get transactions with optional filtering"""
+    """
+    Get transactions (READ-ONLY)
+    
+    Security: ONLY uses endpoint.Payment.list()
+    NO Payment.create() or other write operations!
+    """
+    if not API_KEY:
+        return jsonify({
+            'success': False,
+            'error': 'Demo mode - configure API key'
+        }), 503
+    
     try:
-        # Get query parameters
         account_id = request.args.get('account_id')
         days = int(request.args.get('days', 90))
         
-        # Get all accounts if no specific account requested
+        logger.info(f"📊 Fetching transactions (last {days} days)...")
+        
         if not account_id:
             accounts = endpoint.MonetaryAccountBank.list().value
             all_transactions = []
@@ -99,6 +286,7 @@ def get_transactions():
                     trans['account_name'] = account.description
                 all_transactions.extend(transactions)
             
+            logger.info(f"✅ Retrieved {len(all_transactions)} transactions")
             return jsonify({
                 'success': True,
                 'data': all_transactions,
@@ -113,13 +301,18 @@ def get_transactions():
             })
             
     except Exception as e:
+        logger.error(f"❌ Error fetching transactions: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
 
 def get_account_transactions(account_id, days=90):
-    """Get transactions for a specific account"""
+    """
+    Get transactions for specific account (READ-ONLY)
+    
+    Security: ONLY uses endpoint.Payment.list()
+    """
     payments = endpoint.Payment.list(
         monetary_account_id=account_id
     ).value
@@ -133,7 +326,6 @@ def get_account_transactions(account_id, days=90):
         if created < cutoff_date:
             continue
         
-        # Try to categorize transaction
         category = categorize_transaction(payment.description, payment.counterparty_alias)
         
         transactions.append({
