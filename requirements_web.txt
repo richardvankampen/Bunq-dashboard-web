@@ -1,0 +1,16 @@
+# Bunq Dashboard Web - Python Backend Requirements
+
+# Flask Framework
+Flask==3.0.0
+flask-cors==4.0.0
+
+# Bunq SDK
+bunq-sdk-python>=1.14.0
+
+# Optional: For enhanced functionality
+python-dotenv==1.0.0  # Environment variable management
+flask-caching==2.1.0  # Response caching for better performance
+
+# Development dependencies (optional)
+pytest==7.4.3  # For testing
+black==23.12.1  # Code formatting

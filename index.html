@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bunq Financial Dashboard - Premium Analytics</title>
+    
+    <!-- Plotly for advanced visualizations -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    
+    <!-- Chart.js for additional chart types -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Particles.js for background effects -->
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme">
+    <!-- Animated Background Particles -->
+    <div id="particles-js"></div>
+    
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loader">
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+            <div class="loader-text">
+                <i class="fas fa-wallet"></i>
+                <p>Loading Bunq Data...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Container -->
+    <div class="dashboard-container" id="main-content" style="display: none;">
+        
+        <!-- Header Section -->
+        <header class="dashboard-header glass-effect">
+            <div class="header-content">
+                <div class="logo-section">
+                    <div class="logo-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="logo-text">
+                        <h1>Bunq Financial Dashboard</h1>
+                        <p class="subtitle">Real-time Analytics & Insights</p>
+                    </div>
+                </div>
+                
+                <div class="header-controls">
+                    <!-- Time Range Selector -->
+                    <div class="control-group glass-effect">
+                        <i class="fas fa-calendar-alt"></i>
+                        <select id="timeRange" class="time-selector">
+                            <option value="7">Last 7 days</option>
+                            <option value="30">Last 30 days</option>
+                            <option value="90" selected>Last 3 months</option>
+                            <option value="180">Last 6 months</option>
+                            <option value="365">Last year</option>
+                            <option value="all">All time</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Refresh Button -->
+                    <button class="refresh-btn glass-effect" id="refreshBtn">
+                        <i class="fas fa-sync-alt"></i>
+                        <span>Refresh</span>
+                    </button>
+                    
+                    <!-- Theme Toggle -->
+                    <button class="theme-toggle glass-effect" id="themeToggle">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    
+                    <!-- Settings -->
+                    <button class="settings-btn glass-effect" id="settingsBtn">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Last Updated Info -->
+            <div class="update-info">
+                <i class="fas fa-clock"></i>
+                <span id="lastUpdate">Last updated: Never</span>
+            </div>
+        </header>
+        
+        <!-- KPI Cards Section -->
+        <section class="kpi-section">
+            <div class="kpi-grid">
+                <!-- Total Income Card -->
+                <div class="kpi-card glass-effect income-card" data-aos="fade-up" data-aos-delay="0">
+                    <div class="kpi-icon">
+                        <i class="fas fa-arrow-trend-up"></i>
+                    </div>
+                    <div class="kpi-content">
+                        <p class="kpi-label">Total Income</p>
+                        <h2 class="kpi-value" id="totalIncome">€0</h2>
+                        <div class="kpi-trend positive">
+                            <i class="fas fa-arrow-up"></i>
+                            <span id="incomeTrend">0%</span>
+                        </div>
+                    </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="incomeSparkline"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Total Expenses Card -->
+                <div class="kpi-card glass-effect expense-card" data-aos="fade-up" data-aos-delay="100">
+                    <div class="kpi-icon">
+                        <i class="fas fa-arrow-trend-down"></i>
+                    </div>
+                    <div class="kpi-content">
+                        <p class="kpi-label">Total Expenses</p>
+                        <h2 class="kpi-value" id="totalExpenses">€0</h2>
+                        <div class="kpi-trend negative">
+                            <i class="fas fa-arrow-down"></i>
+                            <span id="expensesTrend">0%</span>
+                        </div>
+                    </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="expensesSparkline"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Net Savings Card -->
+                <div class="kpi-card glass-effect savings-card" data-aos="fade-up" data-aos-delay="200">
+                    <div class="kpi-icon">
+                        <i class="fas fa-piggy-bank"></i>
+                    </div>
+                    <div class="kpi-content">
+                        <p class="kpi-label">Net Savings</p>
+                        <h2 class="kpi-value" id="netSavings">€0</h2>
+                        <div class="kpi-trend positive">
+                            <i class="fas fa-arrow-up"></i>
+                            <span id="savingsTrend">0%</span>
+                        </div>
+                    </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="savingsSparkline"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Savings Rate Card -->
+                <div class="kpi-card glass-effect rate-card" data-aos="fade-up" data-aos-delay="300">
+                    <div class="kpi-icon">
+                        <i class="fas fa-percentage"></i>
+                    </div>
+                    <div class="kpi-content">
+                        <p class="kpi-label">Savings Rate</p>
+                        <h2 class="kpi-value" id="savingsRate">0%</h2>
+                        <div class="progress-ring">
+                            <svg class="progress-svg" width="60" height="60">
+                                <circle class="progress-circle-bg" cx="30" cy="30" r="25"></circle>
+                                <circle class="progress-circle" id="savingsCircle" cx="30" cy="30" r="25"></circle>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Main Visualizations Grid -->
+        <section class="visualizations-section">
+            
+            <!-- Row 1: Main Charts -->
+            <div class="viz-row">
+                <!-- Cashflow Timeline (Large) -->
+                <div class="viz-card glass-effect large-card" data-aos="fade-up">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-line"></i> Cashflow Timeline</h3>
+                        <div class="card-actions">
+                            <button class="action-btn" title="Fullscreen">
+                                <i class="fas fa-expand"></i>
+                            </button>
+                            <button class="action-btn" title="Download">
+                                <i class="fas fa-download"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="cashflowChart"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Row 2: Medium Charts -->
+            <div class="viz-row two-col">
+                <!-- Sankey Diagram -->
+                <div class="viz-card glass-effect" data-aos="fade-up" data-aos-delay="100">
+                    <div class="card-header">
+                        <h3><i class="fas fa-project-diagram"></i> Money Flow (Sankey)</h3>
+                        <div class="card-actions">
+                            <button class="action-btn" title="Fullscreen">
+                                <i class="fas fa-expand"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="sankeyChart"></div>
+                    </div>
+                </div>
+                
+                <!-- Category Sunburst -->
+                <div class="viz-card glass-effect" data-aos="fade-up" data-aos-delay="200">
+                    <div class="card-header">
+                        <h3><i class="fas fa-circle-notch"></i> Category Breakdown</h3>
+                        <div class="card-actions">
+                            <button class="action-btn" title="Fullscreen">
+                                <i class="fas fa-expand"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="sunburstChart"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Row 3: 3D Time Travel (Full Width) -->
+            <div class="viz-row">
+                <div class="viz-card glass-effect large-card featured-card" data-aos="fade-up">
+                    <div class="card-header">
+                        <h3><i class="fas fa-cube"></i> 3D Time-Space Journey</h3>
+                        <div class="animation-controls">
+                            <button class="play-btn" id="play3D">
+                                <i class="fas fa-play"></i>
+                            </button>
+                            <button class="action-btn">
+                                <i class="fas fa-rotate"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="timeTravelChart"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Row 4: Additional Charts -->
+            <div class="viz-row three-col">
+                <!-- Heatmap -->
+                <div class="viz-card glass-effect" data-aos="fade-up">
+                    <div class="card-header">
+                        <h3><i class="fas fa-fire"></i> Day Pattern</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="heatmapChart"></div>
+                    </div>
+                </div>
+                
+                <!-- Top Merchants -->
+                <div class="viz-card glass-effect" data-aos="fade-up" data-aos-delay="100">
+                    <div class="card-header">
+                        <h3><i class="fas fa-store"></i> Top Merchants</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="merchantsChart"></div>
+                    </div>
+                </div>
+                
+                <!-- Ridge Plot Preview -->
+                <div class="viz-card glass-effect" data-aos="fade-up" data-aos-delay="200">
+                    <div class="card-header">
+                        <h3><i class="fas fa-mountain"></i> Monthly Distribution</h3>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="ridgePlotCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Row 5: Racing Bar Chart (Animated) -->
+            <div class="viz-row">
+                <div class="viz-card glass-effect large-card featured-card" data-aos="fade-up">
+                    <div class="card-header">
+                        <h3><i class="fas fa-trophy"></i> Category Race Over Time</h3>
+                        <div class="animation-controls">
+                            <button class="play-btn" id="playRace">
+                                <i class="fas fa-play"></i>
+                            </button>
+                            <input type="range" id="raceSlider" min="0" max="100" value="0" class="race-slider">
+                            <span class="race-month" id="raceMonth">Month 1</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="racingChart"></div>
+                    </div>
+                </div>
+            </div>
+            
+        </section>
+        
+        <!-- Insights Section -->
+        <section class="insights-section">
+            <div class="insights-grid">
+                <div class="insight-card glass-effect" data-aos="fade-up">
+                    <i class="fas fa-lightbulb insight-icon"></i>
+                    <h4>Biggest Category</h4>
+                    <p id="biggestCategory">Loading...</p>
+                </div>
+                <div class="insight-card glass-effect" data-aos="fade-up" data-aos-delay="100">
+                    <i class="fas fa-chart-simple insight-icon"></i>
+                    <h4>Average Daily Spending</h4>
+                    <p id="avgDaily">Loading...</p>
+                </div>
+                <div class="insight-card glass-effect" data-aos="fade-up" data-aos-delay="200">
+                    <i class="fas fa-calendar-day insight-icon"></i>
+                    <h4>Most Expensive Day</h4>
+                    <p id="expensiveDay">Loading...</p>
+                </div>
+                <div class="insight-card glass-effect" data-aos="fade-up" data-aos-delay="300">
+                    <i class="fas fa-rocket insight-icon"></i>
+                    <h4>Trend</h4>
+                    <p id="trendInsight">Loading...</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Footer -->
+        <footer class="dashboard-footer glass-effect">
+            <div class="footer-content">
+                <p>
+                    <i class="fas fa-lock"></i> 
+                    Secure connection to Bunq API | 
+                    <i class="fas fa-server"></i> 
+                    Hosted on your NAS | 
+                    <i class="fas fa-shield-halved"></i> 
+                    Your data stays private
+                </p>
+                <p class="footer-credit">
+                    Built with ❤️ using Plotly, Chart.js & Modern Web Technologies
+                </p>
+            </div>
+        </footer>
+        
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content glass-effect">
+            <div class="modal-header">
+                <h2><i class="fas fa-cog"></i> Settings</h2>
+                <button class="close-modal" id="closeSettings">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label>API Endpoint URL</label>
+                    <input type="text" id="apiEndpoint" placeholder="http://your-nas-ip:5000/api" value="http://localhost:5000/api">
+                </div>
+                <div class="setting-group">
+                    <label>Auto-refresh interval (minutes)</label>
+                    <input type="number" id="refreshInterval" min="0" max="60" value="0" placeholder="0 = disabled">
+                </div>
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="enableAnimations" checked>
+                        Enable animations
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="enableParticles" checked>
+                        Enable background particles
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="saveSettings">Save Settings</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- AOS (Animate On Scroll) -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    
+    <!-- Main Application Script -->
+    <script src="app.js"></script>
+    
+    <script>
+        // Initialize AOS (Animate On Scroll)
+        AOS.init({
+            duration: 800,
+            easing: 'ease-out-cubic',
+            once: true,
+            offset: 50
+        });
+    </script>
+</body>
+</html>
