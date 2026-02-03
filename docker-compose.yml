@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  bunq-dashboard:
+    build: .
+    container_name: bunq-dashboard
+    restart: unless-stopped
+    
+    ports:
+      - "8000:8000"  # Frontend
+      - "5000:5000"  # API
+    
+    environment:
+      # Bunq Configuration
+      - BUNQ_API_KEY=${BUNQ_API_KEY}
+      - BUNQ_ENVIRONMENT=${BUNQ_ENVIRONMENT:-PRODUCTION}
+      
+      # Flask Configuration
+      - FLASK_DEBUG=${FLASK_DEBUG:-False}
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=5000
+      
+      # Security
+      - BASIC_AUTH_USERNAME=${BASIC_AUTH_USERNAME:-}
+      - BASIC_AUTH_PASSWORD=${BASIC_AUTH_PASSWORD:-}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    
+    volumes:
+      # Persistent config storage
+      - bunq-config:/app/config
+      # Optional: logs
+      - ./logs:/app/logs
+    
+    networks:
+      - bunq-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    labels:
+      - "com.bunq.dashboard=main"
+      - "com.bunq.description=Bunq Financial Dashboard"
+
+  # Optional: NGINX reverse proxy with SSL
+  nginx:
+    image: nginx:alpine
+    container_name: bunq-nginx
+    restart: unless-stopped
+    
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    
+    depends_on:
+      - bunq-dashboard
+    
+    networks:
+      - bunq-network
+    
+    profiles:
+      - with-ssl
+
+volumes:
+  bunq-config:
+    driver: local
+
+networks:
+  bunq-network:
+    driver: bridge
+
+# Usage:
+# 
+# 1. Basic start:
+#    docker-compose up -d
+#
+# 2. With NGINX + SSL:
+#    docker-compose --profile with-ssl up -d
+#
+# 3. View logs:
+#    docker-compose logs -f
+#
+# 4. Stop:
+#    docker-compose down
+#
+# 5. Rebuild:
+#    docker-compose up -d --build
