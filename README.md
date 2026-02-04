@@ -1,4 +1,4 @@
-# 💰 Bunq Financial Dashboard
+# 💰 Bunq Financial Dashboard - in development, not ready for deployment yet!
 
 **Spectaculaire web-based visualisaties van je Bunq transactiedata**
 
