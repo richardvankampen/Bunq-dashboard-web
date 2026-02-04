@@ -2,12 +2,8 @@ version: '3.8'
 
 services:
   bunq-dashboard:
-    build: 
+    build:
       context: .
-      args:
-        # Select authentication version: basic, secure, or session
-        # Recommended: session (maximum security)
-        AUTH_VERSION: ${AUTH_VERSION:-session}
     
     container_name: bunq-dashboard
     restart: unless-stopped
@@ -30,7 +26,6 @@ services:
       # ============================================
       # SESSION-BASED AUTHENTICATION
       # ============================================
-      # Required for api_proxy_session.py
       BASIC_AUTH_USERNAME: "${BASIC_AUTH_USERNAME:-admin}"
       BASIC_AUTH_PASSWORD: "${BASIC_AUTH_PASSWORD}"
       FLASK_SECRET_KEY: "${FLASK_SECRET_KEY}"
@@ -51,6 +46,13 @@ services:
       # ============================================
       FLASK_DEBUG: "${FLASK_DEBUG:-false}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
+      # Performance / Cache
+      CACHE_ENABLED: "${CACHE_ENABLED:-true}"
+      CACHE_TTL_SECONDS: "${CACHE_TTL_SECONDS:-60}"
+      DEFAULT_PAGE_SIZE: "${DEFAULT_PAGE_SIZE:-500}"
+      MAX_PAGE_SIZE: "${MAX_PAGE_SIZE:-2000}"
+      MAX_DAYS: "${MAX_DAYS:-3650}"
     
     volumes:
       # Persistent storage for Bunq context and logs
@@ -169,16 +171,8 @@ networks:
 # USAGE EXAMPLES
 # ============================================
 #
-# Build with session auth (default):
+# Build:
 #   docker-compose build
-#   docker-compose up -d
-#
-# Build with specific auth version:
-#   AUTH_VERSION=secure docker-compose build
-#   docker-compose up -d
-#
-# Build with basic auth (development only):
-#   AUTH_VERSION=basic docker-compose build
 #   docker-compose up -d
 #
 # View logs:

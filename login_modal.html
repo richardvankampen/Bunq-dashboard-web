@@ -1,60 +1,64 @@
-<!-- LOGIN MODAL -->
-<!-- Voeg dit toe aan je index.html, direct voor de closing </body> tag -->
+<!-- LOGIN MODAL (REFERENCE)
+     This markup is already included in index.html in this repo.
+     Use this snippet if you have a custom index.html.
+-->
 
 <!-- Login Modal -->
-<div id="loginModal" class="modal">
-    <div class="modal-content">
+<div id="loginModal" class="modal login-modal">
+    <div class="modal-content glass-effect login-modal-content">
         <div class="modal-header">
-            <h2>🔐 Login Required</h2>
-            <button class="close-btn" id="closeLogin">
+            <h2><i class="fas fa-lock"></i> Login Required</h2>
+            <button class="close-modal" id="closeLogin">
                 <i class="fas fa-times"></i>
             </button>
         </div>
         
-        <form id="loginForm" class="login-form">
-            <div class="form-group">
-                <label for="loginUsername">
-                    <i class="fas fa-user"></i> Username
-                </label>
-                <input 
-                    type="text" 
-                    id="loginUsername" 
-                    name="username" 
-                    required 
-                    autocomplete="username"
-                    placeholder="Enter username"
-                >
-            </div>
-            
-            <div class="form-group">
-                <label for="loginPassword">
-                    <i class="fas fa-lock"></i> Password
-                </label>
-                <input 
-                    type="password" 
-                    id="loginPassword" 
-                    name="password" 
-                    required 
-                    autocomplete="current-password"
-                    placeholder="Enter password"
-                >
-            </div>
-            
-            <button type="submit" id="loginSubmit" class="btn-primary">
-                <i class="fas fa-sign-in-alt"></i> Login
-            </button>
-            
-            <p class="login-help">
-                <i class="fas fa-info-circle"></i> 
-                Use the credentials configured in your .env file
-            </p>
-        </form>
+        <div class="modal-body">
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="loginUsername">
+                        <i class="fas fa-user"></i> Username
+                    </label>
+                    <input 
+                        type="text" 
+                        id="loginUsername" 
+                        name="username" 
+                        required 
+                        autocomplete="username"
+                        placeholder="Enter username"
+                    >
+                </div>
+                
+                <div class="form-group">
+                    <label for="loginPassword">
+                        <i class="fas fa-lock"></i> Password
+                    </label>
+                    <input 
+                        type="password" 
+                        id="loginPassword" 
+                        name="password" 
+                        required 
+                        autocomplete="current-password"
+                        placeholder="Enter password"
+                    >
+                </div>
+                
+                <button type="submit" id="loginSubmit" class="btn-primary">
+                    <i class="fas fa-sign-in-alt"></i> Login
+                </button>
+                
+                <p class="login-help">
+                    <i class="fas fa-info-circle"></i> 
+                    Use the credentials configured in your .env file
+                </p>
+            </form>
+        </div>
     </div>
 </div>
 
-<!-- Auth Controls (voeg toe aan je header/navbar) -->
+<!-- Auth Controls (optional) -->
 <div class="auth-controls">
-    <span id="userDisplay" style="display: none;">👤 User</span>
+    <span id="userDisplay" style="display: none;">User</span>
     <button id="loginBtn" class="btn-icon" title="Login">
         <i class="fas fa-sign-in-alt"></i>
     </button>
@@ -63,243 +67,78 @@
     </button>
 </div>
 
-<!-- CSS voor Login Modal -->
+<!-- CSS (REFERENCE)
+     This mirrors styles.css. If you already use styles.css, you can skip this.
+-->
 <style>
 .modal {
     display: none;
     position: fixed;
-    z-index: 10000;
-    left: 0;
     top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(10px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
 }
 
 .modal.active {
     display: flex;
-    align-items: center;
-    justify-content: center;
     animation: fadeIn 0.3s ease;
 }
 
-.modal-content {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 20px;
-    padding: 30px;
-    max-width: 400px;
+.login-modal-content {
     width: 90%;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 25px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.modal-header h2 {
-    margin: 0;
-    font-size: 24px;
-    color: #fff;
-}
-
-.close-btn {
-    background: none;
-    border: none;
-    color: #fff;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 5px 10px;
-    transition: all 0.3s ease;
-}
-
-.close-btn:hover {
-    transform: rotate(90deg);
-    color: #ef4444;
+    max-width: 420px;
 }
 
 .login-form {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 1rem;
 }
 
 .form-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-}
-
-.form-group label {
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 14px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.form-group input {
-    padding: 12px 15px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    font-size: 16px;
-    transition: all 0.3s ease;
-}
-
-.form-group input:focus {
-    outline: none;
-    border-color: #667eea;
-    background: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
-}
-
-.form-group input::placeholder {
-    color: rgba(255, 255, 255, 0.5);
-}
-
-.btn-primary {
-    padding: 12px 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border: none;
-    border-radius: 10px;
-    color: white;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-}
-
-.btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-}
-
-.btn-primary:active {
-    transform: translateY(0);
-}
-
-.btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
+    gap: 0.5rem;
 }
 
 .login-help {
     text-align: center;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.6);
-    margin: 0;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.7);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 0.25rem;
 }
 
 .auth-controls {
     display: flex;
     align-items: center;
-    gap: 15px;
-}
-
-#userDisplay {
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 14px;
-    font-weight: 500;
-    padding: 8px 15px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 20px;
-    backdrop-filter: blur(10px);
+    gap: 0.75rem;
 }
 
 .btn-icon {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 50%;
     width: 40px;
     height: 40px;
-    display: flex;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
     cursor: pointer;
     transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
 }
 
 .btn-icon:hover {
-    background: rgba(255, 255, 255, 0.2);
     transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-}
-
-.error-notification {
-    animation: slideIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
-}
-
-@keyframes slideIn {
-    from {
-        transform: translateX(400px);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-@keyframes slideOut {
-    from {
-        transform: translateX(0);
-        opacity: 1;
-    }
-    to {
-        transform: translateX(400px);
-        opacity: 0;
-    }
-}
-
-/* Dark theme support */
-body.dark-theme .modal-content {
-    background: linear-gradient(135deg, rgba(17, 24, 39, 0.95), rgba(31, 41, 55, 0.95));
-}
-
-body.dark-theme .form-group input {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.1);
-}
-
-/* Mobile responsive */
-@media (max-width: 768px) {
-    .modal-content {
-        width: 95%;
-        padding: 20px;
-    }
-    
-    .modal-header h2 {
-        font-size: 20px;
-    }
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
 }
 </style>

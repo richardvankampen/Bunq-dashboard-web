@@ -6,13 +6,14 @@ READ-ONLY Bunq API access for maximum security
 SECURED with session cookies and rate limiting
 """
 
-from flask import Flask, jsonify, request, Response, session, make_response
+from flask import Flask, jsonify, request, Response, session, make_response, send_from_directory, abort
 from flask_cors import CORS
+from flask_caching import Cache
 from functools import wraps
 from bunq.sdk.context.api_context import ApiContext
 from bunq.sdk.context.bunq_context import BunqContext
 from bunq.sdk.model.generated import endpoint
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import json
 import requests
@@ -41,6 +42,20 @@ logger = logging.getLogger(__name__)
 # ============================================
 
 app = Flask(__name__)
+STATIC_DIR = os.path.abspath(os.path.dirname(__file__))
+STATIC_FILES = {'index.html', 'styles.css', 'app.js', 'login_modal.html'}
+
+# Simple in-memory cache (per process)
+CACHE_ENABLED = os.getenv('CACHE_ENABLED', 'true').lower() == 'true'
+CACHE_TTL_SECONDS = int(os.getenv('CACHE_TTL_SECONDS', '60'))
+DEFAULT_PAGE_SIZE = int(os.getenv('DEFAULT_PAGE_SIZE', '500'))
+MAX_PAGE_SIZE = int(os.getenv('MAX_PAGE_SIZE', '2000'))
+MAX_DAYS = int(os.getenv('MAX_DAYS', '3650'))
+
+cache = Cache(app, config={
+    'CACHE_TYPE': 'SimpleCache',
+    'CACHE_DEFAULT_TIMEOUT': CACHE_TTL_SECONDS
+})
 
 # Session configuration - CRITICAL for security
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
@@ -54,7 +69,7 @@ logger.info(f"🔐 Session cookie secure: {app.config['SESSION_COOKIE_SECURE']}"
 logger.info(f"⏱️  Session lifetime: 24 hours")
 
 # CORS Configuration - WITH CREDENTIALS SUPPORT
-ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:8000').split(',')
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5000').split(',')
 logger.info(f"🔒 CORS allowed origins: {ALLOWED_ORIGINS}")
 
 CORS(app, 
@@ -173,6 +188,50 @@ def rate_limit(endpoint='general'):
             return f(*args, **kwargs)
         return decorated
     return decorator
+
+# ============================================
+# PERFORMANCE: CACHE + PAGINATION HELPERS
+# ============================================
+
+def cache_allowed():
+    if not CACHE_ENABLED:
+        return False
+    cache_param = request.args.get('cache', 'true').lower()
+    return cache_param not in ('0', 'false', 'no')
+
+def make_cache_key(prefix):
+    user = session.get('username', 'anon')
+    args = '&'.join(
+        [f"{k}={v}" for k, v in sorted(request.args.items()) if k != 'cache']
+    )
+    return f"{prefix}:{user}:{args}"
+
+def parse_pagination():
+    """Parse pagination parameters from query string."""
+    if 'limit' in request.args or 'offset' in request.args:
+        limit = min(int(request.args.get('limit', DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
+        offset = max(int(request.args.get('offset', 0)), 0)
+        page = offset // limit + 1 if limit > 0 else 1
+    else:
+        page = max(int(request.args.get('page', 1)), 1)
+        page_size = min(int(request.args.get('page_size', DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
+        limit = page_size
+        offset = (page - 1) * page_size
+    
+    sort = request.args.get('sort', 'desc').lower()
+    if sort not in ('asc', 'desc'):
+        sort = 'desc'
+    
+    return limit, offset, page, sort
+
+def clamp_days(days):
+    try:
+        days_int = int(days)
+    except (TypeError, ValueError):
+        return 90
+    if days_int <= 0:
+        return 90
+    return min(days_int, MAX_DAYS)
 
 # ============================================
 # AUTHENTICATION ENDPOINTS
@@ -410,6 +469,18 @@ def init_bunq():
 # API ENDPOINTS (PROTECTED)
 # ============================================
 
+@app.route('/', methods=['GET'])
+def serve_index():
+    """Serve the dashboard frontend"""
+    return send_from_directory(STATIC_DIR, 'index.html')
+
+@app.route('/<path:filename>', methods=['GET'])
+def serve_static(filename):
+    """Serve static assets for the dashboard"""
+    if filename in STATIC_FILES:
+        return send_from_directory(STATIC_DIR, filename)
+    return abort(404)
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint - NO AUTH REQUIRED"""
@@ -438,6 +509,12 @@ def get_accounts():
         }), 503
     
     try:
+        cache_key = make_cache_key('accounts')
+        if cache_allowed():
+            cached = cache.get(cache_key)
+            if cached:
+                return jsonify(cached)
+        
         logger.info(f"📊 Fetching accounts for {session.get('username')}")
         accounts = endpoint.MonetaryAccountBank.list().value
         
@@ -454,11 +531,16 @@ def get_accounts():
             })
         
         logger.info(f"✅ Retrieved {len(accounts_data)} accounts")
-        return jsonify({
+        response = {
             'success': True,
             'data': accounts_data,
             'count': len(accounts_data)
-        })
+        }
+        
+        if cache_allowed():
+            cache.set(cache_key, response, timeout=CACHE_TTL_SECONDS)
+        
+        return jsonify(response)
         
     except Exception as e:
         logger.error(f"❌ Error fetching accounts: {e}")
@@ -480,7 +562,16 @@ def get_transactions():
     
     try:
         account_id = request.args.get('account_id')
-        days = int(request.args.get('days', 90))
+        days = clamp_days(request.args.get('days', 90))
+        limit, offset, page, sort = parse_pagination()
+        sort_desc = sort == 'desc'
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        cache_key = make_cache_key('transactions')
+        if cache_allowed():
+            cached = cache.get(cache_key)
+            if cached:
+                return jsonify(cached)
         
         logger.info(f"📊 Fetching transactions (last {days} days) for {session.get('username')}")
         
@@ -489,25 +580,48 @@ def get_transactions():
             all_transactions = []
             
             for account in accounts:
-                transactions = get_account_transactions(account.id_, days)
+                transactions = get_account_transactions(account.id_, cutoff_date, sort_desc)
                 for trans in transactions:
                     trans['account_id'] = account.id_
                     trans['account_name'] = account.description
                 all_transactions.extend(transactions)
             
-            logger.info(f"✅ Retrieved {len(all_transactions)} transactions")
-            return jsonify({
+            all_transactions.sort(key=lambda t: t['date'], reverse=sort_desc)
+            total_count = len(all_transactions)
+            paged = all_transactions[offset:offset + limit]
+            
+            logger.info(f"✅ Retrieved {total_count} transactions (page {page})")
+            response = {
                 'success': True,
-                'data': all_transactions,
-                'count': len(all_transactions)
-            })
+                'data': paged,
+                'count': total_count,
+                'page': page,
+                'page_size': limit,
+                'sort': sort
+            }
+            
+            if cache_allowed():
+                cache.set(cache_key, response, timeout=CACHE_TTL_SECONDS)
+            
+            return jsonify(response)
         else:
-            transactions = get_account_transactions(account_id, days)
-            return jsonify({
+            transactions = get_account_transactions(account_id, cutoff_date, sort_desc)
+            transactions.sort(key=lambda t: t['date'], reverse=sort_desc)
+            total_count = len(transactions)
+            paged = transactions[offset:offset + limit]
+            response = {
                 'success': True,
-                'data': transactions,
-                'count': len(transactions)
-            })
+                'data': paged,
+                'count': total_count,
+                'page': page,
+                'page_size': limit,
+                'sort': sort
+            }
+            
+            if cache_allowed():
+                cache.set(cache_key, response, timeout=CACHE_TTL_SECONDS)
+            
+            return jsonify(response)
             
     except Exception as e:
         logger.error(f"❌ Error fetching transactions: {e}")
@@ -516,16 +630,17 @@ def get_transactions():
             'error': str(e)
         }), 500
 
-def get_account_transactions(account_id, days=90):
+def get_account_transactions(account_id, cutoff_date=None, sort_desc=True):
     """Get transactions for specific account"""
     payments = endpoint.Payment.list(monetary_account_id=account_id).value
-    cutoff_date = datetime.now() - timedelta(days=days)
     transactions = []
     
     for payment in payments:
         created = datetime.fromisoformat(payment.created.replace('Z', '+00:00'))
         
-        if created < cutoff_date:
+        if cutoff_date and created < cutoff_date:
+            if sort_desc:
+                break
             continue
         
         category = categorize_transaction(payment.description, payment.counterparty_alias)
@@ -583,12 +698,20 @@ def get_statistics():
         }), 503
         
     try:
-        days = int(request.args.get('days', 90))
+        days = clamp_days(request.args.get('days', 90))
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        cache_key = make_cache_key('statistics')
+        if cache_allowed():
+            cached = cache.get(cache_key)
+            if cached:
+                return jsonify(cached)
+        
         accounts = endpoint.MonetaryAccountBank.list().value
         all_transactions = []
         
         for account in accounts:
-            transactions = get_account_transactions(account.id_, days)
+            transactions = get_account_transactions(account.id_, cutoff_date, True)
             all_transactions.extend(transactions)
         
         income = sum(t['amount'] for t in all_transactions if t['amount'] > 0)
@@ -602,7 +725,7 @@ def get_statistics():
                 cat = t['category']
                 category_totals[cat] = category_totals.get(cat, 0) + abs(t['amount'])
         
-        return jsonify({
+        response = {
             'success': True,
             'data': {
                 'period_days': days,
@@ -614,7 +737,12 @@ def get_statistics():
                 'categories': category_totals,
                 'avg_daily_expenses': expenses / days if days > 0 else 0
             }
-        })
+        }
+        
+        if cache_allowed():
+            cache.set(cache_key, response, timeout=CACHE_TTL_SECONDS)
+        
+        return jsonify(response)
         
     except Exception as e:
         return jsonify({

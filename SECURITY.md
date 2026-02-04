@@ -76,15 +76,13 @@ curl http://192.168.1.100:5000
 
 **Why:** Session auth is the most secure option.
 
-**Comparison:**
+**Let op:** Deze repository levert **alleen** de session-based variant.
 
-| Feature | Basic | Secure | Session |
-|---------|-------|--------|---------|
-| **Credentials Storage** | ❌ None | ⚠️ localStorage | ✅ Server-side |
-| **XSS Protection** | ❌ | ⚠️ Partial | ✅ Full |
-| **CSRF Protection** | ❌ | ❌ | ✅ Yes |
-| **Auto-logout** | ❌ | ❌ | ✅ 24h |
-| **Security Rating** | 🔴 | 🟡 | 🟢 |
+**Session-based kenmerken:**
+- ✅ Credentials worden server-side beheerd
+- ✅ HttpOnly + SameSite cookies
+- ✅ CSRF bescherming
+- ✅ Auto-logout (24 uur)
 
 **Setup:**
 ```bash

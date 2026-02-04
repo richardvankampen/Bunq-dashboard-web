@@ -19,7 +19,7 @@ Complete stap-voor-stap instructies voor het installeren van Bunq Dashboard op j
 
 ### Netwerk
 - **Vaste lokale IP** voor je NAS (bijv. 192.168.1.100)
-- **Poorten vrij**: 8000 (Dashboard), 5000 (API), 8080 (Vaultwarden)
+- **Poorten vrij**: 5000 (Dashboard + API), 8080 (Vaultwarden)
 
 ---
 
@@ -289,8 +289,7 @@ services:
     restart: unless-stopped
     
     ports:
-      - "8000:8000"  # Web UI
-      - "5000:5000"  # API
+      - "5000:5000"  # Dashboard + API
     
     environment:
       # Load from .env file
@@ -324,79 +323,10 @@ networks:
     external: true
 ```
 
-### Stap 3.4: Update api_proxy.py voor Vaultwarden
+### Stap 3.4: Vaultwarden Integratie (al ingebouwd)
 
-De `api_proxy.py` moet aangepast worden om Vaultwarden te gebruiken.
-
-Voeg toe aan top van bestand:
-
-```python
-import requests
-from requests.auth import HTTPBasicAuth
-import json
-
-def get_api_key_from_vaultwarden():
-    """Retrieve Bunq API key from Vaultwarden vault"""
-    
-    if os.getenv('USE_VAULTWARDEN', 'false').lower() != 'true':
-        # Fallback to environment variable
-        return os.getenv('BUNQ_API_KEY', '')
-    
-    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80')
-    client_id = os.getenv('VAULTWARDEN_CLIENT_ID')
-    client_secret = os.getenv('VAULTWARDEN_CLIENT_SECRET')
-    item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key')
-    
-    if not client_id or not client_secret:
-        print("❌ Vaultwarden credentials not found in environment!")
-        return None
-    
-    try:
-        # Step 1: Get access token
-        print("🔐 Authenticating with Vaultwarden...")
-        token_url = f"{vault_url}/identity/connect/token"
-        token_data = {
-            'grant_type': 'client_credentials',
-            'scope': 'api',
-            'client_id': client_id,
-            'client_secret': client_secret
-        }
-        
-        token_response = requests.post(token_url, data=token_data)
-        token_response.raise_for_status()
-        access_token = token_response.json()['access_token']
-        
-        print("✅ Vaultwarden authentication successful")
-        
-        # Step 2: Get all items
-        print(f"🔍 Searching for item: '{item_name}'...")
-        items_url = f"{vault_url}/api/ciphers"
-        headers = {'Authorization': f'Bearer {access_token}'}
-        
-        items_response = requests.get(items_url, headers=headers)
-        items_response.raise_for_status()
-        items = items_response.json()['data']
-        
-        # Step 3: Find our item
-        for item in items:
-            if item.get('name') == item_name:
-                api_key = item['login']['password']
-                print(f"✅ API key retrieved from vault: {api_key[:10]}...")
-                return api_key
-        
-        print(f"❌ Item '{item_name}' not found in vault!")
-        return None
-        
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Vaultwarden connection error: {e}")
-        return None
-    except KeyError as e:
-        print(f"❌ Unexpected Vaultwarden response format: {e}")
-        return None
-
-# Update API_KEY initialization:
-API_KEY = get_api_key_from_vaultwarden()
-```
+De `api_proxy.py` bevat standaard Vaultwarden-integratie. Zorg alleen dat je
+`.env` correct is ingevuld (zoals in stap 3.2) en dat `USE_VAULTWARDEN=true` staat.
 
 ### Stap 3.5: Build en Start
 
@@ -419,12 +349,12 @@ Je zou moeten zien:
 ✅ API key retrieved from vault
 ✅ Bunq API initialized
 🚀 Starting Bunq Dashboard API...
-✅ Dashboard running on http://0.0.0.0:8000
+✅ Dashboard running on http://0.0.0.0:5000
 ```
 
 ### Stap 3.6: Open Dashboard
 
-Browser: `http://192.168.1.100:8000`
+Browser: `http://192.168.1.100:5000`
 
 🎉 **SUCCESS!** Je dashboard draait nu!
 
@@ -438,7 +368,7 @@ Browser: `http://192.168.1.100:8000`
 Control Panel → Security → Firewall → Edit Rules
 
 Create Rule:
-├── Ports: Custom → 8000,5000,8080
+├── Ports: Custom → 5000,8080
 ├── Source IP: 192.168.0.0/16 (lokaal netwerk)
 └── Action: Allow
 
@@ -457,7 +387,7 @@ Create:
 ├── Port: 443
 ├── Enable HSTS ✓
 ├── Backend Server: localhost
-├── Port: 8000
+├── Port: 5000
 └── Apply
 ```
 
@@ -581,7 +511,7 @@ sudo docker restart vaultwarden
 
 ```bash
 # Check what's using port
-sudo netstat -tulpn | grep 8000
+sudo netstat -tulpn | grep 5000
 
 # Kill process or change port in docker-compose.yml
 ```
@@ -603,7 +533,7 @@ sudo chmod -R 755 /volume1/docker/bunq-dashboard
 - [ ] Bunq API Key stored in vault
 - [ ] Vaultwarden signups disabled
 - [ ] Dashboard container running
-- [ ] Dashboard accessible on port 8000
+- [ ] Dashboard accessible on port 5000
 - [ ] API endpoint responding on port 5000
 - [ ] Logs show no errors
 - [ ] Firewall rules configured

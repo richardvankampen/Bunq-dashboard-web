@@ -18,27 +18,14 @@
 
 ---
 
-## 🔐 Security Levels
+## 🔐 Security Model
 
-Deze repository bevat **drie implementatie-niveaus**. Kies de juiste voor jouw situatie:
+Deze repository gebruikt **standaard session-based authentication**:
 
-### 🟢 Aanbevolen: Session-Based Authentication ⭐⭐⭐⭐⭐
-- **Bestanden:** `api_proxy_session.py` + `app_session.js`
+- **Bestanden:** `api_proxy.py` + `app.js`
 - **Security:** HttpOnly cookies, CSRF protection, auto-expiry (24h)
 - **Voor:** Productie gebruik
 - **Guide:** [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
-
-### 🟡 Basic Authentication ⭐⭐⭐⭐
-- **Bestanden:** `api_proxy_secure.py` + `app_secure.js`
-- **Security:** Username/password, rate limiting
-- **Voor:** Lokaal netwerk, simpele setup
-- **Guide:** [SECURITY_UPDATE.md](SECURITY_UPDATE.md)
-
-### 🔴 Demo/Development ⭐⭐⭐
-- **Bestanden:** `api_proxy.py` + `app.js`
-- **Security:** ❌ GEEN authenticatie
-- **Voor:** Development, testen ONLY
-- **⚠️ NOOIT** gebruiken in productie!
 
 ---
 
@@ -48,6 +35,7 @@ Deze repository bevat **drie implementatie-niveaus**. Kies de juiste voor jouw s
 - 📊 **11+ Visualisaties** - Sankey, Sunburst, 3D Time-Travel
 - 🔄 **Real-time Data** - Direct van Bunq API (READ-ONLY)
 - 📱 **Fully Responsive** - Mobiel tot 4K
+- 🔌 **Single-Port Deployment** - Frontend + API op poort 5000
 - 🔒 **Vaultwarden Integratie** - Secrets veilig opgeslagen
 - 🔐 **Session-Based Auth** - HttpOnly cookies, CSRF protection
 - 🏠 **Synology Ready** - One-click deployment
@@ -74,9 +62,11 @@ Volg wizard → Genereer client config → Installeer op je devices
 
 Volg de complete instructies in → [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
 
-**Stap 4: Enable Session Authentication**
+De frontend en API draaien samen op poort 5000 (`/` en `/api`).
 
-Voor productie gebruik → [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
+**Stap 4: Configureer Session Authentication**
+
+Volg de instructies in → [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
 
 ---
 
@@ -94,18 +84,6 @@ cp .env.example .env
 #   - BASIC_AUTH_PASSWORD (strong password!)
 #   - VAULTWARDEN credentials
 #   - Your NAS IP in ALLOWED_ORIGINS
-
-# Select authentication version (choose one):
-# Option A: Session Auth (recommended)
-cp api_proxy_session.py api_proxy.py
-cp app_session.js app.js
-
-# Option B: Basic Auth
-cp api_proxy_secure.py api_proxy.py
-cp app_secure.js app.js
-
-# Option C: Demo (development only)
-# Use existing api_proxy.py and app.js
 
 # Start containers
 docker-compose up -d
@@ -172,14 +150,15 @@ DraftPayment.create()       # ❌ DISABLED
 - ✅ Strong VPN passwords
 - ✅ Two-factor authentication where possible
 
+**Remark (SRI/CDN):** Subresource Integrity is useful for public-facing apps, but for a VPN-only, single-user setup the practical risk is low. We intentionally keep Google Fonts on the CDN without SRI to avoid extra complexity. If you expose this publicly or add users, reconsider SRI or self-hosting fonts.
+
 ---
 
 ## 📖 Complete Documentation
 
 - **[🏠 Synology Installation Guide](SYNOLOGY_INSTALL.md)** - Complete stap-voor-stap setup
 - **[🔐 Session Authentication Guide](SESSION_AUTH_INSTALL.md)** - Upgrade naar session-based auth
-- **[🔒 Security Update Guide](SECURITY_UPDATE.md)** - Basic authentication implementatie
-- **[📋 Review Implementation](REVIEW_IMPLEMENTATION.md)** - Architectuur beslissingen
+- **[🔒 Security Best Practices](SECURITY.md)** - Security checklist en hardening tips
 
 ---
 
@@ -248,6 +227,10 @@ Zie [.env.example](.env.example) voor een complete lijst met alle configuratie o
 - `VAULTWARDEN_CLIENT_ID` - Voor API key retrieval
 - `VAULTWARDEN_CLIENT_SECRET` - Voor API key retrieval
 - `ALLOWED_ORIGINS` - CORS policy (je NAS IP)
+- `CACHE_ENABLED` - Cache API responses (true/false)
+- `CACHE_TTL_SECONDS` - Cache TTL in seconden
+- `DEFAULT_PAGE_SIZE` / `MAX_PAGE_SIZE` - Paginatie voor transactions
+- `MAX_DAYS` - Maximale tijdsrange voor requests
 
 **Genereer secret key:**
 ```bash
@@ -271,8 +254,8 @@ pip install -r requirements_web.txt
 # Run locally (demo mode)
 python api_proxy.py
 
-# Or with session auth
-python api_proxy_session.py
+# Session auth (default)
+python api_proxy.py
 
 # Access: http://localhost:5000
 ```
@@ -284,8 +267,22 @@ python api_proxy_session.py
 curl http://localhost:5000/api/health
 
 # Test authentication (session version)
-curl -u admin:password http://localhost:5000/api/accounts
+curl -c cookies.txt -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your_password"}' \
+  http://localhost:5000/api/auth/login
+
+# Use session cookie for authenticated requests
+curl -b cookies.txt http://localhost:5000/api/accounts
 ```
+
+### API Parameters (Transactions)
+
+`/api/transactions` ondersteunt pagination en caching:
+- `page` / `page_size` (default `page=1`)
+- of `limit` / `offset`
+- `sort=asc|desc`
+- `days=90`
+- `cache=false` om cache te omzeilen
 
 ---
 
@@ -364,6 +361,6 @@ Planned features:
 
 *Veilig, mooi, en production-ready!* 🚀
 
-**Version:** 2.1.0 (Session Auth)  
+**Version:** 3.0.0 (Session Auth)  
 **Last Updated:** February 2026  
 **Status:** ✅ Production Ready

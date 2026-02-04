@@ -40,8 +40,8 @@ cp .env .env.OLD
 ### STAP 2: Update backend (Flask API)
 
 ```bash
-# Vervang api_proxy.py met session-versie
-# Upload: api_proxy_session.py → api_proxy.py
+# Gebruik de session-based backend
+# Upload: api_proxy.py (session-based) naar je NAS
 ```
 
 **Controleer of het bestand deze imports heeft:**
@@ -54,8 +54,8 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 ### STAP 3: Update frontend (JavaScript)
 
 ```bash
-# Vervang app.js met session-versie
-# Upload: app_session.js → app.js
+# Gebruik de session-based frontend
+# Upload: app.js (session-based) naar je NAS
 ```
 
 **Controleer of het bestand deze functie heeft:**
@@ -68,9 +68,10 @@ async function checkAuthStatus() {
 }
 ```
 
-### STAP 4: Update HTML (Login Modal toevoegen)
+### STAP 4: Controleer HTML (Login Modal aanwezig)
 
-Open `index.html` en voeg toe **VOOR de closing `</body>` tag**:
+In deze repository is de login modal **al aanwezig** in `index.html`.
+Gebruik je een aangepaste `index.html`? Zorg dan dat de login modal **VOOR de closing `</body>` tag** staat:
 
 ```html
 <!-- LOGIN MODAL -->
@@ -117,7 +118,7 @@ Open `index.html` en voeg toe **VOOR de closing `</body>` tag**:
 </div>
 ```
 
-**Kopieer ook de CSS** uit `login_modal.html` naar je `<style>` sectie of `styles.css`.
+**Kopieer ook de CSS** uit `login_modal.html` naar `styles.css` als je een eigen stylesheet gebruikt.
 
 ### STAP 5: Genereer Flask Secret Key
 
@@ -163,7 +164,7 @@ FLASK_SECRET_KEY=a3f8b9c2d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a
 SESSION_COOKIE_SECURE=false
 
 # CORS (vervang met je NAS IP!)
-ALLOWED_ORIGINS=http://192.168.1.100:8000
+ALLOWED_ORIGINS=http://192.168.1.100:5000
 
 # Rest blijft hetzelfde...
 USE_VAULTWARDEN=true
@@ -199,7 +200,7 @@ sudo docker-compose logs -f bunq-dashboard
 🚀 Starting Bunq Dashboard API (SESSION-BASED AUTH)...
 🔐 Session cookie secure: False
 ⏱️  Session lifetime: 24 hours
-🔒 CORS Origins: ['http://192.168.1.100:8000']
+🔒 CORS Origins: ['http://192.168.1.100:5000']
 🔐 Authentication: ENABLED ✅
 🍪 Session-based auth with secure cookies
 ⏱️  Rate Limiting: 30 req/min (general), 5 req/min (login)
@@ -209,7 +210,7 @@ sudo docker-compose logs -f bunq-dashboard
 
 ### STAP 8: Test de nieuwe auth
 
-1. **Open dashboard:** `http://192.168.1.100:8000`
+1. **Open dashboard:** `http://192.168.1.100:5000`
 
 2. **Je zou nu demo data moeten zien** (nog niet ingelogd)
 
@@ -323,7 +324,7 @@ sudo docker logs bunq-dashboard | grep "expired"
 
 ### Session Lifetime Aanpassen
 
-In `api_proxy_session.py`, regel ~49:
+In `api_proxy.py`, regel ~49:
 
 ```python
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # Pas aan!
@@ -350,7 +351,7 @@ ALLOWED_ORIGINS=https://bunq.jouw-domein.nl
 
 ### Rate Limits Aanpassen
 
-In `api_proxy_session.py`, regel ~124:
+In `api_proxy.py`, regel ~124:
 
 ```python
 rate_limiter = RateLimiter(
@@ -393,7 +394,7 @@ docker-compose restart
 **Oplossing:**
 ```bash
 # In .env:
-ALLOWED_ORIGINS=http://192.168.1.100:8000
+ALLOWED_ORIGINS=http://192.168.1.100:5000
 
 # Herstart:
 docker-compose restart
@@ -410,7 +411,7 @@ docker-compose restart
 document.getElementById('loginModal')
 # Moet een element returnen, niet null
 
-# Check of app_session.js wordt gebruikt:
+# Check of app.js wordt gebruikt:
 # In browser Sources tab → check app.js bevat:
 "async function checkAuthStatus()"
 ```

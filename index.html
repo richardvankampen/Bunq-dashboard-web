@@ -6,16 +6,25 @@
     <title>Bunq Financial Dashboard - Premium Analytics</title>
     
     <!-- Plotly for advanced visualizations -->
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"
+            integrity="sha384-Hl48Kq2HifOWdXEjMsKo6qxqvRLTYqIGbvlENBmkHAxZKIGCXv43H6W1jA671RzC"
+            crossorigin="anonymous"></script>
     
     <!-- Chart.js for additional chart types -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"
+            integrity="sha384-DhxhYObIMeMNGyAG7iK11OHzBIKyEIeRL0ad1iFPAOwZB8iirUlTT0O/WJJUk8+o"
+            crossorigin="anonymous"></script>
     
     <!-- Particles.js for background effects -->
-    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/particles.js/2.0.0/particles.min.js"
+            integrity="sha384-d+UOwmNNIC7V4izkTAKSXzWhjC2GxiS9PTykO1XdOPC3nc2z65UOS7SP6QdKPA70"
+            crossorigin="anonymous"></script>
     
     <!-- Font Awesome for icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+          integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0"
+          crossorigin="anonymous">
     
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -84,6 +93,17 @@
                     <button class="settings-btn glass-effect" id="settingsBtn">
                         <i class="fas fa-cog"></i>
                     </button>
+
+                    <!-- Auth Controls -->
+                    <div class="auth-controls">
+                        <span id="userDisplay" style="display: none;"></span>
+                        <button id="loginBtn" class="btn-icon" title="Login">
+                            <i class="fas fa-sign-in-alt"></i>
+                        </button>
+                        <button id="logoutBtn" class="btn-icon" style="display: none;" title="Logout">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
             
@@ -346,6 +366,59 @@
         
     </div>
     
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal login-modal">
+        <div class="modal-content glass-effect login-modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-lock"></i> Login Required</h2>
+                <button class="close-modal" id="closeLogin">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="modal-body">
+                <form id="loginForm" class="login-form">
+                    <div class="form-group">
+                        <label for="loginUsername">
+                            <i class="fas fa-user"></i> Username
+                        </label>
+                        <input 
+                            type="text" 
+                            id="loginUsername" 
+                            name="username" 
+                            required 
+                            autocomplete="username"
+                            placeholder="Enter username"
+                        >
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="loginPassword">
+                            <i class="fas fa-lock"></i> Password
+                        </label>
+                        <input 
+                            type="password" 
+                            id="loginPassword" 
+                            name="password" 
+                            required 
+                            autocomplete="current-password"
+                            placeholder="Enter password"
+                        >
+                    </div>
+                    
+                    <button type="submit" id="loginSubmit" class="btn-primary">
+                        <i class="fas fa-sign-in-alt"></i> Login
+                    </button>
+                    
+                    <p class="login-help">
+                        <i class="fas fa-info-circle"></i> 
+                        Use the credentials configured in your .env file
+                    </p>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settingsModal" class="modal">
         <div class="modal-content glass-effect">
@@ -376,6 +449,13 @@
                         Enable background particles
                     </label>
                 </div>
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="useRealData">
+                        Use real Bunq data (requires login)
+                    </label>
+                    <p class="setting-help">If disabled, the dashboard uses built-in demo data.</p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn-primary" id="saveSettings">Save Settings</button>
@@ -384,8 +464,13 @@
     </div>
     
     <!-- AOS (Animate On Scroll) -->
-    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
-    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <link rel="stylesheet"
+          href="https://unpkg.com/aos@2.3.1/dist/aos.css"
+          integrity="sha384-/rJKQnzOkEo+daG0jMjU1IwwY9unxt1NBw3Ef2fmOJ3PW/TfAg2KXVoWwMZQZtw9"
+          crossorigin="anonymous">
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"
+            integrity="sha384-wziAfh6b/qT+3LrqebF9WeK4+J5sehS6FA10J1t3a866kJ/fvU5UwofWnQyzLtwu"
+            crossorigin="anonymous"></script>
     
     <!-- Main Application Script -->
     <script src="app.js"></script>

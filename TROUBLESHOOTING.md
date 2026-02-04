@@ -171,9 +171,9 @@ docker-compose restart bunq-dashboard
 # Solution: Just login again
 
 # To check session lifetime:
-grep SESSION_LIFETIME api_proxy_session.py
+grep SESSION_LIFETIME api_proxy.py
 
-# To extend (edit api_proxy_session.py):
+# To extend (edit api_proxy.py):
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=48)
 ```
 
@@ -207,16 +207,19 @@ docker-compose restart bunq-dashboard
 document.cookie
 ```
 
-**Voor Basic Auth:**
+**Voor Session Auth:**
 
 ```bash
 # Clear browser cache/credentials
 # Hard refresh: Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac)
 
-# Test with curl:
-curl -u admin:password http://192.168.1.100:5000/api/health
+# Test login with curl:
+curl -c cookies.txt -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your_password"}' \
+  http://192.168.1.100:5000/api/auth/login
 
-# If curl works but browser doesn't: clear browser auth cache
+# Use session cookie for authenticated requests:
+curl -b cookies.txt http://192.168.1.100:5000/api/health
 ```
 
 ---
@@ -226,7 +229,7 @@ curl -u admin:password http://192.168.1.100:5000/api/health
 **Symptomen:**
 ```
 Access to fetch at 'http://192.168.1.100:5000/api/...' 
-from origin 'http://192.168.1.100:8000' 
+from origin 'http://192.168.1.100:5000' 
 has been blocked by CORS policy
 ```
 
@@ -259,9 +262,8 @@ ports:
 # NOT:
 ports:
   - "5000:5000"
-  - "8000:8000"  # ❌ Remove this!
 
-# Access via: http://192.168.1.100:5000 (not :8000!)
+# Access via: http://192.168.1.100:5000
 ```
 
 #### C. Mixed HTTP/HTTPS
@@ -380,7 +382,7 @@ docker-compose restart bunq-dashboard
 3. Enable "Use real Bunq data" checkbox
 4. Click Refresh
 
-# If login button missing: check you're using app_session.js
+# If login button missing: check you're using app.js
 ```
 
 #### B. Vaultwarden Not Configured
@@ -442,7 +444,7 @@ Rate limit exceeded. Please try again later.
 # To reset rate limiter:
 docker-compose restart bunq-dashboard
 
-# To increase limit (api_proxy_session.py):
+# To increase limit (api_proxy.py):
 # Find: max_reqs = 5 if endpoint == 'login'
 # Change to: max_reqs = 10 if endpoint == 'login'
 # Then rebuild
@@ -669,11 +671,16 @@ docker-compose logs -f bunq-dashboard
 # Health check:
 curl http://localhost:5000/api/health
 
-# Accounts (with auth):
-curl -u admin:password http://localhost:5000/api/accounts
+# Login to get session cookie:
+curl -c cookies.txt -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"your_password"}' \
+  http://localhost:5000/api/auth/login
+
+# Accounts (with session cookie):
+curl -b cookies.txt http://localhost:5000/api/accounts
 
 # Transactions:
-curl -u admin:password http://localhost:5000/api/transactions
+curl -b cookies.txt http://localhost:5000/api/transactions
 
 # Session status:
 curl -b cookies.txt http://localhost:5000/api/auth/status
