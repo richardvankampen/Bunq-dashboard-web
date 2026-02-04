@@ -233,6 +233,23 @@ def clamp_days(days):
         return 90
     return min(days_int, MAX_DAYS)
 
+def parse_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+def extract_own_ibans(accounts):
+    """Extract own IBANs from Bunq accounts for internal transfer detection."""
+    ibans = set()
+    for account in accounts:
+        aliases = getattr(account, 'alias', None) or []
+        for alias in aliases:
+            alias_type = getattr(alias, 'type', None)
+            alias_value = getattr(alias, 'value', None)
+            if alias_type == 'IBAN' and alias_value:
+                ibans.add(alias_value)
+    return ibans
+
 # ============================================
 # AUTHENTICATION ENDPOINTS
 # ============================================
@@ -562,10 +579,12 @@ def get_transactions():
     
     try:
         account_id = request.args.get('account_id')
+        account_ids_param = request.args.get('account_ids')
         days = clamp_days(request.args.get('days', 90))
         limit, offset, page, sort = parse_pagination()
         sort_desc = sort == 'desc'
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        exclude_internal = parse_bool(request.args.get('exclude_internal'), default=False)
         
         cache_key = make_cache_key('transactions')
         if cache_allowed():
@@ -575,53 +594,53 @@ def get_transactions():
         
         logger.info(f"📊 Fetching transactions (last {days} days) for {session.get('username')}")
         
-        if not account_id:
-            accounts = endpoint.MonetaryAccountBank.list().value
-            all_transactions = []
-            
-            for account in accounts:
-                transactions = get_account_transactions(account.id_, cutoff_date, sort_desc)
-                for trans in transactions:
-                    trans['account_id'] = account.id_
-                    trans['account_name'] = account.description
-                all_transactions.extend(transactions)
-            
-            all_transactions.sort(key=lambda t: t['date'], reverse=sort_desc)
-            total_count = len(all_transactions)
-            paged = all_transactions[offset:offset + limit]
-            
-            logger.info(f"✅ Retrieved {total_count} transactions (page {page})")
-            response = {
-                'success': True,
-                'data': paged,
-                'count': total_count,
-                'page': page,
-                'page_size': limit,
-                'sort': sort
-            }
-            
-            if cache_allowed():
-                cache.set(cache_key, response, timeout=CACHE_TTL_SECONDS)
-            
-            return jsonify(response)
+        accounts = endpoint.MonetaryAccountBank.list().value
+        accounts_by_id = {str(acc.id_): acc for acc in accounts}
+        own_ibans = extract_own_ibans(accounts)
+        
+        target_ids = None
+        if account_id:
+            target_ids = [str(account_id)]
+        elif account_ids_param:
+            target_ids = [part.strip() for part in account_ids_param.split(',') if part.strip()]
+        
+        if target_ids:
+            selected_accounts = [accounts_by_id[acc_id] for acc_id in target_ids if acc_id in accounts_by_id]
         else:
-            transactions = get_account_transactions(account_id, cutoff_date, sort_desc)
-            transactions.sort(key=lambda t: t['date'], reverse=sort_desc)
-            total_count = len(transactions)
-            paged = transactions[offset:offset + limit]
-            response = {
-                'success': True,
-                'data': paged,
-                'count': total_count,
-                'page': page,
-                'page_size': limit,
-                'sort': sort
-            }
-            
-            if cache_allowed():
-                cache.set(cache_key, response, timeout=CACHE_TTL_SECONDS)
-            
-            return jsonify(response)
+            selected_accounts = accounts
+        
+        all_transactions = []
+        for account in selected_accounts:
+            transactions = get_account_transactions(
+                account.id_,
+                cutoff_date,
+                sort_desc,
+                own_ibans,
+                account.description
+            )
+            all_transactions.extend(transactions)
+        
+        if exclude_internal:
+            all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]
+        
+        all_transactions.sort(key=lambda t: t['date'], reverse=sort_desc)
+        total_count = len(all_transactions)
+        paged = all_transactions[offset:offset + limit]
+        
+        logger.info(f"✅ Retrieved {total_count} transactions (page {page})")
+        response = {
+            'success': True,
+            'data': paged,
+            'count': total_count,
+            'page': page,
+            'page_size': limit,
+            'sort': sort
+        }
+        
+        if cache_allowed():
+            cache.set(cache_key, response, timeout=CACHE_TTL_SECONDS)
+        
+        return jsonify(response)
             
     except Exception as e:
         logger.error(f"❌ Error fetching transactions: {e}")
@@ -630,10 +649,11 @@ def get_transactions():
             'error': str(e)
         }), 500
 
-def get_account_transactions(account_id, cutoff_date=None, sort_desc=True):
+def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_ibans=None, account_name=None):
     """Get transactions for specific account"""
     payments = endpoint.Payment.list(monetary_account_id=account_id).value
     transactions = []
+    own_ibans = own_ibans or set()
     
     for payment in payments:
         created = datetime.fromisoformat(payment.created.replace('Z', '+00:00'))
@@ -643,7 +663,15 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True):
                 break
             continue
         
-        category = categorize_transaction(payment.description, payment.counterparty_alias)
+        is_internal_transfer = False
+        counterparty_alias = payment.counterparty_alias
+        if counterparty_alias:
+            alias_type = getattr(counterparty_alias, 'type', None)
+            alias_value = getattr(counterparty_alias, 'value', None)
+            if alias_type == 'IBAN' and alias_value in own_ibans:
+                is_internal_transfer = True
+        
+        category = categorize_transaction(payment.description, counterparty_alias, is_internal_transfer)
         
         transactions.append({
             'id': payment.id_,
@@ -654,13 +682,18 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True):
             'counterparty': payment.counterparty_alias.display_name if payment.counterparty_alias else 'Unknown',
             'merchant': payment.merchant_reference if hasattr(payment, 'merchant_reference') else None,
             'category': category,
-            'type': payment.type_
+            'type': payment.type_,
+            'account_id': account_id,
+            'account_name': account_name,
+            'is_internal_transfer': is_internal_transfer
         })
     
     return transactions
 
-def categorize_transaction(description, counterparty):
+def categorize_transaction(description, counterparty, is_internal=False):
     """Simple rule-based categorization"""
+    if is_internal:
+        return 'Internal Transfer'
     desc_lower = description.lower() if description else ''
     counter_lower = counterparty.display_name.lower() if counterparty and counterparty.display_name else ''
     combined = desc_lower + ' ' + counter_lower
@@ -700,6 +733,7 @@ def get_statistics():
     try:
         days = clamp_days(request.args.get('days', 90))
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        exclude_internal = parse_bool(request.args.get('exclude_internal'), default=False)
         
         cache_key = make_cache_key('statistics')
         if cache_allowed():
@@ -708,11 +742,21 @@ def get_statistics():
                 return jsonify(cached)
         
         accounts = endpoint.MonetaryAccountBank.list().value
+        own_ibans = extract_own_ibans(accounts)
         all_transactions = []
         
         for account in accounts:
-            transactions = get_account_transactions(account.id_, cutoff_date, True)
+            transactions = get_account_transactions(
+                account.id_,
+                cutoff_date,
+                True,
+                own_ibans,
+                account.description
+            )
             all_transactions.extend(transactions)
+        
+        if exclude_internal:
+            all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]
         
         income = sum(t['amount'] for t in all_transactions if t['amount'] > 0)
         expenses = abs(sum(t['amount'] for t in all_transactions if t['amount'] < 0))

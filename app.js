@@ -5,11 +5,13 @@
 
 // Global Configuration
 const DEFAULT_API_ENDPOINT = `${window.location.origin}/api`;
+const ACCOUNT_STORAGE_KEY = 'selectedAccountIds';
 const CONFIG = {
     apiEndpoint: localStorage.getItem('apiEndpoint') || DEFAULT_API_ENDPOINT,
     refreshInterval: parseInt(localStorage.getItem('refreshInterval')) || 0,
     enableAnimations: localStorage.getItem('enableAnimations') !== 'false',
     enableParticles: localStorage.getItem('enableParticles') !== 'false',
+    excludeInternalTransfers: localStorage.getItem('excludeInternalTransfers') !== 'false',
     timeRange: 90,
     useRealData: localStorage.getItem('useRealData') === 'true'
 };
@@ -19,6 +21,8 @@ let transactionsData = null;
 let refreshIntervalId = null;
 let isLoading = false;
 let isAuthenticated = false;
+let accountsList = [];
+let selectedAccountIds = new Set();
 const chartRegistry = {
     chartjs: {},
     plotly: {}
@@ -26,6 +30,21 @@ const chartRegistry = {
 let racingData = null;
 let racingPlayInterval = null;
 let timeTravelSpinInterval = null;
+
+function loadSelectedAccountIds() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(ACCOUNT_STORAGE_KEY) || '[]');
+        if (Array.isArray(stored)) {
+            selectedAccountIds = new Set(stored.map(String));
+            return;
+        }
+    } catch (error) {
+        console.warn('Failed to parse selectedAccountIds from storage');
+    }
+    selectedAccountIds = new Set();
+}
+
+loadSelectedAccountIds();
 
 // ============================================
 // SESSION-BASED AUTHENTICATION
@@ -47,9 +66,11 @@ async function checkAuthStatus() {
             if (isAuthenticated) {
                 console.log(`✅ Authenticated as: ${data.username}`);
                 updateAuthUI(true, data.username);
+                await loadAccounts();
             } else {
                 console.log('❌ Not authenticated');
                 updateAuthUI(false);
+                renderAccountsFilter([]);
             }
             
             return isAuthenticated;
@@ -84,6 +105,7 @@ async function login(username, password) {
             isAuthenticated = true;
             updateAuthUI(true, data.username);
             hideLoginModal();
+            await loadAccounts();
             
             // Load data after successful login
             if (CONFIG.useRealData) {
@@ -116,6 +138,7 @@ async function logout() {
         
         isAuthenticated = false;
         updateAuthUI(false);
+        renderAccountsFilter([]);
         console.log('👋 Logged out');
         
         // Switch to demo data
@@ -213,6 +236,98 @@ function updateAuthUI(authenticated, username = '') {
         CONFIG.useRealData = false;
         localStorage.setItem('useRealData', 'false');
     }
+}
+
+// ============================================
+// ACCOUNT FILTERING
+// ============================================
+
+async function loadAccounts() {
+    if (!isAuthenticated) {
+        accountsList = [];
+        renderAccountsFilter([]);
+        return;
+    }
+    
+    const response = await authenticatedFetch(`${CONFIG.apiEndpoint}/accounts`);
+    if (response && response.success) {
+        accountsList = response.data || [];
+        renderAccountsFilter(accountsList);
+    } else {
+        accountsList = [];
+        renderAccountsFilter([]);
+    }
+}
+
+function persistSelectedAccounts() {
+    localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(Array.from(selectedAccountIds)));
+}
+
+function renderAccountsFilter(accounts) {
+    const container = document.getElementById('accountsFilter');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    if (!isAuthenticated) {
+        const info = document.createElement('p');
+        info.className = 'setting-help';
+        info.textContent = 'Login required to load accounts.';
+        container.appendChild(info);
+        return;
+    }
+    
+    if (!accounts.length) {
+        const info = document.createElement('p');
+        info.className = 'setting-help';
+        info.textContent = 'No accounts found.';
+        container.appendChild(info);
+        return;
+    }
+    
+    if (selectedAccountIds.size === 0) {
+        accounts.forEach(account => selectedAccountIds.add(String(account.id)));
+        persistSelectedAccounts();
+    }
+    
+    const actions = document.createElement('div');
+    actions.className = 'accounts-actions';
+    
+    const selectAllBtn = document.createElement('button');
+    selectAllBtn.type = 'button';
+    selectAllBtn.textContent = 'Select all';
+    selectAllBtn.addEventListener('click', () => {
+        selectedAccountIds = new Set(accounts.map(a => String(a.id)));
+        persistSelectedAccounts();
+        renderAccountsFilter(accounts);
+    });
+    
+    actions.appendChild(selectAllBtn);
+    container.appendChild(actions);
+    
+    accounts.forEach(account => {
+        const label = document.createElement('label');
+        label.className = 'account-option';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = selectedAccountIds.has(String(account.id));
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) {
+                selectedAccountIds.add(String(account.id));
+            } else {
+                selectedAccountIds.delete(String(account.id));
+            }
+            persistSelectedAccounts();
+        });
+        
+        const text = document.createElement('span');
+        text.textContent = `${account.description} (${account.balance?.currency || 'EUR'})`;
+        
+        label.appendChild(checkbox);
+        label.appendChild(text);
+        container.appendChild(label);
+    });
 }
 
 /**
@@ -411,8 +526,11 @@ async function loadRealData() {
         let total = null;
         let lastResponse = null;
         
+        const accountParam = buildAccountFilterParam();
+        const excludeParam = `&exclude_internal=${CONFIG.excludeInternalTransfers}`;
+        
         while (page <= maxPages) {
-            const url = `${CONFIG.apiEndpoint}/transactions?days=${CONFIG.timeRange}&page=${page}&page_size=${pageSize}`;
+            const url = `${CONFIG.apiEndpoint}/transactions?days=${CONFIG.timeRange}&page=${page}&page_size=${pageSize}${accountParam}${excludeParam}`;
             const response = await authenticatedFetch(url);
             lastResponse = response;
             
@@ -482,6 +600,7 @@ function getCategoryColor(category) {
         'Entertainment': '#06b6d4',
         'Zorg': '#6366f1',
         'Salaris': '#22c55e',
+        'Internal Transfer': '#94a3b8',
         'Overig': '#6b7280'
     };
     return colors[category] || '#6b7280';
@@ -552,7 +671,8 @@ function generateDemoTransactions(days) {
 function processAndRenderData(data) {
     console.log(`📊 Processing ${data.length} transactions...`);
     
-    const normalized = normalizeTransactions(data);
+    const filtered = applyClientFilters(data);
+    const normalized = normalizeTransactions(filtered);
     const kpis = calculateKPIs(normalized);
     renderKPIs(kpis, normalized);
 
@@ -567,6 +687,27 @@ function processAndRenderData(data) {
     renderInsights(normalized, kpis);
     
     console.log('✅ All visualizations rendered!');
+}
+
+function buildAccountFilterParam() {
+    if (!accountsList.length) return '';
+    if (selectedAccountIds.size === 0 || selectedAccountIds.size === accountsList.length) {
+        return '';
+    }
+    const ids = Array.from(selectedAccountIds).join(',');
+    return `&account_ids=${encodeURIComponent(ids)}`;
+}
+
+function applyClientFilters(data) {
+    let filtered = [...data];
+    if (CONFIG.excludeInternalTransfers) {
+        filtered = filtered.filter(t => !t.is_internal_transfer);
+    }
+    if (accountsList.length && selectedAccountIds.size > 0 && selectedAccountIds.size < accountsList.length) {
+        const allowed = new Set(Array.from(selectedAccountIds).map(String));
+        filtered = filtered.filter(t => allowed.has(String(t.account_id)));
+    }
+    return filtered;
 }
 
 function normalizeTransactions(data) {
@@ -1229,6 +1370,8 @@ function openSettings() {
     document.getElementById('enableAnimations').checked = CONFIG.enableAnimations;
     document.getElementById('enableParticles').checked = CONFIG.enableParticles;
     document.getElementById('useRealData').checked = CONFIG.useRealData;
+    document.getElementById('excludeInternalTransfers').checked = CONFIG.excludeInternalTransfers;
+    renderAccountsFilter(accountsList);
     
     document.getElementById('settingsModal')?.classList.add('active');
 }
@@ -1242,11 +1385,13 @@ function saveSettings() {
     CONFIG.refreshInterval = parseInt(document.getElementById('refreshInterval').value);
     CONFIG.enableAnimations = document.getElementById('enableAnimations').checked;
     CONFIG.enableParticles = document.getElementById('enableParticles').checked;
+    CONFIG.excludeInternalTransfers = document.getElementById('excludeInternalTransfers').checked;
     
     localStorage.setItem('apiEndpoint', CONFIG.apiEndpoint);
     localStorage.setItem('refreshInterval', CONFIG.refreshInterval);
     localStorage.setItem('enableAnimations', CONFIG.enableAnimations);
     localStorage.setItem('enableParticles', CONFIG.enableParticles);
+    localStorage.setItem('excludeInternalTransfers', CONFIG.excludeInternalTransfers);
     
     closeSettings();
     
@@ -1258,6 +1403,7 @@ function saveSettings() {
     }
     
     console.log('✅ Settings saved');
+    refreshData();
 }
 
 function toggleTheme() {

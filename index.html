@@ -451,10 +451,23 @@
                 </div>
                 <div class="setting-group">
                     <label>
+                        <input type="checkbox" id="excludeInternalTransfers" checked>
+                        Exclude internal transfers (recommended)
+                    </label>
+                    <p class="setting-help">Transfers between your own Bunq accounts won't count as income or expense.</p>
+                </div>
+                <div class="setting-group">
+                    <label>
                         <input type="checkbox" id="useRealData">
                         Use real Bunq data (requires login)
                     </label>
                     <p class="setting-help">If disabled, the dashboard uses built-in demo data.</p>
+                </div>
+                <div class="setting-group">
+                    <label>Accounts to include</label>
+                    <div id="accountsFilter" class="accounts-filter">
+                        <p class="setting-help">Login required to load accounts.</p>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">

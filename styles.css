@@ -930,6 +930,48 @@ body {
     color: var(--text-muted);
 }
 
+.accounts-filter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--glass-bg);
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.accounts-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-xs);
+}
+
+.accounts-actions button {
+    border: 1px solid var(--glass-border);
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all var(--transition-fast);
+}
+
+.accounts-actions button:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+}
+
+.account-option {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
 .modal-footer {
     padding: var(--spacing-lg);
     border-top: 1px solid var(--glass-border);
