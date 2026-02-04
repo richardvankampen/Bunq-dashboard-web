@@ -152,6 +152,12 @@ DraftPayment.create()       # ❌ DISABLED
 
 **Remark (SRI/CDN):** Subresource Integrity is useful for public-facing apps, but for a VPN-only, single-user setup the practical risk is low. We intentionally keep Google Fonts on the CDN without SRI to avoid extra complexity. If you expose this publicly or add users, reconsider SRI or self-hosting fonts.
 
+**VPN-only verification checklist:**
+1. From a phone on **5G without VPN**, run: `curl -vk --connect-timeout 5 https://your-subdomain.your-domain`
+2. Expected result: **timeout / no response** (good). Any HTML/headers means it’s publicly reachable (bad).
+3. From **LAN/Wi-Fi**, you may see a certificate warning if you use a self-signed cert. That’s normal for internal access.
+4. From **VPN**, the dashboard should load at `https://your-subdomain.your-domain`.
+
 ---
 
 ## 📖 Complete Documentation
