@@ -53,8 +53,6 @@ Via SSH:
 ```bash
 sudo mkdir -p /volume1/docker/vaultwarden
 sudo mkdir -p /volume1/docker/bunq-dashboard
-sudo mkdir -p /volume1/docker/bunq-dashboard/config
-sudo mkdir -p /volume1/docker/bunq-dashboard/logs
 
 # Set permissions
 sudo chmod -R 755 /volume1/docker
@@ -65,8 +63,8 @@ Of via File Station:
 File Station → docker (create if not exists)
 ├── vaultwarden (nieuwe map)
 └── bunq-dashboard (nieuwe map)
-    ├── config (nieuwe map)
-    └── logs (nieuwe map)
+
+**Let op:** `config` en `logs` worden later aangemaakt (Deel 3) nadat de repo is gedownload.
 ```
 
 ---
@@ -238,8 +236,12 @@ Vaultwarden → Account Settings → Security
 
 ```bash
 cd /volume1/docker/bunq-dashboard
-sudo git clone https://github.com/richardvankampen/Bunq-Jupyter.git .
+sudo git clone https://github.com/richardvankampen/Bunq-dashboard-web.git .
 ```
+
+**Let op:** Dit werkt alleen als `/volume1/docker/bunq-dashboard/` leeg is.  
+Krijg je `fatal: destination path '.' already exists and is not an empty directory`?  
+Verwijder (of verplaats) eerst bestaande mappen/bestanden zoals `config/` en `logs/`, of clone naar een submap zonder de trailing `.`.
 
 **Optie B: Manual Download**
 
@@ -253,7 +255,14 @@ ls /volume1/docker/bunq-dashboard/
 # Should show: index.html, styles.css, app.js, api_proxy.py, etc.
 ```
 
-### Stap 3.2: Configureer Environment
+### Stap 3.2: Maak Runtime Mappen
+
+```bash
+sudo mkdir -p /volume1/docker/bunq-dashboard/config
+sudo mkdir -p /volume1/docker/bunq-dashboard/logs
+```
+
+### Stap 3.3: Configureer Environment
 
 Maak `/volume1/docker/bunq-dashboard/.env`:
 
@@ -275,7 +284,7 @@ FLASK_DEBUG=false
 
 ⚠️ **BELANGRIJK**: Vervang `CLIENT_ID` en `CLIENT_SECRET` met jouw waarden van stap 2.6!
 
-### Stap 3.3: Update docker-compose.yml
+### Stap 3.4: Update docker-compose.yml
 
 Maak/Edit `/volume1/docker/bunq-dashboard/docker-compose.yml`:
 
@@ -323,12 +332,12 @@ networks:
     external: true
 ```
 
-### Stap 3.4: Vaultwarden Integratie (al ingebouwd)
+### Stap 3.5: Vaultwarden Integratie (al ingebouwd)
 
 De `api_proxy.py` bevat standaard Vaultwarden-integratie. Zorg alleen dat je
-`.env` correct is ingevuld (zoals in stap 3.2) en dat `USE_VAULTWARDEN=true` staat.
+`.env` correct is ingevuld (zoals in stap 3.3) en dat `USE_VAULTWARDEN=true` staat.
 
-### Stap 3.5: Build en Start
+### Stap 3.6: Build en Start
 
 ```bash
 cd /volume1/docker/bunq-dashboard
@@ -352,7 +361,7 @@ Je zou moeten zien:
 ✅ Dashboard running on http://0.0.0.0:5000
 ```
 
-### Stap 3.6: Open Dashboard
+### Stap 3.7: Open Dashboard
 
 Browser: `http://192.168.1.100:5000`
 
@@ -543,7 +552,7 @@ sudo chmod -R 755 /volume1/docker/bunq-dashboard
 
 ## 📞 Need Help?
 
-- GitHub Issues: [Create Issue](https://github.com/richardvankampen/Bunq-Jupyter/issues)
+- GitHub Issues: [Create Issue](https://github.com/richardvankampen/Bunq-dashboard-web/issues)
 - Synology Forums: [DSM 7 Section](https://community.synology.com/enu/forum/1)
 - Vaultwarden: [GitHub Discussions](https://github.com/dani-garcia/vaultwarden/discussions)
 
