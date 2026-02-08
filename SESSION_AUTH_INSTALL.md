@@ -1,5 +1,12 @@
 # 🔐 SESSION-BASED AUTHENTICATION - Installatie Guide
 
+## 🧭 Navigatie
+
+- Startpunt en overzicht: [README.md](README.md)
+- Synology install: [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
+- Security hardening: [SECURITY.md](SECURITY.md)
+- Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
 ## ✨ WAT IS ER VERANDERD?
 
 **Voorheen (Basic Auth met localStorage):**
@@ -196,7 +203,8 @@ cd /volume1/docker/bunq-dashboard
 sudo docker build -t bunq-dashboard:local .
 
 # Deploy stack
-sudo docker stack deploy -c docker-compose.yml bunq
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 
 # Check logs
 sudo docker service logs -f bunq_bunq-dashboard
@@ -388,7 +396,8 @@ docker secret ls | grep bunq_flask_secret_key
 python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
 
 # Redeploy:
-docker stack deploy -c docker-compose.yml bunq
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 ### Probleem: "CORS error" na update
@@ -400,8 +409,9 @@ docker stack deploy -c docker-compose.yml bunq
 # In .env:
 ALLOWED_ORIGINS=http://192.168.1.100:5000
 
-# Herstart:
-docker service update --force bunq_bunq-dashboard
+# Herstart (reload .env):
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 ### Probleem: Login modal verschijnt niet

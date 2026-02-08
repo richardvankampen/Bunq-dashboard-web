@@ -7,6 +7,13 @@ Comprehensive troubleshooting guide voor alle bekende problemen en hun oplossing
 
 ---
 
+## 🧭 Navigatie
+
+- Startpunt en overzicht: [README.md](README.md)
+- Synology install: [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
+- Security hardening: [SECURITY.md](SECURITY.md)
+- Session auth upgrades: [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
+
 ## 📋 Quick Diagnostic
 
 Start hier als je niet zeker weet wat het probleem is:
@@ -77,7 +84,9 @@ sudo chmod -R 755 /volume1/docker/bunq-dashboard
 
 # Recreate containers
 docker stack rm bunq
-docker service update --force bunq_bunq-dashboard
+# Redeploy (reload .env)
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 #### D. Syntax Error in Code
@@ -108,8 +117,12 @@ docker ps | grep bunq-dashboard
 # If not running, check why:
 docker service logs bunq_bunq-dashboard
 
-# Restart
+# Restart service
 docker service update --force bunq_bunq-dashboard
+
+# If service doesn't exist, redeploy:
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 #### B. Firewall Blocking
@@ -167,8 +180,9 @@ docker secret ls | grep bunq_basic_auth_password
 sudo docker secret rm bunq_basic_auth_password
 printf "NewStrongPassword" | sudo docker secret create bunq_basic_auth_password -
 
-# Redeploy
-docker stack deploy -c docker-compose.yml bunq
+# Redeploy (reload .env)
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 #### B. Session Expired
@@ -191,8 +205,9 @@ docker secret ls | grep bunq_flask_secret_key
 # If missing, create:
 python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
 
-# Redeploy
-docker stack deploy -c docker-compose.yml bunq
+# Redeploy (reload .env)
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 
 # ⚠️ WARNING: Changing secret key invalidates all sessions!
 ```
@@ -250,8 +265,9 @@ ALLOWED_ORIGINS=http://192.168.1.100:5000
 # Multiple origins (comma-separated):
 ALLOWED_ORIGINS=http://192.168.1.100:5000,http://10.8.0.5:5000
 
-# After changing:
-docker service update --force bunq_bunq-dashboard
+# After changing (reload .env):
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 #### B. Using Wrong Port
@@ -320,7 +336,7 @@ docker secret ls | grep bunq_vaultwarden_client
    - `printf "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -`
    - `sudo docker secret rm bunq_vaultwarden_client_secret`
    - `printf "your_client_secret" | sudo docker secret create bunq_vaultwarden_client_secret -`
-6. Redeploy: `docker stack deploy -c docker-compose.yml bunq`
+6. Redeploy: `set -a; source .env; set +a; sudo -E docker stack deploy -c docker-compose.yml bunq`
 ```
 
 #### C. Network Issues Between Containers
@@ -330,11 +346,17 @@ docker exec "$BUNQ_CONTAINER" ping vaultwarden
 
 # If fails, check network:
 docker network ls
-docker network inspect bridge
+docker network inspect bunq-net
 
-# Recreate network (optional):
-docker stack rm bunq
-docker stack deploy -c docker-compose.yml bunq
+# If bunq-net is missing:
+sudo docker network create --driver overlay --attachable bunq-net
+
+# Ensure Vaultwarden is attached:
+sudo docker network connect bunq-net vaultwarden
+
+# Redeploy (reload .env):
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 #### D. Item Name Mismatch
@@ -424,8 +446,9 @@ BUNQ_ENVIRONMENT=SANDBOX     # For testing
 # Ensure API key matches environment!
 # Sandbox key doesn't work with PRODUCTION and vice versa
 
-# After changing:
-docker service update --force bunq_bunq-dashboard
+# After changing (reload .env):
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 ---
@@ -509,8 +532,9 @@ SESSION_COOKIE_SECURE=true   # For HTTPS
 # If accessing via http://, set to false
 # If accessing via https://, set to true
 
-# After changing:
-docker service update --force bunq_bunq-dashboard
+# After changing (reload .env):
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 ---
@@ -527,7 +551,7 @@ docker service update --force bunq_bunq-dashboard
 #### A. Resource Constraints
 ```bash
 # Check container resources:
-docker stats bunq-dashboard
+docker stats "$BUNQ_CONTAINER"
 
 # If CPU/Memory maxed out:
 # Edit docker-compose.yml:
@@ -540,7 +564,8 @@ services:
           memory: 2048M    # Increase from 1024M
 
 # Restart:
-docker stack deploy -c docker-compose.yml bunq
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 #### B. Bunq API Slow
@@ -613,17 +638,18 @@ docker service logs bunq_bunq-dashboard | grep transaction
 # Check .env file location:
 ls -la /volume1/docker/bunq-dashboard/.env
 
-# Verify docker-compose.yml loads .env:
-# Should have in docker-compose.yml:
-environment:
-  SOME_VAR: "${SOME_VAR}"
+# Ensure .env is loaded into the shell before deploy:
+set -a; source .env; set +a
+# If using sudo, preserve env:
+sudo -E docker stack deploy -c docker-compose.yml bunq
 
 # Test variable loading:
 docker exec "$BUNQ_CONTAINER" env | grep BUNQ
 
 # Rebuild if needed:
 docker stack rm bunq
-docker stack deploy -c docker-compose.yml bunq
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 ```
 
 ---
@@ -658,8 +684,9 @@ fetch('http://...')         # ❌ Hardcoded
 FLASK_DEBUG=true
 LOG_LEVEL=DEBUG
 
-# Restart:
-docker service update --force bunq_bunq-dashboard
+# Restart (reload .env):
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 
 # Watch logs:
 docker service logs -f bunq_bunq-dashboard
@@ -710,6 +737,7 @@ sudo chmod -R 755 /volume1/docker/bunq-dashboard/
 #!/bin/bash
 echo "=== Docker Status ===" > diagnostic.txt
 docker ps >> diagnostic.txt
+BUNQ_CONTAINER=$(docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
 echo "
 === Container Logs ===" >> diagnostic.txt
 docker service logs bunq_bunq-dashboard >> diagnostic.txt 2>&1
@@ -718,7 +746,7 @@ echo "
 docker exec "$BUNQ_CONTAINER" env | grep -v SECRET | grep -v PASSWORD >> diagnostic.txt
 echo "
 === Network ===" >> diagnostic.txt
-docker network inspect bridge >> diagnostic.txt
+docker network inspect bunq-net >> diagnostic.txt
 echo "
 === Health ===" >> diagnostic.txt
 curl http://localhost:5000/api/health >> diagnostic.txt 2>&1

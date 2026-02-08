@@ -10,8 +10,8 @@ from flask import Flask, jsonify, request, Response, session, make_response, sen
 from flask_cors import CORS
 from flask_caching import Cache
 from functools import wraps
-from bunq import ApiEnvironmentType
 from bunq.sdk.context.api_context import ApiContext
+from bunq.sdk.context.api_environment_type import ApiEnvironmentType
 from bunq.sdk.context.bunq_context import BunqContext
 from bunq.sdk.model.generated import endpoint
 from datetime import datetime, timedelta, timezone
@@ -28,15 +28,29 @@ from collections import defaultdict
 # LOGGING CONFIGURATION
 # ============================================
 
+APP_DIR = os.path.abspath(os.path.dirname(__file__))
+LOG_DIR = os.path.join(APP_DIR, 'logs')
+os.makedirs(LOG_DIR, exist_ok=True)
+
 logging.basicConfig(
     level=os.getenv('LOG_LEVEL', 'INFO'),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/bunq_api.log'),
+        logging.FileHandler(os.path.join(LOG_DIR, 'bunq_api.log')),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
+
+def get_int_env(name, default):
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning(f"⚠️ Invalid {name}='{value}', using default {default}")
+        return default
 
 # ============================================
 # SECRET HELPERS (Docker Swarm secrets)
@@ -73,15 +87,15 @@ def has_config(key, secret_name=None):
 # ============================================
 
 app = Flask(__name__)
-STATIC_DIR = os.path.abspath(os.path.dirname(__file__))
+STATIC_DIR = APP_DIR
 STATIC_FILES = {'index.html', 'styles.css', 'app.js'}
 
 # Simple in-memory cache (per process)
 CACHE_ENABLED = os.getenv('CACHE_ENABLED', 'true').lower() == 'true'
-CACHE_TTL_SECONDS = int(os.getenv('CACHE_TTL_SECONDS', '60'))
-DEFAULT_PAGE_SIZE = int(os.getenv('DEFAULT_PAGE_SIZE', '500'))
-MAX_PAGE_SIZE = int(os.getenv('MAX_PAGE_SIZE', '2000'))
-MAX_DAYS = int(os.getenv('MAX_DAYS', '3650'))
+CACHE_TTL_SECONDS = get_int_env('CACHE_TTL_SECONDS', 60)
+DEFAULT_PAGE_SIZE = get_int_env('DEFAULT_PAGE_SIZE', 500)
+MAX_PAGE_SIZE = get_int_env('MAX_PAGE_SIZE', 2000)
+MAX_DAYS = get_int_env('MAX_DAYS', 3650)
 
 cache = Cache(app, config={
     'CACHE_TYPE': 'SimpleCache',
@@ -100,7 +114,11 @@ logger.info(f"🔐 Session cookie secure: {app.config['SESSION_COOKIE_SECURE']}"
 logger.info(f"⏱️  Session lifetime: 24 hours")
 
 # CORS Configuration - WITH CREDENTIALS SUPPORT
-ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5000').split(',')
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv('ALLOWED_ORIGINS', 'http://localhost:5000').split(',')
+    if origin.strip()
+]
 logger.info(f"🔒 CORS allowed origins: {ALLOWED_ORIGINS}")
 
 CORS(app, 

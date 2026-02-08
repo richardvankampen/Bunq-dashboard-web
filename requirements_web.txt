@@ -6,6 +6,7 @@ flask-cors==6.0.2
 
 # Bunq SDK
 bunq-sdk==1.28.0
+requests==2.32.3  # HTTP client (Vaultwarden)
 
 # Optional: For enhanced functionality
 python-dotenv==1.2.1  # Environment variable management

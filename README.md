@@ -29,6 +29,16 @@ Deze repository gebruikt **standaard session-based authentication**:
 
 ---
 
+## 🧭 Documentation Map
+
+- **Start here (overview):** This README
+- **Synology install (full guide):** [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
+- **Upgrading an older install:** [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
+- **Security hardening:** [SECURITY.md](SECURITY.md)
+- **Troubleshooting:** [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
+---
+
 ## ✨ Features
 
 - 🎨 **Glassmorphism Design** - Modern UI met blur effecten
@@ -88,6 +98,14 @@ cp .env.example .env
 # One-time: initialize Swarm
 docker swarm init
 
+# One-time: create attachable network
+docker network create --driver overlay --attachable bunq-net
+# If it already exists, you can ignore the error.
+
+# If Vaultwarden runs as standalone container, attach it:
+docker network connect bunq-net vaultwarden
+# If already attached, you can ignore the error.
+
 # Create Docker secrets
 printf "YourStrongPassword" | docker secret create bunq_basic_auth_password -
 python3 -c "import secrets; print(secrets.token_hex(32))" | docker secret create bunq_flask_secret_key -
@@ -97,10 +115,14 @@ printf "your_vaultwarden_client_secret" | docker secret create bunq_vaultwarden_
 # Build image
 docker build -t bunq-dashboard:local .
 
+# Load .env into your shell for variable substitution
+set -a; source .env; set +a
+
 # Deploy stack
 docker stack deploy -c docker-compose.yml bunq
 
 # Note: Vaultwarden must be running separately (see SYNOLOGY_INSTALL.md)
+# Ensure it's attached to bunq-net and reachable as http://vaultwarden:80
 # Not on Synology? Update bind-mount paths in docker-compose.yml to valid local paths.
 
 # Check logs
@@ -192,6 +214,7 @@ docker service logs bunq_bunq-dashboard
 
 # Common fixes:
 docker build -t bunq-dashboard:local .
+set -a; source .env; set +a
 docker stack deploy -c docker-compose.yml bunq
 ```
 
@@ -222,8 +245,9 @@ cat .env | grep BASIC_AUTH_USERNAME
 # Check secrets exist
 docker secret ls | grep bunq_
 
-# Restart container
-docker service update --force bunq_bunq-dashboard
+# Restart (reload .env)
+set -a; source .env; set +a
+docker stack deploy -c docker-compose.yml bunq
 ```
 
 ### Demo data keeps loading (no real data)?
@@ -241,12 +265,14 @@ Voor meer troubleshooting, zie de volledige installatie guides.
 ### Environment Variables
 
 Zie [.env.example](.env.example) voor een complete lijst met alle configuratie opties.
+`.env` bevat alleen niet‑gevoelige waarden; secrets gaan via Docker Swarm.
 
 **Kritieke Docker secrets:**
 - `bunq_flask_secret_key` - Voor session encryption (64 chars random hex)
 - `bunq_basic_auth_password` - Dashboard login wachtwoord
 - `bunq_vaultwarden_client_id` - Voor API key retrieval
 - `bunq_vaultwarden_client_secret` - Voor API key retrieval
+- `bunq_api_key` - Alleen als `USE_VAULTWARDEN=false`
 
 **Belangrijke .env variabelen:**
 - `ALLOWED_ORIGINS` - CORS policy (je NAS IP)

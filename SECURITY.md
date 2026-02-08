@@ -7,6 +7,13 @@ Complete security guide voor veilig gebruik van het Bunq Dashboard.
 
 ---
 
+## 🧭 Navigatie
+
+- Startpunt en overzicht: [README.md](README.md)
+- Installatie: [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
+- Session auth upgrades: [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
+- Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
 ## 🎯 Security Overview
 
 Het Bunq Dashboard is ontworpen met **security-first** principes:
@@ -15,7 +22,7 @@ Het Bunq Dashboard is ontworpen met **security-first** principes:
 |------------------|----------------|--------|
 | **API Access** | READ-ONLY | ✅ Verified |
 | **Authentication** | Session-based cookies | ✅ Recommended |
-| **Secret Management** | Vaultwarden vault | ✅ Encrypted |
+| **Secret Management** | Vaultwarden + Swarm secrets | ✅ Encrypted |
 | **Network Access** | VPN-only | ✅ Required |
 | **CSRF Protection** | SameSite cookies | ✅ Enabled |
 | **XSS Protection** | HttpOnly cookies | ✅ Enabled |
@@ -120,6 +127,13 @@ curl http://192.168.1.100:5000
 - Enable signups permanently
 ```
 
+**Vaultwarden vs Docker Swarm secrets (aanbevolen):**
+- Vaultwarden: ideaal voor de Bunq API key (rotatie, audit logs, UI).
+- Swarm secrets: ideaal voor runtime-only secrets (dashboard wachtwoord, Flask secret key).
+- Aanbevolen split: Bunq API key in Vaultwarden, overige secrets in Swarm.
+- Zonder Vaultwarden: gebruik `bunq_api_key` als Swarm secret, maar je mist rotatie/audit en het UI-gemak.
+- Let op: Swarm secrets beschermen tegen accidental leaks, maar root op de host kan ze nog steeds lezen.
+
 **Vaultwarden Hardening:**
 ```bash
 # In docker-compose.yml:
@@ -220,6 +234,12 @@ LOG_LEVEL=INFO              # Or WARNING for production
 # - bunq_vaultwarden_client_id
 # - bunq_vaultwarden_client_secret
 # - bunq_api_key (only if USE_VAULTWARDEN=false)
+```
+
+**File permissions (aanbevolen):**
+```bash
+# .env bevat geen secrets, maar bevat wel je configuratie
+chmod 600 /volume1/docker/bunq-dashboard/.env
 ```
 
 ---
@@ -339,8 +359,9 @@ server {
 SESSION_COOKIE_SECURE=true
 ALLOWED_ORIGINS=https://bunq.yourdomain.com
 
-# Restart dashboard:
-docker service update --force bunq_bunq-dashboard
+# Restart dashboard (reload .env):
+set -a; source .env; set +a
+docker stack deploy -c docker-compose.yml bunq
 ```
 
 ---
@@ -381,6 +402,7 @@ ls -lh /volume1/docker/bunq-dashboard/backups/
 
 # 3. Review and update packages
 docker build -t bunq-dashboard:local .
+set -a; source .env; set +a
 docker stack deploy -c docker-compose.yml bunq
 
 # 4. Security audit
@@ -457,6 +479,7 @@ docker service logs bunq_bunq-dashboard > incident-$(date +%Y%m%d).log
 
 # 5. Restart with new credentials
 # Update Docker secrets / .env, then redeploy
+set -a; source .env; set +a
 docker stack deploy -c docker-compose.yml bunq
 
 # 6. Report incident (if needed)

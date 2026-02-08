@@ -4,6 +4,14 @@ Complete stap-voor-stap instructies voor het installeren van Bunq Dashboard op j
 
 ---
 
+## 🧭 Navigatie
+
+- Startpunt en overzicht: [README.md](README.md)
+- Installatie (dit document): [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
+- Security hardening: [SECURITY.md](SECURITY.md)
+- Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+- Session auth upgrades: [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
+
 ## 📋 Vereisten
 
 ### Hardware
@@ -111,7 +119,7 @@ Resource Limits:
 └── Memory: 512 MB
 
 Network:
-└── bridge (default)
+└── bridge (default — we’ll attach to `bunq-net` in stap 3.3)
 ```
 
 **Of via docker-compose** (`/volume1/docker/vaultwarden/docker-compose.yml`):
@@ -136,6 +144,9 @@ services:
       SIGNUPS_ALLOWED: "true"  # Change to false after first account!
       LOG_LEVEL: "info"
       WEBSOCKET_ENABLED: "true"
+
+    # Later in stap 3.3, connect to bunq-net:
+    # sudo docker network connect bunq-net vaultwarden
 ```
 
 ### Stap 2.3: Start Vaultwarden
@@ -274,7 +285,7 @@ Maak `/volume1/docker/bunq-dashboard/.env` met **niet‑gevoelige** settings.
 | Variabele | Betekenis | Aanbevolen/default waarde |
 |---|---|---|
 | `BASIC_AUTH_USERNAME` | Inlog gebruikersnaam voor het dashboard | `admin` (of eigen keuze) |
-| `VAULTWARDEN_URL` | Interne URL van Vaultwarden container | `http://vaultwarden:80` |
+| `VAULTWARDEN_URL` | Interne URL van Vaultwarden container | `http://vaultwarden:80` (zelfde network) |
 | `VAULTWARDEN_ITEM_NAME` | Naam van het Vault item met je Bunq API key | `Bunq API Key` |
 | `USE_VAULTWARDEN` | Gebruik Vaultwarden i.p.v. directe API key | `true` |
 | `BUNQ_ENVIRONMENT` | Bunq omgeving | `PRODUCTION` (of `SANDBOX` voor test) |
@@ -307,6 +318,9 @@ LOG_LEVEL=INFO
 FLASK_DEBUG=false
 ```
 
+**Tip:** Gebruik `http://vaultwarden:80` als Vaultwarden op hetzelfde `bunq-net` netwerk draait.  
+Gebruik `http://<NAS-IP>:9000` als je Vaultwarden via host/IP benadert.
+
 #### B) Docker secrets (verplicht)
 
 Gevoelige waarden gaan in Docker Swarm secrets.
@@ -315,6 +329,17 @@ Gevoelige waarden gaan in Docker Swarm secrets.
 ```bash
 sudo docker swarm init
 # Als je een melding krijgt dat dit al actief is: negeren.
+```
+
+**Netwerk (voor Vaultwarden koppeling):**
+```bash
+# Create an attachable overlay network for Swarm + standalone containers
+sudo docker network create --driver overlay --attachable bunq-net
+# Bestaat hij al? "already exists" is oké.
+
+# Connect Vaultwarden container (from stap 2) to bunq-net
+sudo docker network connect bunq-net vaultwarden
+# Als hij al verbonden is, kun je de foutmelding negeren.
 ```
 
 **Verplicht (Docker secrets):**
@@ -354,9 +379,7 @@ services:
   bunq-dashboard:
     image: bunq-dashboard:local
     build: .
-    container_name: bunq-dashboard
-    restart: unless-stopped
-    
+
     ports:
       - "5000:5000"  # Dashboard + API
 
@@ -394,7 +417,14 @@ services:
       - /volume1/docker/bunq-dashboard/logs:/app/logs
     
     networks:
-      - bridge
+      - bunq-net
+
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 60s
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
@@ -404,7 +434,7 @@ services:
       start_period: 20s
 
 networks:
-  bridge:
+  bunq-net:
     external: true
 
 secrets:
@@ -421,7 +451,7 @@ secrets:
   #   external: true
 ```
 
-**Let op:** Zorg dat de Vaultwarden container uit Deel 2 op hetzelfde `bridge` netwerk draait (standaard in Synology).
+**Let op:** Zorg dat de Vaultwarden container uit Deel 2 op hetzelfde `bunq-net` netwerk draait (zie stap 3.3).
 
 ### Stap 3.5: Vaultwarden Integratie (al ingebouwd)
 
@@ -436,8 +466,11 @@ cd /volume1/docker/bunq-dashboard
 # Build image
 sudo docker build -t bunq-dashboard:local .
 
+# Load .env into shell (for variable substitution)
+set -a; source .env; set +a
+
 # Deploy stack (Swarm)
-sudo docker stack deploy -c docker-compose.yml bunq
+sudo -E docker stack deploy -c docker-compose.yml bunq
 
 # Check logs
 sudo docker service logs -f bunq_bunq-dashboard
@@ -529,7 +562,8 @@ cd /volume1/docker/bunq-dashboard
 sudo docker build -t bunq-dashboard:local .
 
 # Redeploy stack
-sudo docker stack deploy -c docker-compose.yml bunq
+set -a; source .env; set +a
+sudo -E docker stack deploy -c docker-compose.yml bunq
 
 # Verify
 sudo docker stack ps bunq
@@ -565,54 +599,13 @@ No code changes needed! ✨
 
 ---
 
-## 🐛 Troubleshooting
+## 🐛 Troubleshooting (kort)
 
-### Container won't start
+- Logs: `sudo docker service logs -f bunq_bunq-dashboard` en `sudo docker logs vaultwarden`
+- Connectivity: `sudo docker exec $(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1) ping vaultwarden`
+- Redeploy na .env wijziging: `set -a; source .env; set +a; sudo -E docker stack deploy -c docker-compose.yml bunq`
 
-```bash
-# Check logs
-sudo docker service logs bunq_bunq-dashboard
-
-# Common fixes:
-sudo docker service update --force bunq_bunq-dashboard
-```
-
-### Vaultwarden connection failed
-
-```bash
-# Test connectivity
-sudo docker exec $(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1) ping vaultwarden
-
-# Check vaultwarden running
-sudo docker ps | grep vaultwarden
-
-# Restart vaultwarden
-sudo docker restart vaultwarden
-```
-
-### API key not found in vault
-
-1. Login Vaultwarden web UI
-2. Verify item name exact: "Bunq API Key"
-3. Check password field filled
-4. Verify client_id/secret secrets exist: `sudo docker secret ls | grep bunq_vaultwarden_client`
-
-### Port already in use
-
-```bash
-# Check what's using port
-sudo netstat -tulpn | grep 5000
-
-# Kill process or change port in docker-compose.yml
-```
-
-### Permission denied errors
-
-```bash
-# Fix permissions
-sudo chown -R $(whoami) /volume1/docker/bunq-dashboard
-sudo chmod -R 755 /volume1/docker/bunq-dashboard
-```
+Voor uitgebreide oplossingen, zie [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ---
 
