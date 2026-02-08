@@ -343,28 +343,19 @@ services:
     ports:
       - "5000:5000"  # Dashboard + API
     
-    environment:
-      # Load from .env file
-      VAULTWARDEN_URL: "${VAULTWARDEN_URL}"
-      VAULTWARDEN_CLIENT_ID: "${VAULTWARDEN_CLIENT_ID}"
-      VAULTWARDEN_CLIENT_SECRET: "${VAULTWARDEN_CLIENT_SECRET}"
-      VAULTWARDEN_ITEM_NAME: "${VAULTWARDEN_ITEM_NAME}"
-      BUNQ_ENVIRONMENT: "${BUNQ_ENVIRONMENT}"
-      USE_VAULTWARDEN: "${USE_VAULTWARDEN}"
-      LOG_LEVEL: "${LOG_LEVEL}"
+    # Load all settings from .env
+    env_file:
+      - .env
     
     volumes:
       - /volume1/docker/bunq-dashboard/config:/app/config
       - /volume1/docker/bunq-dashboard/logs:/app/logs
     
-    depends_on:
-      - vaultwarden
-    
     networks:
       - bridge
     
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/api/health')"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -374,6 +365,8 @@ networks:
   bridge:
     external: true
 ```
+
+**Let op:** Zorg dat de Vaultwarden container uit Deel 2 op hetzelfde `bridge` netwerk draait (standaard in Synology).
 
 ### Stap 3.5: Vaultwarden Integratie (al ingebouwd)
 

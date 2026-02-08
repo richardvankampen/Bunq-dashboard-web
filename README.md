@@ -89,8 +89,8 @@ cp .env.example .env
 # Start containers
 docker-compose up -d
 
-# Not on Synology?
-# Update bind-mount paths in docker-compose.yml to valid local paths.
+# Note: Vaultwarden must be running separately (see SYNOLOGY_INSTALL.md)
+# Not on Synology? Update bind-mount paths in docker-compose.yml to valid local paths.
 
 # Check logs
 docker-compose logs -f

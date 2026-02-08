@@ -2,135 +2,33 @@ version: '3.8'
 
 services:
   bunq-dashboard:
-    build:
-      context: .
-    
+    build: .
     container_name: bunq-dashboard
     restart: unless-stopped
-    
+
     ports:
       # Single port for both API and Frontend (simplified architecture)
       # Access: http://your-nas-ip:5000 (via VPN only!)
       - "5000:5000"
-    
-    environment:
-      # ============================================
-      # VAULTWARDEN CONFIGURATION (RECOMMENDED)
-      # ============================================
-      VAULTWARDEN_URL: "${VAULTWARDEN_URL:-http://vaultwarden:80}"
-      VAULTWARDEN_CLIENT_ID: "${VAULTWARDEN_CLIENT_ID}"
-      VAULTWARDEN_CLIENT_SECRET: "${VAULTWARDEN_CLIENT_SECRET}"
-      VAULTWARDEN_ITEM_NAME: "${VAULTWARDEN_ITEM_NAME:-Bunq API Key}"
-      USE_VAULTWARDEN: "${USE_VAULTWARDEN:-true}"
-      
-      # ============================================
-      # SESSION-BASED AUTHENTICATION
-      # ============================================
-      BASIC_AUTH_USERNAME: "${BASIC_AUTH_USERNAME:-admin}"
-      BASIC_AUTH_PASSWORD: "${BASIC_AUTH_PASSWORD}"
-      FLASK_SECRET_KEY: "${FLASK_SECRET_KEY}"
-      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-false}"
-      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-http://localhost:5000}"
-      
-      # ============================================
-      # BUNQ CONFIGURATION
-      # ============================================
-      BUNQ_ENVIRONMENT: "${BUNQ_ENVIRONMENT:-PRODUCTION}"
-      
-      # Alternative: Direct API Key (NOT RECOMMENDED)
-      # Only use if NOT using Vaultwarden
-      # BUNQ_API_KEY: "${BUNQ_API_KEY}"
-      
-      # ============================================
-      # APPLICATION SETTINGS
-      # ============================================
-      FLASK_DEBUG: "${FLASK_DEBUG:-false}"
-      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
 
-      # Performance / Cache
-      CACHE_ENABLED: "${CACHE_ENABLED:-true}"
-      CACHE_TTL_SECONDS: "${CACHE_TTL_SECONDS:-60}"
-      DEFAULT_PAGE_SIZE: "${DEFAULT_PAGE_SIZE:-500}"
-      MAX_PAGE_SIZE: "${MAX_PAGE_SIZE:-2000}"
-      MAX_DAYS: "${MAX_DAYS:-3650}"
-    
+    # Load all settings from .env
+    env_file:
+      - .env
+
     volumes:
       # Persistent storage for Bunq context and logs (Synology bind mounts)
       - /volume1/docker/bunq-dashboard/config:/app/config
       - /volume1/docker/bunq-dashboard/logs:/app/logs
-    
-    depends_on:
-      - vaultwarden
-    
+
     networks:
       - bridge
-    
-    # Resource limits (adjust based on your NAS)
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1024M
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
-  
-  vaultwarden:
-    image: vaultwarden/server:latest
-    container_name: vaultwarden
-    restart: unless-stopped
-    
-    ports:
-      # Vaultwarden web interface
-      # Access: http://your-nas-ip:9000
-      - "9000:80"
-    
-    volumes:
-      # Persistent storage for Vaultwarden vault data (Synology bind mount)
-      - /volume1/docker/vaultwarden:/data
-    
-    environment:
-      # Domain for Vaultwarden (update with your NAS IP or domain)
-      DOMAIN: "${VAULTWARDEN_DOMAIN:-http://localhost:9000}"
-      
-      # CRITICAL: Set to 'false' AFTER creating your first account!
-      SIGNUPS_ALLOWED: "${VAULTWARDEN_SIGNUPS:-false}"
-      
-      # WebSocket support (for browser extension sync)
-      WEBSOCKET_ENABLED: "true"
-      
-      # Logging
-      LOG_LEVEL: "info"
-      
-      # Optional: Admin token (generate with: openssl rand -base64 48)
-      # ADMIN_TOKEN: "${VAULTWARDEN_ADMIN_TOKEN}"
-    
-    networks:
-      - bridge
-    
-    # Resource limits
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/alive"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
 # Network configuration
 networks:
@@ -151,7 +49,6 @@ networks:
 #
 # View logs:
 #   docker-compose logs -f bunq-dashboard
-#   docker-compose logs -f vaultwarden
 #
 # Restart services:
 #   docker-compose restart

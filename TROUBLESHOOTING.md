@@ -17,7 +17,7 @@ docker ps
 
 # Check container logs
 docker-compose logs bunq-dashboard
-docker-compose logs vaultwarden
+docker logs vaultwarden
 
 # Check API health
 curl http://localhost:5000/api/health
@@ -296,7 +296,7 @@ API calls: https://bunq.yourdomain.com/api  # ✅ Same origin
 docker ps | grep vaultwarden
 
 # If not running, start:
-docker-compose up -d vaultwarden
+docker start vaultwarden
 
 # Check logs:
 docker logs vaultwarden
