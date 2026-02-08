@@ -35,7 +35,7 @@ Control Panel → Terminal & SNMP
 
 Test verbinding:
 ```bash
-ssh admin@192.168.1.100
+ssh admin@192.168.1.100 # Het IP adres van je NAS
 # Password: je NAS admin wachtwoord
 ```
 
@@ -180,7 +180,6 @@ sudo docker ps | grep vaultwarden
    ├── Profile → Security & Settings
    ├── Developers → API Keys  
    ├── + Add API Key
-   ├── Name: "NAS Dashboard"
    └── Copy key (begint met "sandbox_" of lang random string)
    ```
 
@@ -217,8 +216,8 @@ exit
 **Methode 2: Via Web Interface (Makkelijker)**
 
 ```
-Vaultwarden → Account Settings → Security
-├── API Key → View API Key
+Vaultwarden → Instellingen → Beveiliging
+├── Sleutels → API-sleutel bekijken
 ├── Enter Master Password
 ├── Copy "client_id" (bv: user.xxxx-xxxx-xxxx)  
 └── Copy "client_secret" (lange random string)
