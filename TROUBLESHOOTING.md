@@ -2,7 +2,7 @@
 
 Comprehensive troubleshooting guide voor alle bekende problemen en hun oplossingen.
 
-**Last Updated:** February 2026  
+**Last Updated:** February 2026
 **Applies to:** Session-based (fresh installs)
 
 ---
@@ -149,7 +149,7 @@ ifconfig | grep "inet "
 ip addr show
 
 # Access via correct IP:
-http://192.168.1.XXX:5000  # Replace XXX with your IP
+http://<NAS-IP>:5000
 ```
 
 #### D. DNS Issues (Domain Names)
@@ -246,8 +246,8 @@ curl -b cookies.txt http://192.168.1.100:5000/api/health
 
 **Symptomen:**
 ```
-Access to fetch at 'http://192.168.1.100:5000/api/...' 
-from origin 'http://192.168.1.100:5000' 
+Access to fetch at 'http://192.168.1.100:5000/api/...'
+from origin 'http://192.168.1.100:5000'
 has been blocked by CORS policy
 ```
 
@@ -776,7 +776,7 @@ cat diagnostic.txt
 
 ---
 
-**Last Updated:** February 2026  
+**Last Updated:** February 2026
 **Maintained by:** Community Contributors
 
 *Als je een oplossing vindt voor een nieuw probleem, overweeg dan een PR om deze guide te updaten!*

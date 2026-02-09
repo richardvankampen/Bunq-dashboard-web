@@ -1,6 +1,6 @@
 # 💰 Bunq Financial Dashboard
 
-**Veilige web-based visualisaties van je Bunq transactiedata (Synology-first)**  
+**Veilige web-based visualisaties van je Bunq transactiedata (Synology-first)**
 Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseert.
 
 ⚠️ **IMPORTANT:** Access ONLY via VPN. NEVER forward ports to the internet.

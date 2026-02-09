@@ -10,7 +10,7 @@ Complete stap-voor-stap instructies voor het installeren van Bunq Dashboard op j
 - Korte overzichtspagina: [README.md](README.md)
 - Security hardening: [SECURITY.md](SECURITY.md)
 - Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
- 
+
 Tip: De lijst met visualisaties staat kort in de [README.md](README.md).
 
 ## 📋 Vereisten
@@ -21,7 +21,7 @@ Tip: De lijst met visualisaties staat kort in de [README.md](README.md).
 - **10GB vrije schijfruimte**
 - **Intel/AMD CPU** (ARM wordt niet ondersteund door Bunq SDK)
 
-### Software  
+### Software
 - **Container Manager** (via Package Center)
 - **SSH toegang** (optioneel maar aanbevolen)
 - **Bunq Pro/Premium** account
@@ -133,13 +133,13 @@ services:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
-    
+
     ports:
       - "9000:80"
-    
+
     volumes:
       - /volume1/docker/vaultwarden:/data
-    
+
     environment:
       DOMAIN: "http://192.168.1.100:9000"  # CHANGE THIS!
       SIGNUPS_ALLOWED: "true"  # Change to false after first account!
@@ -182,7 +182,7 @@ sudo docker ps | grep vaultwarden
    ```
    Container Manager → vaultwarden → Edit
    └── Environment → SIGNUPS_ALLOWED = false
-   
+
    Apply → Restart container
    ```
 
@@ -192,7 +192,7 @@ sudo docker ps | grep vaultwarden
    ```
    Bunq App op je telefoon:
    ├── Profile → Security & Settings
-   ├── Developers → API Keys  
+   ├── Developers → API Keys
    ├── + Add API Key
    └── Copy key (begint met "sandbox_" of lang random string)
    ```
@@ -233,7 +233,7 @@ exit
 Vaultwarden → Instellingen → Beveiliging
 ├── Sleutels → API-sleutel bekijken
 ├── Enter Master Password
-├── Copy "client_id" (bv: user.xxxx-xxxx-xxxx)  
+├── Copy "client_id" (bv: user.xxxx-xxxx-xxxx)
 └── Copy "client_secret" (lange random string)
 ```
 
@@ -252,8 +252,8 @@ cd /volume1/docker/bunq-dashboard
 sudo git clone https://github.com/richardvankampen/Bunq-dashboard-web.git .
 ```
 
-**Let op:** Dit werkt alleen als `/volume1/docker/bunq-dashboard/` leeg is.  
-Krijg je `fatal: destination path '.' already exists and is not an empty directory`?  
+**Let op:** Dit werkt alleen als `/volume1/docker/bunq-dashboard/` leeg is.
+Krijg je `fatal: destination path '.' already exists and is not an empty directory`?
 Verwijder (of verplaats) eerst bestaande mappen/bestanden zoals `config/` en `logs/`, of clone naar een submap zonder de trailing `.`.
 
 **Optie B: Manual Download**
@@ -321,7 +321,7 @@ LOG_LEVEL=INFO
 FLASK_DEBUG=false
 ```
 
-**Tip:** Gebruik `http://vaultwarden:80` als Vaultwarden op hetzelfde `bunq-net` netwerk draait.  
+**Tip:** Gebruik `http://vaultwarden:80` als Vaultwarden op hetzelfde `bunq-net` netwerk draait.
 Gebruik `http://<NAS-IP>:9000` als je Vaultwarden via host/IP benadert.
 
 #### B) Docker secrets (verplicht)
@@ -414,11 +414,11 @@ services:
       # Optional: only when USE_VAULTWARDEN=false
       # - source: bunq_api_key
       #   target: bunq_api_key
-    
+
     volumes:
       - /volume1/docker/bunq-dashboard/config:/app/config
       - /volume1/docker/bunq-dashboard/logs:/app/logs
-    
+
     networks:
       - bunq-net
 
@@ -428,7 +428,7 @@ services:
         delay: 5s
         max_attempts: 0
         window: 60s
-    
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 30s

@@ -2,7 +2,7 @@
 
 Complete security guide voor veilig gebruik van het Bunq Dashboard.
 
-**Last Updated:** February 2026  
+**Last Updated:** February 2026
 **Security Level:** Production-grade with session-based authentication
 
 ---
@@ -137,7 +137,7 @@ environment:
   ADMIN_TOKEN: "random-token-here"   # ✅ Enable admin panel
   INVITATIONS_ALLOWED: "false"       # ✅ No invites
   WEBSOCKET_ENABLED: "false"         # ⚠️ If not needed
-  
+
 # Generate admin token:
 openssl rand -base64 48
 ```
@@ -332,7 +332,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # Timeout settings
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
@@ -587,5 +587,5 @@ If you discover a security vulnerability:
 
 **Remember:** Security is an ongoing process, not a one-time setup!
 
-**Last Updated:** February 2026  
+**Last Updated:** February 2026
 **Next Review:** May 2026
