@@ -295,6 +295,12 @@ Maak `/volume1/docker/bunq-dashboard/.env` met **niet‑gevoelige** settings.
 | `ALLOWED_ORIGINS` | Toegestane frontend origins voor CORS | `http://<NAS-IP>:5000` (eventueel meerdere, komma‑gescheiden) |
 | `SESSION_COOKIE_SECURE` | Alleen veilige cookies via HTTPS | `false` voor HTTP, `true` als je HTTPS/reverse proxy gebruikt |
 
+**Let op (cookie domein):** De session cookie wordt gezet op het domein waarmee je het dashboard opent.  
+Voorbeelden:  
+- `http://192.168.1.100:5000` → cookie op `192.168.1.100`  
+- `https://bunq.jouwdomein.nl` → cookie op `bunq.jouwdomein.nl`  
+Gebruik daarom **altijd dezelfde URL** (HTTP of HTTPS), anders werkt je sessie niet goed.
+
 **Optioneel (.env):**
 
 | Variabele | Betekenis | Aanbevolen/default waarde |
@@ -333,6 +339,12 @@ Gevoelige waarden gaan in Docker Swarm secrets.
 sudo docker swarm init
 # Als je een melding krijgt dat dit al actief is: negeren.
 ```
+
+**Krijg je een fout over meerdere IP’s?** Gebruik dan je LAN‑IP:
+```bash
+sudo docker swarm init --advertise-addr 192.168.1.100
+```
+Vervang dit met het IP van je NAS (bijv. `192.168.1.242`).
 
 **Netwerk (voor Vaultwarden koppeling):**
 ```bash
