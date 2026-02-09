@@ -163,6 +163,7 @@ printf "%s" "$SECRET_KEY" | docker secret create bunq_flask_secret_key -
 - ✅ Unique per installation
 - ✅ NEVER share or commit to git
 - ✅ Keep backed up securely
+ - ⚠️ Rotating this key invalidates all active sessions
 ```
 
 **Dashboard Password:**
