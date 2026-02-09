@@ -10,6 +10,8 @@ Complete stap-voor-stap instructies voor het installeren van Bunq Dashboard op j
 - Korte overzichtspagina: [README.md](README.md)
 - Security hardening: [SECURITY.md](SECURITY.md)
 - Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+ 
+Tip: De lijst met visualisaties staat kort in de [README.md](README.md).
 
 ## 📋 Vereisten
 
