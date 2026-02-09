@@ -82,8 +82,6 @@ curl http://192.168.1.100:5000
 
 **Why:** Session auth is the most secure option.
 
-**Let op:** Deze repository levert **alleen** de session-based variant.
-
 **Session-based kenmerken:**
 - ✅ Credentials worden server-side beheerd
 - ✅ HttpOnly + SameSite cookies
