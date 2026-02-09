@@ -381,13 +381,13 @@ sudo docker network connect bunq-net vaultwarden
 # Alleen deze regel mag je letterlijk uitvoeren (die genereert een random key):
 # python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
 
-printf "JouwSterkeWachtwoord" | sudo docker secret create bunq_basic_auth_password -
+printf '%s' "JouwSterkeWachtwoord" | sudo docker secret create bunq_basic_auth_password -
 python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
-printf "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -
-printf "jouw_vaultwarden_client_secret" | sudo docker secret create bunq_vaultwarden_client_secret -
+printf '%s' "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -
+printf '%s' "jouw_vaultwarden_client_secret" | sudo docker secret create bunq_vaultwarden_client_secret -
 
 # Alleen als USE_VAULTWARDEN=false:
-# printf "jouw_bunq_api_key" | sudo docker secret create bunq_api_key -
+# printf '%s' "jouw_bunq_api_key" | sudo docker secret create bunq_api_key -
 ```
 
 ### Stap 3.4: Update docker-compose.yml
