@@ -377,6 +377,10 @@ sudo docker network connect bunq-net vaultwarden
 
 **Secrets aanmaken:**
 ```bash
+# Let op: vervang de voorbeeldwaarden door je eigen echte waarden.
+# Alleen deze regel mag je letterlijk uitvoeren (die genereert een random key):
+# python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
+
 printf "JouwSterkeWachtwoord" | sudo docker secret create bunq_basic_auth_password -
 python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
 printf "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -
