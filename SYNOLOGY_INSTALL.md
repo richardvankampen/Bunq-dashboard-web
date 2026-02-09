@@ -10,7 +10,6 @@ Complete stap-voor-stap instructies voor het installeren van Bunq Dashboard op j
 - Installatie (dit document): [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
 - Security hardening: [SECURITY.md](SECURITY.md)
 - Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-- Session auth upgrades: [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
 
 ## 📋 Vereisten
 

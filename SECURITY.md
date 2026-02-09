@@ -11,7 +11,6 @@ Complete security guide voor veilig gebruik van het Bunq Dashboard.
 
 - Startpunt en overzicht: [README.md](README.md)
 - Installatie: [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
-- Session auth upgrades: [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
 - Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ## 🎯 Security Overview
@@ -94,8 +93,6 @@ curl http://192.168.1.100:5000
 **Setup:**
 ```bash
 # Session-based auth is default (api_proxy.py)
-# See: SESSION_AUTH_INSTALL.md
-
 # Key requirements:
 1. Secret `bunq_basic_auth_password` (12+ chars)
 2. Secret `bunq_flask_secret_key` (64 chars hex)
@@ -583,7 +580,6 @@ If you discover a security vulnerability:
 ## 📚 Additional Resources
 
 - [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md) - Installation guide
-- [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md) - Session auth setup
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues
 - [Bunq API Security](https://doc.bunq.com/#/security)
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)

@@ -3,7 +3,7 @@
 Comprehensive troubleshooting guide voor alle bekende problemen en hun oplossingen.
 
 **Last Updated:** February 2026  
-**Applies to:** All versions (Basic, Secure, Session)
+**Applies to:** Session-based (fresh installs)
 
 ---
 
@@ -12,7 +12,6 @@ Comprehensive troubleshooting guide voor alle bekende problemen en hun oplossing
 - Startpunt en overzicht: [README.md](README.md)
 - Synology install: [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
 - Security hardening: [SECURITY.md](SECURITY.md)
-- Session auth upgrades: [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
 
 ## 📋 Quick Diagnostic
 
@@ -772,7 +771,6 @@ cat diagnostic.txt
 ## 📚 Additional Resources
 
 - [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md) - Complete installation guide
-- [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md) - Session auth setup
 - [SECURITY.md](SECURITY.md) - Security configuration
 - [README.md](README.md) - General documentation
 

@@ -25,7 +25,6 @@ Deze repository gebruikt **standaard session-based authentication**:
 - **Bestanden:** `api_proxy.py` + `app.js`
 - **Security:** HttpOnly cookies, CSRF protection, auto-expiry (24h)
 - **Voor:** Productie gebruik
-- **Guide:** [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
 
 ---
 
@@ -33,7 +32,6 @@ Deze repository gebruikt **standaard session-based authentication**:
 
 - **Start here (overview):** This README
 - **Synology install (full guide):** [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
-- **Upgrading an older install:** [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)
 - **Security hardening:** [SECURITY.md](SECURITY.md)
 - **Troubleshooting:** [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
@@ -73,11 +71,6 @@ Volg wizard → Genereer client config → Installeer op je devices
 Volg de complete instructies in → [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
 
 De frontend en API draaien samen op poort 5000 (`/` en `/api`).
-
-**Stap 4: (Alleen bij upgrade) Session Authentication**
-
-Gebruik je een **oude installatie** (localStorage/basic auth)? Volg dan → [SESSION_AUTH_INSTALL.md](SESSION_AUTH_INSTALL.md)  
-Nieuwe installs gebruiken dit al standaard.
 
 ---
 
@@ -150,57 +143,20 @@ docker service logs -f bunq_bunq-dashboard
 
 ---
 
-## 🔒 Security
+## 🔒 Security (Short)
 
-### ✅ Read-Only API
-```python
-# ALLEEN deze operations worden gebruikt:
-MonetaryAccountBank.list()  # ✅ READ
-Payment.list()               # ✅ READ  
-User.get()                   # ✅ READ
+- Session-based auth with HttpOnly cookies and CSRF protection.
+- Read-only Bunq API usage.
+- Secrets via Vaultwarden + Docker Swarm.
+- VPN-only access (no public exposure).
 
-# NOOIT gebruikt:
-Payment.create()            # ❌ DISABLED
-DraftPayment.create()       # ❌ DISABLED
-```
-
-### 🔐 Session-Based Authentication (Aanbevolen)
-- ✅ HttpOnly cookies (JavaScript kan niet bij credentials)
-- ✅ CSRF protection (SameSite cookies)
-- ✅ Auto-expiry (24 uur)
-- ✅ Rate limiting (5 login attempts/min)
-- ✅ Constant-time password comparison
-- ✅ Server-side session management
-
-### 🛡️ Vaultwarden Integration
-- ✅ API keys in encrypted vault
-- ✅ Runtime secret retrieval
-- ✅ Zero plain-text storage
-- ✅ Easy key rotation
-- ✅ Audit logging
-
-### 🌐 VPN Requirement
-**⚠️ CRITICAL:** Access dashboard ONLY via VPN!
-
-- ✅ Never forward port 5000 on your router
-- ✅ Use Synology VPN Server (OpenVPN/L2TP)
-- ✅ Strong VPN passwords
-- ✅ Two-factor authentication where possible
-
-**Remark (SRI/CDN):** Subresource Integrity is useful for public-facing apps, but for a VPN-only, single-user setup the practical risk is low. We intentionally keep Google Fonts on the CDN without SRI to avoid extra complexity. If you expose this publicly or add users, reconsider SRI or self-hosting fonts.
-
-**VPN-only verification checklist:**
-1. From a phone on **5G without VPN**, run: `curl -vk --connect-timeout 5 https://your-subdomain.your-domain`
-2. Expected result: **timeout / no response** (good). Any HTML/headers means it’s publicly reachable (bad).
-3. From **LAN/Wi-Fi**, you may see a certificate warning if you use a self-signed cert. That’s normal for internal access.
-4. From **VPN**, the dashboard should load at `https://your-subdomain.your-domain`.
+Full details and hardening: [SECURITY.md](SECURITY.md)
 
 ---
 
 ## 📖 Complete Documentation
 
 - **[🏠 Synology Installation Guide](SYNOLOGY_INSTALL.md)** - Complete stap-voor-stap setup
-- **[🔐 Session Authentication Guide](SESSION_AUTH_INSTALL.md)** - Upgrade naar session-based auth
 - **[🔒 Security Best Practices](SECURITY.md)** - Security checklist en hardening tips
 
 ---
@@ -357,44 +313,6 @@ Contributions zijn welkom! Voor nu:
 ## 📄 License
 
 MIT License - See [LICENSE](LICENSE)
-
----
-
-## ⭐ Support
-
-Als je dit project nuttig vindt:
-- Geef het een ⭐ op GitHub
-- Share met andere Bunq users
-- Contribute met verbeteringen
-
----
-
-## 📞 Contact & Support
-
-**Voor vragen of problemen:**
-1. Check eerst de documentatie (guides hierboven)
-2. Bekijk de troubleshooting sectie
-3. Open een GitHub Issue met:
-   - Beschrijving van het probleem
-   - Log output (`docker service logs bunq_bunq-dashboard`)
-   - Je configuratie (zonder credentials!)
-
-**Community:**
-- GitHub Issues: [Create Issue](https://github.com/richardvankampen/Bunq-dashboard-web/issues)
-- GitHub Discussions: [Join Discussion](https://github.com/richardvankampen/Bunq-dashboard-web/discussions)
-
----
-
-## 🎯 Roadmap
-
-Planned features:
-- [ ] Automated backups
-- [ ] Budget management
-- [ ] Multi-user support
-- [ ] Mobile app
-- [ ] Advanced analytics
-- [ ] Export functionality
-- [ ] Custom alerts
 
 ---
 
