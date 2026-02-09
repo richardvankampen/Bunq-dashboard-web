@@ -318,7 +318,7 @@ Gebruik daarom **altijd dezelfde URL** (HTTP of HTTPS), anders werkt je sessie n
 ```bash
 BASIC_AUTH_USERNAME=admin
 VAULTWARDEN_URL=http://vaultwarden:80
-VAULTWARDEN_ITEM_NAME=Bunq API Key
+VAULTWARDEN_ITEM_NAME="Bunq API Key"
 USE_VAULTWARDEN=true
 BUNQ_ENVIRONMENT=PRODUCTION
 ALLOWED_ORIGINS=http://192.168.1.100:5000
