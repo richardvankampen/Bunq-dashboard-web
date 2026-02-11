@@ -37,8 +37,8 @@ services:
       - source: bunq_vaultwarden_client_secret
         target: vaultwarden_client_secret
       # Optional: only when USE_VAULTWARDEN=false
-      # - source: bunq_api_key
-      #   target: bunq_api_key
+      - source: bunq_api_key
+        target: bunq_api_key
 
     volumes:
       # Persistent storage for Bunq context and logs (Synology bind mounts)
@@ -98,5 +98,5 @@ secrets:
   bunq_vaultwarden_client_secret:
     external: true
   # Optional: only when USE_VAULTWARDEN=false
-  # bunq_api_key:
-  #   external: true
+  bunq_api_key:
+    external: true
