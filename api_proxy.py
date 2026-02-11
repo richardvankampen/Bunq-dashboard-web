@@ -23,6 +23,8 @@ import hashlib
 import time
 import secrets
 import uuid
+import importlib
+import pkgutil
 from collections import defaultdict
 
 # ============================================
@@ -53,13 +55,46 @@ def get_int_env(name, default):
         logger.warning(f"⚠️ Invalid {name}='{value}', using default {default}")
         return default
 
+_MONETARY_ACCOUNT_ENDPOINT = None
+
+def resolve_monetary_account_endpoint():
+    """Resolve the monetary account endpoint class across bunq-sdk variants."""
+    global _MONETARY_ACCOUNT_ENDPOINT
+
+    if _MONETARY_ACCOUNT_ENDPOINT is not None:
+        return _MONETARY_ACCOUNT_ENDPOINT
+
+    direct_candidates = ('MonetaryAccountBank', 'MonetaryAccount')
+    for name in direct_candidates:
+        candidate = getattr(endpoint, name, None)
+        if candidate is not None and callable(getattr(candidate, 'list', None)):
+            _MONETARY_ACCOUNT_ENDPOINT = candidate
+            logger.info(f"Using bunq endpoint class: {name}")
+            return _MONETARY_ACCOUNT_ENDPOINT
+
+    endpoint_path = getattr(endpoint, '__path__', None)
+    if endpoint_path:
+        base_module = endpoint.__name__
+        for module_info in pkgutil.iter_modules(endpoint_path):
+            module_name = module_info.name
+            if not module_name.startswith('monetary_account'):
+                continue
+            try:
+                module = importlib.import_module(f"{base_module}.{module_name}")
+            except Exception:
+                continue
+            for class_name in direct_candidates:
+                candidate = getattr(module, class_name, None)
+                if candidate is not None and callable(getattr(candidate, 'list', None)):
+                    _MONETARY_ACCOUNT_ENDPOINT = candidate
+                    logger.info(f"Using bunq endpoint class: {module_name}.{class_name}")
+                    return _MONETARY_ACCOUNT_ENDPOINT
+
+    raise RuntimeError('bunq-sdk missing monetary account endpoint')
+
 def list_monetary_accounts():
     """Return monetary accounts with bunq-sdk compatibility across versions."""
-    account_endpoint = getattr(endpoint, 'MonetaryAccountBank', None)
-    if account_endpoint is None:
-        account_endpoint = getattr(endpoint, 'MonetaryAccount', None)
-    if account_endpoint is None:
-        raise RuntimeError('bunq-sdk missing monetary account endpoint')
+    account_endpoint = resolve_monetary_account_endpoint()
     return account_endpoint.list().value
 
 # ============================================
