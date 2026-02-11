@@ -53,6 +53,15 @@ def get_int_env(name, default):
         logger.warning(f"⚠️ Invalid {name}='{value}', using default {default}")
         return default
 
+def list_monetary_accounts():
+    """Return monetary accounts with bunq-sdk compatibility across versions."""
+    account_endpoint = getattr(endpoint, 'MonetaryAccountBank', None)
+    if account_endpoint is None:
+        account_endpoint = getattr(endpoint, 'MonetaryAccount', None)
+    if account_endpoint is None:
+        raise RuntimeError('bunq-sdk missing monetary account endpoint')
+    return account_endpoint.list().value
+
 # ============================================
 # SECRET HELPERS (Docker Swarm secrets)
 # ============================================
@@ -621,7 +630,7 @@ def get_accounts():
                 return jsonify(cached)
         
         logger.info(f"📊 Fetching accounts for {session.get('username')}")
-        accounts = endpoint.MonetaryAccountBank.list().value
+        accounts = list_monetary_accounts()
         
         accounts_data = []
         for account in accounts:
@@ -682,7 +691,7 @@ def get_transactions():
         
         logger.info(f"📊 Fetching transactions (last {days} days) for {session.get('username')}")
         
-        accounts = endpoint.MonetaryAccountBank.list().value
+        accounts = list_monetary_accounts()
         accounts_by_id = {str(acc.id_): acc for acc in accounts}
         own_ibans = extract_own_ibans(accounts)
         
@@ -829,7 +838,7 @@ def get_statistics():
             if cached:
                 return jsonify(cached)
         
-        accounts = endpoint.MonetaryAccountBank.list().value
+        accounts = list_monetary_accounts()
         own_ibans = extract_own_ibans(accounts)
         all_transactions = []
         
