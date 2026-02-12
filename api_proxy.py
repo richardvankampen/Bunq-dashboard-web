@@ -605,6 +605,32 @@ def parse_monetary_value(monetary_value, default_currency='EUR', context='amount
     currency = getattr(monetary_value, 'currency', None) or default_currency
     return value, currency
 
+def parse_bunq_datetime(value, context='datetime'):
+    """
+    Parse bunq datetime strings and always return timezone-aware UTC datetimes.
+    Some SDK variants return naive timestamps (without timezone).
+    """
+    if value is None:
+        return None
+
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    if raw.endswith('Z'):
+        raw = raw[:-1] + '+00:00'
+
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        logger.warning(f"⚠️ Invalid {context}: {value!r}; skipping")
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+
+    return parsed.astimezone(timezone.utc)
+
 def extract_own_ibans(accounts):
     """Extract own IBANs from Bunq accounts for internal transfer detection."""
     ibans = set()
@@ -1045,8 +1071,14 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
         if not created_raw:
             logger.warning(f"⚠️ Payment {getattr(payment, 'id_', 'unknown')} missing created timestamp; skipping")
             continue
-        created = datetime.fromisoformat(created_raw.replace('Z', '+00:00'))
-        
+        created = parse_bunq_datetime(
+            created_raw,
+            context=f"payment {getattr(payment, 'id_', 'unknown')} created"
+        )
+        if created is None:
+            logger.warning(f"⚠️ Payment {getattr(payment, 'id_', 'unknown')} has invalid created timestamp; skipping")
+            continue
+
         if cutoff_date and created < cutoff_date:
             if sort_desc:
                 break
