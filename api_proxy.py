@@ -57,6 +57,8 @@ def get_int_env(name, default):
         return default
 
 _MONETARY_ACCOUNT_ENDPOINT = None
+_PAYMENT_ENDPOINT = None
+_PAYMENT_LIST_MODE = None
 
 def _has_zero_required_positional_args(callable_obj):
     try:
@@ -167,6 +169,134 @@ def list_monetary_accounts():
             logger.warning(f"⚠️ Bunq endpoint {name} failed: {exc}")
 
     raise RuntimeError(f"bunq-sdk monetary account list failed: {last_exc}")
+
+def _is_payment_list_endpoint(name, candidate):
+    if candidate is None:
+        return False
+    if not callable(getattr(candidate, 'list', None)):
+        return False
+    normalized = name.lower().replace('_', '')
+    if not normalized.endswith('payment'):
+        return False
+    if 'attachment' in normalized or 'batch' in normalized:
+        return False
+    return True
+
+def discover_payment_endpoints():
+    """Discover payment endpoints ordered by preference."""
+    direct_candidates = ('Payment', 'MonetaryAccountPayment')
+    discovered = []
+    seen = set()
+
+    def add_candidate(display_name, candidate_name, candidate_obj):
+        if not _is_payment_list_endpoint(candidate_name, candidate_obj):
+            return
+        candidate_id = id(candidate_obj)
+        if candidate_id in seen:
+            return
+        seen.add(candidate_id)
+        discovered.append((display_name, candidate_obj))
+
+    for name in direct_candidates:
+        add_candidate(name, name, getattr(endpoint, name, None))
+
+    for attr_name in dir(endpoint):
+        if attr_name in direct_candidates:
+            continue
+        add_candidate(attr_name, attr_name, getattr(endpoint, attr_name, None))
+
+    endpoint_path = getattr(endpoint, '__path__', None)
+    if endpoint_path:
+        base_module = endpoint.__name__
+        for module_info in pkgutil.iter_modules(endpoint_path):
+            module_name = module_info.name
+            normalized_module = module_name.lower().replace('_', '')
+            if 'payment' not in normalized_module:
+                continue
+            if 'attachment' in normalized_module or 'batch' in normalized_module:
+                continue
+            try:
+                module = importlib.import_module(f"{base_module}.{module_name}")
+            except Exception:
+                continue
+            for class_name in direct_candidates:
+                add_candidate(
+                    f"{module_name}.{class_name}",
+                    class_name,
+                    getattr(module, class_name, None),
+                )
+            for class_name in dir(module):
+                if class_name in direct_candidates:
+                    continue
+                add_candidate(
+                    f"{module_name}.{class_name}",
+                    class_name,
+                    getattr(module, class_name, None),
+                )
+
+    return discovered
+
+def _call_payment_list(payment_endpoint, account_id, mode):
+    if mode == 'kw_monetary_account_id':
+        return payment_endpoint.list(monetary_account_id=account_id)
+    if mode == 'kw_account_id':
+        return payment_endpoint.list(account_id=account_id)
+    if mode == 'kw_monetary_account_bank_id':
+        return payment_endpoint.list(monetary_account_bank_id=account_id)
+    if mode == 'positional':
+        return payment_endpoint.list(account_id)
+    if mode == 'positional_with_params':
+        return payment_endpoint.list(account_id, {})
+    raise RuntimeError(f"Unknown payment list mode: {mode}")
+
+def list_payments_for_account(account_id):
+    """List payments for one monetary account across bunq-sdk variants."""
+    global _PAYMENT_ENDPOINT, _PAYMENT_LIST_MODE
+
+    modes = (
+        'kw_monetary_account_id',
+        'kw_account_id',
+        'kw_monetary_account_bank_id',
+        'positional',
+        'positional_with_params',
+    )
+
+    candidates = []
+    if _PAYMENT_ENDPOINT is not None and _PAYMENT_LIST_MODE is not None:
+        candidates.append(('cached', _PAYMENT_ENDPOINT, (_PAYMENT_LIST_MODE,)))
+
+    for name, candidate in discover_payment_endpoints():
+        if _PAYMENT_ENDPOINT is not None and candidate is _PAYMENT_ENDPOINT:
+            continue
+        candidates.append((name, candidate, modes))
+
+    if not candidates:
+        raise RuntimeError('bunq-sdk missing payment endpoint')
+
+    last_exc = None
+    for name, payment_endpoint, candidate_modes in candidates:
+        for mode in candidate_modes:
+            try:
+                result = _call_payment_list(payment_endpoint, account_id, mode)
+                payments = getattr(result, 'value', result)
+                if payments is None:
+                    payments = []
+                if not isinstance(payments, list):
+                    payments = list(payments)
+                if _PAYMENT_ENDPOINT is not payment_endpoint or _PAYMENT_LIST_MODE != mode:
+                    logger.info(f"Using bunq payment endpoint: {name} ({mode})")
+                _PAYMENT_ENDPOINT = payment_endpoint
+                _PAYMENT_LIST_MODE = mode
+                return payments
+            except TypeError as exc:
+                last_exc = exc
+                continue
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Bunq payment endpoint {name} ({mode}) failed: {exc}")
+                break
+
+    raise RuntimeError(f"bunq-sdk payment list failed: {last_exc}")
 
 # ============================================
 # SECRET HELPERS (Docker Swarm secrets)
@@ -890,7 +1020,7 @@ def get_transactions():
 
 def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_ibans=None, account_name=None):
     """Get transactions for specific account"""
-    payments = endpoint.Payment.list(monetary_account_id=account_id).value
+    payments = list_payments_for_account(account_id)
     transactions = []
     own_ibans = own_ibans or set()
     
@@ -907,7 +1037,7 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             continue
         
         is_internal_transfer = False
-        counterparty_alias = payment.counterparty_alias
+        counterparty_alias = getattr(payment, 'counterparty_alias', None)
         if counterparty_alias:
             alias_type = getattr(counterparty_alias, 'type', None)
             alias_value = getattr(counterparty_alias, 'value', None)
@@ -927,7 +1057,7 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             'amount': amount_value,
             'currency': amount_currency,
             'description': description,
-            'counterparty': payment.counterparty_alias.display_name if payment.counterparty_alias else 'Unknown',
+            'counterparty': counterparty_alias.display_name if counterparty_alias else 'Unknown',
             'merchant': payment.merchant_reference if hasattr(payment, 'merchant_reference') else None,
             'category': category,
             'type': getattr(payment, 'type_', None),
