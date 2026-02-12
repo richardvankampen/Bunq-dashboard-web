@@ -25,6 +25,7 @@ import secrets
 import uuid
 import importlib
 import pkgutil
+import inspect
 from collections import defaultdict
 
 # ============================================
@@ -64,13 +65,28 @@ def resolve_monetary_account_endpoint():
     if _MONETARY_ACCOUNT_ENDPOINT is not None:
         return _MONETARY_ACCOUNT_ENDPOINT
 
+    def _has_zero_required_positional_args(callable_obj):
+        try:
+            signature = inspect.signature(callable_obj)
+        except (TypeError, ValueError):
+            return False
+
+        for parameter in signature.parameters.values():
+            if parameter.kind not in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+                continue
+            if parameter.default is inspect.Parameter.empty:
+                return False
+        return True
+
     def _is_monetary_list_endpoint(name, candidate):
         if candidate is None:
             return False
         if not callable(getattr(candidate, 'list', None)):
             return False
         normalized = name.lower().replace('_', '')
-        return 'monetary' in normalized and 'account' in normalized
+        if not normalized.startswith('monetaryaccount'):
+            return False
+        return _has_zero_required_positional_args(candidate.list)
 
     direct_candidates = ('MonetaryAccountBank', 'MonetaryAccount')
     for name in direct_candidates:
@@ -94,7 +110,7 @@ def resolve_monetary_account_endpoint():
         for module_info in pkgutil.iter_modules(endpoint_path):
             module_name = module_info.name
             normalized_module = module_name.lower().replace('_', '')
-            if 'monetary' not in normalized_module or 'account' not in normalized_module:
+            if not normalized_module.startswith('monetaryaccount'):
                 continue
             try:
                 module = importlib.import_module(f"{base_module}.{module_name}")
