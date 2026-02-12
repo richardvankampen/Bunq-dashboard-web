@@ -178,10 +178,9 @@ def _is_payment_list_endpoint(name, candidate):
     normalized = name.lower().replace('_', '')
     if 'payment' not in normalized:
         return False
-    if not (
-        normalized.startswith('payment')
-        or normalized.startswith('monetaryaccountpayment')
-    ):
+    # Support SDK variants such as MonetaryAccountBankPayment(ApiObject)
+    # while still avoiding unrelated payment-like endpoints.
+    if not (normalized.startswith('payment') or normalized.startswith('monetaryaccount')):
         return False
     if any(blocked in normalized for blocked in ('attachment', 'batch', 'draft', 'request', 'schedule')):
         return False
@@ -189,7 +188,14 @@ def _is_payment_list_endpoint(name, candidate):
 
 def discover_payment_endpoints():
     """Discover payment endpoints ordered by preference."""
-    direct_candidates = ('Payment', 'MonetaryAccountPayment')
+    direct_candidates = (
+        'Payment',
+        'PaymentApiObject',
+        'MonetaryAccountPayment',
+        'MonetaryAccountPaymentApiObject',
+        'MonetaryAccountBankPayment',
+        'MonetaryAccountBankPaymentApiObject',
+    )
     discovered = []
     seen = set()
 
@@ -276,6 +282,11 @@ def list_payments_for_account(account_id):
         candidates.append((name, candidate, modes))
 
     if not candidates:
+        payment_like = [name for name in dir(endpoint) if 'payment' in name.lower()]
+        logger.error(
+            "❌ No payment endpoints discovered. payment-like exports: %s",
+            payment_like[:20] if payment_like else 'none'
+        )
         raise RuntimeError('bunq-sdk missing payment endpoint')
 
     last_exc = None
