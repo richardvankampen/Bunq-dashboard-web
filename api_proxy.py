@@ -176,9 +176,14 @@ def _is_payment_list_endpoint(name, candidate):
     if not callable(getattr(candidate, 'list', None)):
         return False
     normalized = name.lower().replace('_', '')
-    if not normalized.endswith('payment'):
+    if 'payment' not in normalized:
         return False
-    if 'attachment' in normalized or 'batch' in normalized:
+    if not (
+        normalized.startswith('payment')
+        or normalized.startswith('monetaryaccountpayment')
+    ):
+        return False
+    if any(blocked in normalized for blocked in ('attachment', 'batch', 'draft', 'request', 'schedule')):
         return False
     return True
 
@@ -213,7 +218,7 @@ def discover_payment_endpoints():
             normalized_module = module_name.lower().replace('_', '')
             if 'payment' not in normalized_module:
                 continue
-            if 'attachment' in normalized_module or 'batch' in normalized_module:
+            if any(blocked in normalized_module for blocked in ('attachment', 'batch', 'draft', 'request', 'schedule')):
                 continue
             try:
                 module = importlib.import_module(f"{base_module}.{module_name}")
