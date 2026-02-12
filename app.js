@@ -22,6 +22,7 @@ let refreshIntervalId = null;
 let isLoading = false;
 let isAuthenticated = false;
 let accountsList = [];
+let balanceMetrics = null;
 let selectedAccountIds = new Set();
 const chartRegistry = {
     chartjs: {},
@@ -427,7 +428,9 @@ function showError(message) {
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Bunq Dashboard Initializing (Session Auth)...');
-    
+
+    applyVisualPreferences();
+
     // Initialize particles
     if (CONFIG.enableParticles) {
         initializeParticles();
@@ -473,6 +476,7 @@ function setupEventListeners() {
     document.getElementById('settingsBtn')?.addEventListener('click', openSettings);
     document.getElementById('closeSettings')?.addEventListener('click', closeSettings);
     document.getElementById('saveSettings')?.addEventListener('click', saveSettings);
+    document.getElementById('closeBalanceDetail')?.addEventListener('click', closeBalanceDetail);
     
     // Time range
     document.getElementById('timeRange')?.addEventListener('change', (e) => {
@@ -500,6 +504,21 @@ function setupEventListeners() {
     document.getElementById('raceSlider')?.addEventListener('input', (e) => {
         const value = parseInt(e.target.value, 10);
         updateRacingChart(value);
+    });
+
+    document.querySelectorAll('.clickable-kpi').forEach((card) => {
+        card.addEventListener('click', () => {
+            const accountType = card.getAttribute('data-account-type');
+            if (accountType) {
+                showBalanceDetail(accountType);
+            }
+        });
+    });
+
+    document.getElementById('balanceDetailModal')?.addEventListener('click', (event) => {
+        if (event.target.id === 'balanceDetailModal') {
+            closeBalanceDetail();
+        }
     });
 
     // Card actions (fullscreen)
@@ -730,6 +749,114 @@ function getCategoryColor(category) {
     return colors[category] || '#6b7280';
 }
 
+function hexToRgba(hex, alpha = 1) {
+    const clean = String(hex || '').replace('#', '');
+    if (clean.length !== 6) return `rgba(107,114,128,${alpha})`;
+    const num = Number.parseInt(clean, 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function classifyAccountType(account) {
+    const declaredType = String(account?.account_type || '').toLowerCase();
+    if (['checking', 'savings', 'investment'].includes(declaredType)) {
+        return declaredType;
+    }
+
+    const fingerprint = `${account?.description || ''} ${account?.account_class || ''}`.toLowerCase();
+    if (fingerprint.includes('savings') || fingerprint.includes('spaar')) return 'savings';
+    if (fingerprint.includes('investment') || fingerprint.includes('crypto') || fingerprint.includes('belegging')) return 'investment';
+    return 'checking';
+}
+
+function toDateKey(date) {
+    return date.toISOString().slice(0, 10);
+}
+
+function collectDateRangeKeys(transactions) {
+    if (!transactions.length) return [toDateKey(new Date())];
+    const keys = new Set();
+    transactions.forEach((tx) => {
+        if (!(tx.date instanceof Date) || Number.isNaN(tx.date.getTime())) return;
+        keys.add(toDateKey(tx.date));
+    });
+    if (!keys.size) {
+        keys.add(toDateKey(new Date()));
+    }
+    return Array.from(keys).sort();
+}
+
+function calculateBalanceMetrics(transactions, accounts) {
+    const validAccounts = (accounts || [])
+        .filter((acc) => acc && acc.balance && typeof acc.balance.value !== 'undefined')
+        .map((acc) => ({
+            ...acc,
+            id: String(acc.id),
+            account_type: classifyAccountType(acc),
+            balanceValue: Number(acc.balance.value) || 0,
+            balanceCurrency: String(acc.balance.currency || 'EUR').toUpperCase()
+        }));
+
+    if (!validAccounts.length) {
+        return null;
+    }
+
+    const accountsById = new Map(validAccounts.map((acc) => [String(acc.id), acc]));
+    const grouped = { checking: [], savings: [], investment: [] };
+    const totals = { checking: 0, savings: 0, investment: 0 };
+    let nonEurCount = 0;
+
+    validAccounts.forEach((acc) => {
+        if (acc.balanceCurrency !== 'EUR') {
+            nonEurCount += 1;
+            return;
+        }
+        grouped[acc.account_type] = grouped[acc.account_type] || [];
+        grouped[acc.account_type].push(acc);
+        totals[acc.account_type] = (totals[acc.account_type] || 0) + acc.balanceValue;
+    });
+
+    const dateKeys = collectDateRangeKeys(transactions);
+    const dailyDelta = {};
+    transactions.forEach((tx) => {
+        const account = accountsById.get(String(tx.account_id));
+        if (!account || account.balanceCurrency !== 'EUR') return;
+        const key = toDateKey(tx.date);
+        if (!dailyDelta[key]) {
+            dailyDelta[key] = { checking: 0, savings: 0, investment: 0 };
+        }
+        dailyDelta[key][account.account_type] = (dailyDelta[key][account.account_type] || 0) + (Number(tx.amount) || 0);
+    });
+
+    const series = { checking: [], savings: [], investment: [] };
+    const running = { ...totals };
+
+    for (let i = dateKeys.length - 1; i >= 0; i -= 1) {
+        const key = dateKeys[i];
+        const pointDate = new Date(`${key}T00:00:00`);
+
+        ['checking', 'savings', 'investment'].forEach((type) => {
+            series[type].unshift({ date: pointDate, total: running[type] || 0 });
+        });
+
+        const delta = dailyDelta[key];
+        if (delta) {
+            ['checking', 'savings', 'investment'].forEach((type) => {
+                running[type] = (running[type] || 0) - (delta[type] || 0);
+            });
+        }
+    }
+
+    return {
+        totals,
+        grouped,
+        series,
+        nonEurCount
+    };
+}
+
 function generateDemoTransactions(days) {
     // ... Keep existing demo transaction generation code ...
     // (Same as before - no changes needed)
@@ -797,8 +924,10 @@ function processAndRenderData(data) {
     
     const filtered = applyClientFilters(data);
     const normalized = normalizeTransactions(filtered);
+    balanceMetrics = calculateBalanceMetrics(normalized, accountsList);
     const kpis = calculateKPIs(normalized);
     renderKPIs(kpis, normalized);
+    renderBalanceKPIs(balanceMetrics);
 
     renderCashflowChart(normalized);
     renderSankeyChart(normalized);
@@ -925,6 +1054,116 @@ function renderKPIs(kpis, data) {
     renderSparkline('savingsSparkline', savingsSeries, '#8b5cf6');
 }
 
+function calculateSeriesChange(series) {
+    if (!series || series.length < 2) return 0;
+    const first = Number(series[0]) || 0;
+    const last = Number(series[series.length - 1]) || 0;
+    if (Math.abs(first) < 0.0001) return 0;
+    return ((last - first) / Math.abs(first)) * 100;
+}
+
+function renderBalanceKPIs(metrics) {
+    const checkingEl = document.getElementById('checkingBalance');
+    const savingsEl = document.getElementById('savingsBalance');
+    const checkingTrendEl = document.getElementById('checkingTrend');
+    const savingsTrendEl = document.getElementById('savingsBalanceTrend');
+
+    if (!metrics) {
+        if (checkingEl) checkingEl.textContent = 'N/A';
+        if (savingsEl) savingsEl.textContent = 'N/A';
+        if (checkingTrendEl) checkingTrendEl.textContent = 'N/A';
+        if (savingsTrendEl) savingsTrendEl.textContent = 'N/A';
+        return;
+    }
+
+    if (checkingEl) checkingEl.textContent = formatCurrency(metrics.totals.checking || 0);
+    if (savingsEl) savingsEl.textContent = formatCurrency(metrics.totals.savings || 0);
+
+    const checkingSeries = (metrics.series.checking || []).map((p) => p.total);
+    const savingsSeries = (metrics.series.savings || []).map((p) => p.total);
+
+    const checkingChange = calculateSeriesChange(checkingSeries);
+    const savingsChange = calculateSeriesChange(savingsSeries);
+
+    if (checkingTrendEl) checkingTrendEl.textContent = `${checkingChange.toFixed(1)}%`;
+    if (savingsTrendEl) savingsTrendEl.textContent = `${savingsChange.toFixed(1)}%`;
+
+    renderSparkline('checkingSparkline', checkingSeries, '#38bdf8');
+    renderSparkline('savingsBalanceSparkline', savingsSeries, '#22c55e');
+}
+
+function showBalanceDetail(type) {
+    if (!balanceMetrics) return;
+
+    const titleEl = document.getElementById('balanceDetailTitle');
+    const summaryEl = document.getElementById('balanceDetailSummary');
+    const listEl = document.getElementById('balanceDetailList');
+    const chartEl = document.getElementById('balanceDetailChart');
+    const modalEl = document.getElementById('balanceDetailModal');
+    if (!titleEl || !summaryEl || !listEl || !chartEl || !modalEl) return;
+
+    const labels = {
+        checking: 'Betaalrekeningen',
+        savings: 'Spaarrekeningen',
+        investment: 'Beleggingen / Crypto'
+    };
+    const label = labels[type] || 'Rekeningen';
+    const accounts = [...(balanceMetrics.grouped[type] || [])].sort((a, b) => b.balanceValue - a.balanceValue);
+    const total = accounts.reduce((sum, acc) => sum + acc.balanceValue, 0);
+    const nonEurNote = balanceMetrics.nonEurCount > 0
+        ? ` (${balanceMetrics.nonEurCount} non-EUR rekening(en) uitgesloten)`
+        : '';
+
+    titleEl.innerHTML = `<i class="fas fa-wallet"></i> ${label} - Verdeling`;
+    summaryEl.textContent = `Totaal: ${formatCurrency(total)}${nonEurNote}`;
+
+    listEl.innerHTML = accounts.length
+        ? accounts.map((acc) => `
+            <div class="balance-detail-row">
+                <span class="balance-detail-row-name">${acc.description || `Account ${acc.id}`}</span>
+                <span class="balance-detail-row-value">${formatCurrency(acc.balanceValue)}</span>
+            </div>
+          `).join('')
+        : '<div class="balance-detail-row"><span class="balance-detail-row-name">Geen EUR-rekeningen beschikbaar.</span><span></span></div>';
+
+    if (accounts.length && window.Plotly) {
+        const trace = {
+            type: 'bar',
+            orientation: 'h',
+            x: accounts.map((acc) => acc.balanceValue).reverse(),
+            y: accounts.map((acc) => acc.description || `Account ${acc.id}`).reverse(),
+            marker: {
+                color: accounts.map((acc) => (
+                    acc.account_type === 'savings' ? '#22c55e' :
+                    acc.account_type === 'investment' ? '#f59e0b' :
+                    '#38bdf8'
+                )).reverse()
+            },
+            text: accounts.map((acc) => formatCurrency(acc.balanceValue)).reverse(),
+            textposition: 'outside',
+            hovertemplate: '%{y}<br>%{x:.2f} EUR<extra></extra>'
+        };
+        const layout = {
+            margin: { t: 10, r: 20, l: 140, b: 30 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { color: '#cbd5f5' },
+            xaxis: { gridcolor: 'rgba(255,255,255,0.08)' },
+            yaxis: { automargin: true }
+        };
+        Plotly.react(chartEl, [trace], layout, { displayModeBar: false, responsive: true });
+    } else if (window.Plotly) {
+        Plotly.purge(chartEl);
+    }
+
+    modalEl.classList.add('active');
+}
+
+function closeBalanceDetail() {
+    const modal = document.getElementById('balanceDetailModal');
+    if (modal) modal.classList.remove('active');
+}
+
 function renderSparkline(canvasId, data, color) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
@@ -1043,62 +1282,100 @@ function renderCashflowChart(data) {
 function renderSankeyChart(data) {
     const container = document.getElementById('sankeyChart');
     if (!container) return;
-    
-    const categories = {};
-    data.forEach(t => {
-        const amount = t.amount;
-        if (!categories[t.category]) {
-            categories[t.category] = { income: 0, expenses: 0 };
+
+    const incomeByCategory = {};
+    const expenseByCategory = {};
+    let totalIncome = 0;
+    let totalExpenses = 0;
+
+    data.forEach((t) => {
+        const category = t.category || 'Overig';
+        if (t.amount >= 0) {
+            incomeByCategory[category] = (incomeByCategory[category] || 0) + t.amount;
+            totalIncome += t.amount;
+        } else {
+            const amount = Math.abs(t.amount);
+            expenseByCategory[category] = (expenseByCategory[category] || 0) + amount;
+            totalExpenses += amount;
         }
-        if (amount >= 0) categories[t.category].income += amount;
-        else categories[t.category].expenses += Math.abs(amount);
     });
-    
-    const categoryNames = Object.keys(categories);
-    const nodes = ['Income', 'Expenses', ...categoryNames];
+
+    const topIncome = Object.entries(incomeByCategory)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4);
+    const topExpenses = Object.entries(expenseByCategory)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 7);
+
+    const labels = [...topIncome.map(([name]) => name), 'Cash In', ...topExpenses.map(([name]) => name)];
     const source = [];
     const target = [];
     const value = [];
     const colors = [];
-    
-    categoryNames.forEach((cat, idx) => {
-        const nodeIndex = idx + 2;
-        if (categories[cat].income > 0) {
-            source.push(0);
-            target.push(nodeIndex);
-            value.push(categories[cat].income);
-            colors.push('rgba(34,197,94,0.6)');
-        }
-        if (categories[cat].expenses > 0) {
-            source.push(nodeIndex);
-            target.push(1);
-            value.push(categories[cat].expenses);
-            colors.push('rgba(239,68,68,0.6)');
-        }
+
+    const cashInIndex = topIncome.length;
+
+    topIncome.forEach(([name, amount], idx) => {
+        if (amount <= 0) return;
+        source.push(idx);
+        target.push(cashInIndex);
+        value.push(amount);
+        colors.push('rgba(34,197,94,0.5)');
     });
-    
+
+    topExpenses.forEach(([name, amount], idx) => {
+        if (amount <= 0) return;
+        source.push(cashInIndex);
+        target.push(cashInIndex + 1 + idx);
+        value.push(amount);
+        colors.push('rgba(239,68,68,0.45)');
+    });
+
+    const net = totalIncome - totalExpenses;
+    if (net > 0) {
+        labels.push('Net Saved');
+        source.push(cashInIndex);
+        target.push(labels.length - 1);
+        value.push(net);
+        colors.push('rgba(56,189,248,0.45)');
+    } else if (net < 0) {
+        labels.push('Buffer / Debt');
+        source.push(labels.length - 1);
+        target.push(cashInIndex);
+        value.push(Math.abs(net));
+        colors.push('rgba(251,191,36,0.45)');
+    }
+
     const trace = {
         type: 'sankey',
+        arrangement: 'snap',
         node: {
-            label: nodes,
+            label: labels,
             pad: 15,
             thickness: 18,
-            color: ['#22c55e', '#ef4444', ...categoryNames.map(getCategoryColor)]
+            color: labels.map((label) => {
+                if (label === 'Cash In') return '#22c55e';
+                if (label === 'Net Saved') return '#38bdf8';
+                if (label === 'Buffer / Debt') return '#f59e0b';
+                return getCategoryColor(label);
+            }),
+            line: { color: 'rgba(15,23,42,0.7)', width: 1.2 }
         },
         link: {
             source,
             target,
             value,
-            color: colors
+            color: colors,
+            hovertemplate: '%{source.label} → %{target.label}<br>%{value:.2f} EUR<extra></extra>'
         }
     };
-    
+
     const layout = {
         margin: { t: 20, r: 20, l: 20, b: 20 },
         paper_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#cbd5f5' }
     };
-    
+
     Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
 }
 
@@ -1148,7 +1425,18 @@ function renderSunburstChart(data) {
             values.push(total);
         });
     });
-    
+
+    const labelColors = labels.map((label, index) => {
+        if (label === 'All') return '#334155';
+        if (label === 'Income') return '#22c55e';
+        if (label === 'Expenses') return '#ef4444';
+        const parent = parents[index];
+        if (parent === 'Income' || parent === 'Expenses') {
+            return getCategoryColor(label);
+        }
+        return hexToRgba(getCategoryColor(parent), 0.82);
+    });
+
     const trace = {
         type: 'sunburst',
         labels,
@@ -1156,13 +1444,22 @@ function renderSunburstChart(data) {
         values,
         branchvalues: 'total',
         maxdepth: 3,
-        insidetextorientation: 'radial'
+        insidetextorientation: 'radial',
+        marker: {
+            colors: labelColors,
+            line: {
+                color: 'rgba(15, 23, 42, 0.9)',
+                width: 1.4
+            }
+        },
+        hovertemplate: '%{label}<br>%{value:.2f} EUR<extra></extra>'
     };
     
     const layout = {
         margin: { t: 20, r: 10, l: 10, b: 10 },
         paper_bgcolor: 'rgba(0,0,0,0)',
-        font: { color: '#cbd5f5' }
+        font: { color: '#cbd5f5' },
+        uniformtext: { minsize: 10, mode: 'hide' }
     };
     
     Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
@@ -1434,8 +1731,13 @@ function renderInsights(data, kpis) {
     const prior = daily.slice(0, mid).reduce((sum, d) => sum + d.expenses, 0);
     const change = prior > 0 ? ((recent - prior) / prior) * 100 : 0;
     if (trendInsight) {
-        const direction = change <= 0 ? 'down' : 'up';
-        trendInsight.textContent = `Spending trend is ${direction} (${change.toFixed(1)}%)`;
+        const direction = change <= 0 ? 'daalt' : 'stijgt';
+        const biggestLabel = biggest ? biggest[0] : 'Overig';
+        const biggestValue = biggest ? biggest[1] : 0;
+        const action = change > 10
+            ? `Actie: beperk ${biggestLabel} met ~${formatCurrency(biggestValue * 0.1)}`
+            : 'Actie: houd dit niveau vast';
+        trendInsight.textContent = `Uitgaventrend ${direction} (${change.toFixed(1)}%). ${action}.`;
     }
 }
 
@@ -1487,6 +1789,12 @@ function startAutoRefresh() {
     }
 }
 
+function applyVisualPreferences() {
+    document.body.classList.toggle('reduce-animations', !CONFIG.enableAnimations);
+    document.body.classList.toggle('effects-enhanced', CONFIG.enableParticles);
+    document.body.classList.toggle('effects-minimal', !CONFIG.enableParticles);
+}
+
 // Settings functions
 function openSettings() {
     document.getElementById('apiEndpoint').value = CONFIG.apiEndpoint;
@@ -1518,6 +1826,7 @@ function saveSettings() {
     localStorage.setItem('excludeInternalTransfers', CONFIG.excludeInternalTransfers);
     
     closeSettings();
+    applyVisualPreferences();
     
     if (CONFIG.enableParticles) {
         initializeParticles();

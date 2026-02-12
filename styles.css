@@ -99,6 +99,22 @@ body {
     opacity: 0.3;
 }
 
+body.effects-enhanced #particles-js {
+    opacity: 0.45;
+}
+
+body.effects-minimal #particles-js {
+    opacity: 0;
+    pointer-events: none;
+}
+
+body.reduce-animations *,
+body.reduce-animations *::before,
+body.reduce-animations *::after {
+    animation: none !important;
+    transition: none !important;
+}
+
 /* ============================================
    GLASS MORPHISM EFFECT
    ============================================ */
@@ -441,10 +457,22 @@ body {
     box-shadow: 0 16px 48px var(--glass-shadow);
 }
 
+body.reduce-animations .kpi-card:hover,
+body.reduce-animations .viz-card:hover,
+body.reduce-animations .action-btn:hover,
+body.reduce-animations .play-btn:hover {
+    transform: none;
+}
+
 .income-card::before { background: var(--gradient-income); }
 .expense-card::before { background: var(--gradient-danger); }
 .savings-card::before { background: var(--gradient-success); }
 .rate-card::before { background: var(--gradient-primary); }
+.balance-card::before { background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%); }
+
+.clickable-kpi {
+    cursor: pointer;
+}
 
 .kpi-icon {
     width: 50px;
@@ -470,6 +498,11 @@ body {
 .savings-card .kpi-icon {
     background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
     color: var(--accent-success);
+}
+
+.balance-card .kpi-icon {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%);
+    color: #38bdf8;
 }
 
 .rate-card .kpi-icon {
@@ -511,6 +544,11 @@ body {
 .kpi-trend.negative {
     background: rgba(239, 68, 68, 0.1);
     color: var(--accent-danger);
+}
+
+.kpi-trend.neutral {
+    background: rgba(148, 163, 184, 0.15);
+    color: var(--text-secondary);
 }
 
 .kpi-sparkline {
@@ -1013,6 +1051,41 @@ body {
 .modal-footer {
     padding: var(--spacing-lg);
     border-top: 1px solid var(--glass-border);
+}
+
+.balance-detail-summary {
+    margin-bottom: var(--spacing-md);
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.balance-detail-chart {
+    width: 100%;
+    height: 320px;
+    margin-bottom: var(--spacing-md);
+}
+
+.balance-detail-list {
+    display: grid;
+    gap: var(--spacing-xs);
+}
+
+.balance-detail-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--spacing-sm);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(148, 163, 184, 0.1);
+}
+
+.balance-detail-row-name {
+    color: var(--text-primary);
+}
+
+.balance-detail-row-value {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 
 .btn-primary {

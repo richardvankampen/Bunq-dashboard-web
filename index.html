@@ -117,8 +117,44 @@
         <!-- KPI Cards Section -->
         <section class="kpi-section">
             <div class="kpi-grid">
+                <!-- Total Checking Balance -->
+                <div class="kpi-card glass-effect balance-card clickable-kpi" data-account-type="checking" data-aos="fade-up" data-aos-delay="0">
+                    <div class="kpi-icon">
+                        <i class="fas fa-wallet"></i>
+                    </div>
+                    <div class="kpi-content">
+                        <p class="kpi-label">Betaalrekeningen (totaal)</p>
+                        <h2 class="kpi-value" id="checkingBalance">€0</h2>
+                        <div class="kpi-trend neutral">
+                            <i class="fas fa-chart-line"></i>
+                            <span id="checkingTrend">0%</span>
+                        </div>
+                    </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="checkingSparkline"></canvas>
+                    </div>
+                </div>
+
+                <!-- Total Savings Balance -->
+                <div class="kpi-card glass-effect balance-card clickable-kpi" data-account-type="savings" data-aos="fade-up" data-aos-delay="100">
+                    <div class="kpi-icon">
+                        <i class="fas fa-piggy-bank"></i>
+                    </div>
+                    <div class="kpi-content">
+                        <p class="kpi-label">Spaarrekeningen (totaal)</p>
+                        <h2 class="kpi-value" id="savingsBalance">€0</h2>
+                        <div class="kpi-trend neutral">
+                            <i class="fas fa-chart-line"></i>
+                            <span id="savingsBalanceTrend">0%</span>
+                        </div>
+                    </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="savingsBalanceSparkline"></canvas>
+                    </div>
+                </div>
+
                 <!-- Total Income Card -->
-                <div class="kpi-card glass-effect income-card" data-aos="fade-up" data-aos-delay="0">
+                <div class="kpi-card glass-effect income-card" data-aos="fade-up" data-aos-delay="200">
                     <div class="kpi-icon">
                         <i class="fas fa-arrow-trend-up"></i>
                     </div>
@@ -136,7 +172,7 @@
                 </div>
                 
                 <!-- Total Expenses Card -->
-                <div class="kpi-card glass-effect expense-card" data-aos="fade-up" data-aos-delay="100">
+                <div class="kpi-card glass-effect expense-card" data-aos="fade-up" data-aos-delay="300">
                     <div class="kpi-icon">
                         <i class="fas fa-arrow-trend-down"></i>
                     </div>
@@ -154,7 +190,7 @@
                 </div>
                 
                 <!-- Net Savings Card -->
-                <div class="kpi-card glass-effect savings-card" data-aos="fade-up" data-aos-delay="200">
+                <div class="kpi-card glass-effect savings-card" data-aos="fade-up" data-aos-delay="400">
                     <div class="kpi-icon">
                         <i class="fas fa-piggy-bank"></i>
                     </div>
@@ -172,7 +208,7 @@
                 </div>
                 
                 <!-- Savings Rate Card -->
-                <div class="kpi-card glass-effect rate-card" data-aos="fade-up" data-aos-delay="300">
+                <div class="kpi-card glass-effect rate-card" data-aos="fade-up" data-aos-delay="500">
                     <div class="kpi-icon">
                         <i class="fas fa-percentage"></i>
                     </div>
@@ -415,6 +451,23 @@
                         Use the credentials configured in your .env file
                     </p>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Balance Detail Modal -->
+    <div id="balanceDetailModal" class="modal">
+        <div class="modal-content glass-effect">
+            <div class="modal-header">
+                <h2 id="balanceDetailTitle"><i class="fas fa-wallet"></i> Saldoverdeling</h2>
+                <button class="close-modal" id="closeBalanceDetail">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="balanceDetailSummary" class="balance-detail-summary"></p>
+                <div id="balanceDetailChart" class="balance-detail-chart"></div>
+                <div id="balanceDetailList" class="balance-detail-list"></div>
             </div>
         </div>
     </div>

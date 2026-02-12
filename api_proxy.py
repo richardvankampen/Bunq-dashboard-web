@@ -715,6 +715,22 @@ def extract_own_ibans(accounts):
                 ibans.add(alias_iban)
     return ibans
 
+def classify_account_type(account):
+    """
+    Coarse account classification for dashboard grouping.
+    Returns one of: checking, savings, investment.
+    """
+    class_name = account.__class__.__name__.lower()
+    description = (get_obj_field(account, 'description', 'display_name', default='') or '').lower()
+    subtype = (get_obj_field(account, 'sub_type', 'type_', 'type', default='') or '').lower()
+    fingerprint = f"{class_name} {description} {subtype}"
+
+    if any(token in fingerprint for token in ('savings', 'spaar')):
+        return 'savings'
+    if any(token in fingerprint for token in ('investment', 'stock', 'share', 'crypto', 'belegging')):
+        return 'investment'
+    return 'checking'
+
 # ============================================
 # AUTHENTICATION ENDPOINTS
 # ============================================
@@ -1020,6 +1036,7 @@ def get_accounts():
                 get_obj_field(account, 'balance'),
                 context=f"account {account_id} balance"
             )
+            account_type = classify_account_type(account)
             accounts_data.append({
                 'id': account_id,
                 'description': get_obj_field(account, 'description', 'display_name') or f"Account {account_id}",
@@ -1027,7 +1044,9 @@ def get_accounts():
                     'value': balance_value,
                     'currency': balance_currency
                 },
-                'status': get_obj_field(account, 'status', 'status_') or 'UNKNOWN'
+                'status': get_obj_field(account, 'status', 'status_') or 'UNKNOWN',
+                'account_type': account_type,
+                'account_class': account.__class__.__name__
             })
         
         logger.info(f"✅ Retrieved {len(accounts_data)} accounts")
