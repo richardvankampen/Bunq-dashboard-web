@@ -17,6 +17,7 @@ ENV PYTHONUNBUFFERED=1 \
 # Pin Bitwarden CLI release (native binary)
 ARG BW_VERSION=2026.1.0
 ARG BW_SHA256=f99817d95a7a6f70506bc3e17f20f65ec09d15d0f840f168f172f4db0fd5f22f
+ARG BW_NPM_VERSION=2026.1.0
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -24,12 +25,21 @@ RUN apt-get update && apt-get install -y \
     curl \
     unzip \
     ca-certificates \
-    && curl -fsSL -o /tmp/bw.zip "https://github.com/bitwarden/clients/releases/download/cli-v${BW_VERSION}/bw-linux-${BW_VERSION}.zip" \
-    && echo "${BW_SHA256}  /tmp/bw.zip" | sha256sum -c - \
-    && unzip -q /tmp/bw.zip -d /tmp \
-    && install -m 0755 /tmp/bw /usr/local/bin/bw \
+    && ARCH="$(dpkg --print-architecture)" \
+    && if [ "${ARCH}" = "amd64" ]; then \
+         curl -fsSL -o /tmp/bw.zip "https://github.com/bitwarden/clients/releases/download/cli-v${BW_VERSION}/bw-linux-${BW_VERSION}.zip" \
+         && echo "${BW_SHA256}  /tmp/bw.zip" | sha256sum -c - \
+         && unzip -q /tmp/bw.zip -d /tmp \
+         && install -m 0755 /tmp/bw /usr/local/bin/bw \
+         && rm -f /tmp/bw.zip /tmp/bw; \
+       elif [ "${ARCH}" = "arm64" ]; then \
+         apt-get install -y --no-install-recommends nodejs npm \
+         && npm install -g "@bitwarden/cli@${BW_NPM_VERSION}" \
+         && npm cache clean --force; \
+       else \
+         echo "Unsupported architecture for Bitwarden CLI: ${ARCH}" >&2; exit 1; \
+       fi \
     && bw --version \
-    && rm -f /tmp/bw.zip /tmp/bw \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies

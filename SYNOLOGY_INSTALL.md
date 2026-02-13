@@ -535,9 +535,15 @@ cd /volume1/docker/bunq-dashboard
 # Build image
 sudo docker build -t bunq-dashboard:local .
 
-**Let op (pip warning):** Tijdens het builden kun je een waarschuwing zien zoals  
-`WARNING: Running pip as the 'root' user ...` of een melding over een nieuwe pip‑versie.  
-Dit is **normaal in Docker builds** en je hoeft hier niets mee te doen.
+# Architectuur-opmerking (Bitwarden CLI):
+# - amd64/Intel NAS: native bw binary (kleiner image)
+# - arm64 NAS: @bitwarden/cli via npm fallback (groter image, maar nodig op ARM)
+#
+# Let op (pip warning):
+# Tijdens het builden kun je zien:
+# WARNING: Running pip as the 'root' user ...
+# of een melding over een nieuwe pip-versie.
+# Dit is normaal in Docker builds.
 
 # Deploy stack (Swarm) with values from .env
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
