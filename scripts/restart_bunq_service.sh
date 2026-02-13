@@ -24,9 +24,28 @@ echo "[1/4] Force restart service"
 if [ -n "${IMAGE_TAG}" ]; then
   TARGET_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
   echo "Using image override: ${TARGET_IMAGE}"
+  if ! $DOCKER_CMD image inspect "${TARGET_IMAGE}" >/dev/null 2>&1; then
+    echo "ERROR: image ${TARGET_IMAGE} not found locally."
+    echo "Build it first:"
+    echo "  sudo docker build -t ${TARGET_IMAGE} ."
+    exit 1
+  fi
+  set +e
   $DOCKER_CMD service update --image "${TARGET_IMAGE}" --force "${SERVICE_NAME}" >/dev/null
+  UPDATE_EXIT=$?
+  set -e
 else
+  set +e
   $DOCKER_CMD service update --force "${SERVICE_NAME}" >/dev/null
+  UPDATE_EXIT=$?
+  set -e
+fi
+if [ "${UPDATE_EXIT}" -ne 0 ]; then
+  echo "ERROR: service update failed (exit ${UPDATE_EXIT}). Recent task state:"
+  $DOCKER_CMD service ps --no-trunc --format "table {{.Name}}\t{{.CurrentState}}\t{{.Error}}" "${SERVICE_NAME}" || true
+  echo "You can rollback with:"
+  echo "  sudo docker service update --rollback ${SERVICE_NAME}"
+  exit "${UPDATE_EXIT}"
 fi
 sleep 6
 
