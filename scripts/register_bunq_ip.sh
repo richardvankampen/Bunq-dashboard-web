@@ -33,6 +33,7 @@ print(requests.get("https://api64.ipify.org", timeout=10).text.strip())
 PY
 
 USE_VAULTWARDEN="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -c 'echo "${USE_VAULTWARDEN:-true}"' | tr '[:upper:]' '[:lower:]')"
+VAULTWARDEN_ACCESS_METHOD="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -c 'echo "${VAULTWARDEN_ACCESS_METHOD:-cli}"' | tr '[:upper:]' '[:lower:]')"
 echo "[2/6] Auth mode: USE_VAULTWARDEN=${USE_VAULTWARDEN}"
 
 if [ "${USE_VAULTWARDEN}" = "false" ]; then
@@ -95,6 +96,12 @@ except Exception as exc:
     sys.exit(1)
 PY
 else
+  if [ "${VAULTWARDEN_ACCESS_METHOD}" = "cli" ]; then
+    if ! $DOCKER_CMD exec "${CONTAINER_ID}" test -f /run/secrets/vaultwarden_master_password; then
+      echo "ERROR: missing /run/secrets/vaultwarden_master_password (required for VAULTWARDEN_ACCESS_METHOD=cli)"
+      exit 1
+    fi
+  fi
   echo "[5/6] Vaultwarden mode: context will be recreated on service restart"
 fi
 

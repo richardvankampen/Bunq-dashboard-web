@@ -289,6 +289,7 @@ Maak `/volume1/docker/bunq-dashboard/.env` met **niet‑gevoelige** settings.
 |---|---|---|
 | `BASIC_AUTH_USERNAME` | Inlog gebruikersnaam voor het dashboard | `admin` (of eigen keuze) |
 | `VAULTWARDEN_URL` | Interne URL van Vaultwarden container | `http://vaultwarden:80` (zelfde network) |
+| `VAULTWARDEN_ACCESS_METHOD` | Methode om Vaultwarden item te lezen | `cli` (aanbevolen/default) |
 | `VAULTWARDEN_ITEM_NAME` | Naam van het Vault item met je Bunq API key | `Bunq API Key` |
 | `USE_VAULTWARDEN` | Gebruik Vaultwarden i.p.v. directe API key | `true` |
 | `BUNQ_ENVIRONMENT` | Bunq omgeving | `PRODUCTION` (of `SANDBOX` voor test) |
@@ -327,6 +328,7 @@ Gebruik daarom **altijd dezelfde URL** (HTTP of HTTPS), anders werkt je sessie n
 ```bash
 BASIC_AUTH_USERNAME=admin
 VAULTWARDEN_URL=http://vaultwarden:80
+VAULTWARDEN_ACCESS_METHOD=cli
 VAULTWARDEN_ITEM_NAME="Bunq API Key"
 USE_VAULTWARDEN=true
 BUNQ_ENVIRONMENT=PRODUCTION
@@ -380,6 +382,7 @@ sudo docker network connect bunq-net vaultwarden
 | `bunq_flask_secret_key` | Sessie‑encryptie sleutel | Genereer 64 hex chars: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
 | `bunq_vaultwarden_client_id` | OAuth client_id uit Vaultwarden | Waarde uit stap 2.6 |
 | `bunq_vaultwarden_client_secret` | OAuth client_secret uit Vaultwarden | Waarde uit stap 2.6 |
+| `bunq_vaultwarden_master_password` | Master password van dezelfde Vaultwarden account | Verplicht bij `VAULTWARDEN_ACCESS_METHOD=cli` |
 
 **Optioneel (alleen als `USE_VAULTWARDEN=false`):**
 
@@ -399,6 +402,7 @@ printf '%s' "JouwSterkeWachtwoord" | sudo docker secret create bunq_basic_auth_p
 python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
 printf '%s' "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -
 printf '%s' "jouw_vaultwarden_client_secret" | sudo docker secret create bunq_vaultwarden_client_secret -
+printf '%s' "jouw_vaultwarden_master_password" | sudo docker secret create bunq_vaultwarden_master_password -
 
 # Alleen als USE_VAULTWARDEN=false:
 # printf '%s' "jouw_bunq_api_key" | sudo docker secret create bunq_api_key -
@@ -410,11 +414,14 @@ printf '%s' "jouw_vaultwarden_client_secret" | sudo docker secret create bunq_va
 read -r CLIENT_ID
 # Plak client_secret (onzichtbaar)
 read -s CLIENT_SECRET
+# Plak vaultwarden master password (onzichtbaar)
+read -s MASTER_PASSWORD
 
 printf '%s' "$CLIENT_ID" | sudo docker secret create bunq_vaultwarden_client_id -
 printf '%s' "$CLIENT_SECRET" | sudo docker secret create bunq_vaultwarden_client_secret -
+printf '%s' "$MASTER_PASSWORD" | sudo docker secret create bunq_vaultwarden_master_password -
 
-unset CLIENT_ID CLIENT_SECRET
+unset CLIENT_ID CLIENT_SECRET MASTER_PASSWORD
 ```
 
 ### Stap 3.4: Update docker-compose.yml
@@ -434,6 +441,7 @@ services:
     environment:
       BASIC_AUTH_USERNAME: "${BASIC_AUTH_USERNAME:-admin}"
       VAULTWARDEN_URL: "${VAULTWARDEN_URL:-http://vaultwarden:80}"
+      VAULTWARDEN_ACCESS_METHOD: "${VAULTWARDEN_ACCESS_METHOD:-cli}"
       VAULTWARDEN_ITEM_NAME: "${VAULTWARDEN_ITEM_NAME:-Bunq API Key}"
       USE_VAULTWARDEN: "${USE_VAULTWARDEN:-true}"
       BUNQ_ENVIRONMENT: "${BUNQ_ENVIRONMENT:-PRODUCTION}"
@@ -462,6 +470,8 @@ services:
         target: vaultwarden_client_id
       - source: bunq_vaultwarden_client_secret
         target: vaultwarden_client_secret
+      - source: bunq_vaultwarden_master_password
+        target: vaultwarden_master_password
       # Optional: only when USE_VAULTWARDEN=false
       # - source: bunq_api_key
       #   target: bunq_api_key
@@ -500,6 +510,8 @@ secrets:
     external: true
   bunq_vaultwarden_client_secret:
     external: true
+  bunq_vaultwarden_master_password:
+    external: true
   # Optional: only when USE_VAULTWARDEN=false
   # bunq_api_key:
   #   external: true
@@ -509,8 +521,11 @@ secrets:
 
 ### Stap 3.5: Vaultwarden Integratie (al ingebouwd)
 
-De `api_proxy.py` bevat standaard Vaultwarden-integratie. Zorg alleen dat je
-`.env` correct is ingevuld (zoals in stap 3.3) en dat `USE_VAULTWARDEN=true` staat.
+De `api_proxy.py` bevat standaard Vaultwarden-integratie. Zorg dat je:
+- `.env` correct is ingevuld (zoals in stap 3.3),
+- `USE_VAULTWARDEN=true` gebruikt,
+- `VAULTWARDEN_ACCESS_METHOD=cli` gebruikt (aanbevolen),
+- en de secret `bunq_vaultwarden_master_password` hebt aangemaakt.
 
 ### Stap 3.6: Build en Start
 

@@ -27,6 +27,9 @@ import uuid
 import importlib
 import pkgutil
 import inspect
+import shutil
+import subprocess
+import threading
 from collections import defaultdict
 
 # ============================================
@@ -61,6 +64,7 @@ _MONETARY_ACCOUNT_ENDPOINT = None
 _PAYMENT_ENDPOINT = None
 _PAYMENT_LIST_MODE = None
 _FX_RUNTIME_CACHE = {}
+_VAULTWARDEN_CLI_LOCK = threading.Lock()
 
 def get_obj_field(obj, *field_names, default=None):
     """Read first non-empty field from objects or dictionaries."""
@@ -1222,86 +1226,266 @@ def auth_status():
 # VAULTWARDEN SECRET RETRIEVAL
 # ============================================
 
+def get_vaultwarden_access_method():
+    raw = os.getenv('VAULTWARDEN_ACCESS_METHOD', 'cli').strip().lower()
+    if raw not in {'cli', 'api', 'auto'}:
+        logger.warning(f"⚠️ Unknown VAULTWARDEN_ACCESS_METHOD '{raw}', defaulting to 'cli'")
+        return 'cli'
+    return raw
+
+def run_bw_command(args, env, timeout_seconds=30, check=True):
+    result = subprocess.run(
+        ['bw', *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout_seconds
+    )
+    if check and result.returncode != 0:
+        stderr = (result.stderr or '').strip()
+        stdout = (result.stdout or '').strip()
+        message = stderr or stdout or f"bw exited with code {result.returncode}"
+        raise RuntimeError(message)
+    return (result.stdout or '').strip()
+
+def get_api_key_from_vaultwarden_cli(return_status=False):
+    """
+    Retrieve Bunq API key from Vaultwarden using Bitwarden CLI.
+    This path can decrypt item values (server API returns encrypted ciphers).
+    """
+    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80').strip()
+    item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key').strip()
+    client_id = get_config('VAULTWARDEN_CLIENT_ID', None, 'vaultwarden_client_id')
+    client_secret = get_config('VAULTWARDEN_CLIENT_SECRET', None, 'vaultwarden_client_secret')
+    master_password = get_config('VAULTWARDEN_MASTER_PASSWORD', None, 'vaultwarden_master_password')
+    timeout_seconds = get_int_env('VAULTWARDEN_CLI_TIMEOUT_SECONDS', 30)
+
+    status = {
+        'access_method': 'cli',
+        'enabled': True,
+        'vault_url': vault_url,
+        'item_name': item_name,
+        'client_configured': bool(client_id and client_secret),
+        'master_password_configured': bool(master_password),
+        'bw_cli_installed': bool(shutil.which('bw')),
+        'token_ok': False,
+        'item_found': False,
+        'item_has_password': False,
+        'error': None,
+    }
+
+    if not status['bw_cli_installed']:
+        status['error'] = 'Bitwarden CLI (bw) is not installed in the container'
+        if return_status:
+            return None, status
+        logger.error(f"❌ Vaultwarden CLI error: {status['error']}")
+        return None
+
+    if not status['client_configured']:
+        status['error'] = 'Vaultwarden credentials missing (client_id/client_secret)'
+        if return_status:
+            return None, status
+        logger.error(f"❌ Vaultwarden CLI error: {status['error']}")
+        return None
+
+    if not status['master_password_configured']:
+        status['error'] = 'VAULTWARDEN_MASTER_PASSWORD (secret) is missing'
+        if return_status:
+            return None, status
+        logger.error(f"❌ Vaultwarden CLI error: {status['error']}")
+        return None
+
+    appdata_dir = os.getenv('VAULTWARDEN_CLI_APPDATA_DIR', '/tmp/bwcli-dashboard').strip() or '/tmp/bwcli-dashboard'
+    os.makedirs(appdata_dir, exist_ok=True)
+
+    bw_env = os.environ.copy()
+    bw_env.update({
+        'BW_CLIENTID': client_id,
+        'BW_CLIENTSECRET': client_secret,
+        'BW_PASSWORD': master_password,
+        'BW_NOINTERACTION': 'true',
+        'BITWARDENCLI_APPDATA_DIR': appdata_dir,
+    })
+
+    session_key = None
+    with _VAULTWARDEN_CLI_LOCK:
+        try:
+            # Clean any stale session state first.
+            run_bw_command(['logout'], bw_env, timeout_seconds=timeout_seconds, check=False)
+            run_bw_command(['config', 'server', vault_url], bw_env, timeout_seconds=timeout_seconds, check=True)
+            run_bw_command(['login', '--apikey', '--raw'], bw_env, timeout_seconds=timeout_seconds, check=True)
+            status['token_ok'] = True
+            session_key = run_bw_command(
+                ['unlock', '--passwordenv', 'BW_PASSWORD', '--raw'],
+                bw_env,
+                timeout_seconds=timeout_seconds,
+                check=True
+            )
+            if not session_key:
+                raise RuntimeError('bw unlock did not return a session key')
+
+            run_bw_command(['sync', '--session', session_key], bw_env, timeout_seconds=timeout_seconds, check=False)
+            raw_items = run_bw_command(
+                ['list', 'items', '--search', item_name, '--session', session_key],
+                bw_env,
+                timeout_seconds=timeout_seconds,
+                check=True
+            )
+            items = json.loads(raw_items) if raw_items else []
+
+            login_items = [item for item in items if item.get('type') == 1]
+            exact = [item for item in login_items if str(item.get('name', '')).strip() == item_name]
+            candidates = exact if exact else login_items
+
+            if not candidates:
+                status['item_found'] = False
+                return (None, status) if return_status else None
+
+            chosen = candidates[0]
+            status['item_found'] = True
+            password = ((chosen.get('login') or {}).get('password') or '').strip()
+            status['item_has_password'] = bool(password)
+            if not password:
+                if return_status:
+                    return None, status
+                logger.error(f"❌ Vault item '{item_name}' found but password field is empty")
+                return None
+
+            if return_status:
+                return password, status
+            logger.info("✅ API key retrieved from vault (CLI decrypt path)")
+            return password
+        except Exception as exc:
+            status['error'] = str(exc)
+            if return_status:
+                return None, status
+            logger.error(f"❌ Vaultwarden CLI error: {exc}")
+            return None
+        finally:
+            if session_key:
+                run_bw_command(['lock', '--session', session_key], bw_env, timeout_seconds=timeout_seconds, check=False)
+            run_bw_command(['logout'], bw_env, timeout_seconds=timeout_seconds, check=False)
+
+def get_api_key_from_vaultwarden_api(return_status=False):
+    """Retrieve Bunq API key from Vaultwarden API (works only if ciphers are not encrypted for this token)."""
+    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80')
+    client_id = get_config('VAULTWARDEN_CLIENT_ID', None, 'vaultwarden_client_id')
+    client_secret = get_config('VAULTWARDEN_CLIENT_SECRET', None, 'vaultwarden_client_secret')
+    item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key')
+
+    status = {
+        'access_method': 'api',
+        'enabled': True,
+        'vault_url': vault_url,
+        'item_name': item_name,
+        'client_configured': bool(client_id and client_secret),
+        'master_password_configured': None,
+        'bw_cli_installed': bool(shutil.which('bw')),
+        'token_ok': False,
+        'item_found': False,
+        'item_has_password': False,
+        'error': None,
+    }
+
+    if not status['client_configured']:
+        status['error'] = 'Vaultwarden credentials missing (client_id/client_secret)'
+        if return_status:
+            return None, status
+        logger.error("❌ Vaultwarden credentials missing (env or secret)!")
+        return None
+
+    try:
+        logger.info("🔑 Authenticating with Vaultwarden...")
+        token_url = f"{vault_url}/identity/connect/token"
+        token_data = {
+            'grant_type': 'client_credentials',
+            'scope': 'api',
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'deviceType': os.getenv('VAULTWARDEN_DEVICE_TYPE', '22').strip(),
+            'deviceIdentifier': get_vaultwarden_device_identifier(),
+            'deviceName': os.getenv('VAULTWARDEN_DEVICE_NAME', 'Bunq Dashboard').strip()
+        }
+        token_response = requests.post(token_url, data=token_data, timeout=10)
+        token_response.raise_for_status()
+        access_token = token_response.json()['access_token']
+        status['token_ok'] = bool(access_token)
+
+        logger.info("✅ Vaultwarden authentication successful")
+        logger.info(f"🔍 Searching for vault item: '{item_name}'...")
+        items_response = requests.get(
+            f"{vault_url}/api/ciphers",
+            headers={'Authorization': f'Bearer {access_token}'},
+            timeout=10
+        )
+        items_response.raise_for_status()
+        items = items_response.json().get('data', [])
+
+        for item in items:
+            if item.get('name') == item_name and item.get('type') == 1:
+                status['item_found'] = True
+                password = ((item.get('login') or {}).get('password') or '').strip()
+                status['item_has_password'] = bool(password)
+                if password:
+                    if return_status:
+                        return password, status
+                    logger.info("✅ API key retrieved from vault (API path)")
+                    return password
+                if return_status:
+                    return None, status
+                logger.error(f"❌ Item '{item_name}' found but password field is empty!")
+                return None
+
+        if items:
+            first_item_name = str(items[0].get('name', ''))
+            if first_item_name.startswith('2.') and '|' in first_item_name:
+                status['error'] = (
+                    "Vault returned encrypted cipher payloads. "
+                    "Use VAULTWARDEN_ACCESS_METHOD=cli and provide vaultwarden_master_password secret."
+                )
+            else:
+                status['error'] = f"Item '{item_name}' not found in vault"
+        else:
+            status['error'] = f"Item '{item_name}' not found in vault"
+
+        if return_status:
+            return None, status
+        logger.error(f"❌ {status['error']}")
+        return None
+    except Exception as exc:
+        status['error'] = str(exc)
+        if return_status:
+            return None, status
+        logger.error(f"❌ Vaultwarden error: {exc}")
+        return None
+
 def get_api_key_from_vaultwarden():
     """
-    Securely retrieve Bunq API key from Vaultwarden vault.
-    
-    Returns:
-        str: Bunq API key or None if retrieval failed
+    Retrieve Bunq API key with Vaultwarden-first flow.
+    Preferred method: Vaultwarden CLI decryption (`VAULTWARDEN_ACCESS_METHOD=cli`).
     """
-    
     use_vaultwarden = os.getenv('USE_VAULTWARDEN', 'true').lower() == 'true'
-    
     if not use_vaultwarden:
         logger.warning("⚠️ Vaultwarden disabled: falling back to direct API key (env/secret)")
         api_key = get_config('BUNQ_API_KEY', '', 'bunq_api_key')
         if api_key:
             logger.info("✅ API key loaded from env/secret")
         return api_key
-    
-    logger.info("🔐 Retrieving API key from Vaultwarden vault...")
-    
-    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80')
-    client_id = get_config('VAULTWARDEN_CLIENT_ID', None, 'vaultwarden_client_id')
-    client_secret = get_config('VAULTWARDEN_CLIENT_SECRET', None, 'vaultwarden_client_secret')
-    item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key')
-    
-    if not client_id or not client_secret:
-        logger.error("❌ Vaultwarden credentials missing (env or secret)!")
-        return None
-    
-    try:
-        # Step 1: Authenticate
-        logger.info("🔑 Authenticating with Vaultwarden...")
-        token_url = f"{vault_url}/identity/connect/token"
-        device_identifier = get_vaultwarden_device_identifier()
-        device_name = os.getenv('VAULTWARDEN_DEVICE_NAME', 'Bunq Dashboard').strip()
-        device_type = os.getenv('VAULTWARDEN_DEVICE_TYPE', '22').strip()
-        token_data = {
-            'grant_type': 'client_credentials',
-            'scope': 'api',
-            'client_id': client_id,
-            'client_secret': client_secret,
-            # Some Vaultwarden/Bitwarden servers require these fields
-            'deviceType': device_type,
-            'deviceIdentifier': device_identifier,
-            'deviceName': device_name
-        }
-        
-        token_response = requests.post(token_url, data=token_data, timeout=10)
-        token_response.raise_for_status()
-        access_token = token_response.json()['access_token']
-        
-        logger.info("✅ Vaultwarden authentication successful")
-        
-        # Step 2: Retrieve vault items
-        logger.info(f"🔍 Searching for vault item: '{item_name}'...")
-        items_url = f"{vault_url}/api/ciphers"
-        headers = {'Authorization': f'Bearer {access_token}'}
-        
-        items_response = requests.get(items_url, headers=headers, timeout=10)
-        items_response.raise_for_status()
-        items = items_response.json().get('data', [])
-        
-        # Step 3: Find API key
-        for item in items:
-            if item.get('name') == item_name and item.get('type') == 1:
-                login_data = item.get('login', {})
-                api_key = login_data.get('password')
-                
-                if api_key:
-                    logger.info("✅ API key retrieved from vault")
-                    return api_key
-                else:
-                    logger.error(f"❌ Item '{item_name}' found but password field is empty!")
-                    return None
-        
-        logger.error(f"❌ Item '{item_name}' not found in vault!")
-        return None
-        
-    except Exception as e:
-        logger.error(f"❌ Vaultwarden error: {e}")
-        return None
+
+    method = get_vaultwarden_access_method()
+    logger.info(f"🔐 Retrieving API key from Vaultwarden ({method} method)...")
+
+    if method == 'cli':
+        return get_api_key_from_vaultwarden_cli()
+    if method == 'api':
+        return get_api_key_from_vaultwarden_api()
+
+    # auto: try CLI first, then API fallback
+    api_key = get_api_key_from_vaultwarden_cli()
+    if api_key:
+        return api_key
+    logger.warning("⚠️ Vaultwarden CLI path failed, trying API fallback")
+    return get_api_key_from_vaultwarden_api()
 
 # ============================================
 # ADMIN/MAINTENANCE HELPERS
@@ -1326,13 +1510,17 @@ def get_public_egress_ip(timeout_seconds=8):
 def get_vaultwarden_status_snapshot():
     """Runtime status snapshot for admin panel diagnostics (no secret leakage)."""
     use_vaultwarden = os.getenv('USE_VAULTWARDEN', 'true').strip().lower() == 'true'
-    item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key')
-    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80')
+    method = get_vaultwarden_access_method()
+    item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key').strip()
+    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80').strip()
     status = {
         'enabled': use_vaultwarden,
+        'access_method': method,
         'vault_url': vault_url,
         'item_name': item_name,
         'client_configured': False,
+        'master_password_configured': None,
+        'bw_cli_installed': bool(shutil.which('bw')),
         'token_ok': False,
         'item_found': False,
         'item_has_password': False,
@@ -1343,52 +1531,26 @@ def get_vaultwarden_status_snapshot():
         status['error'] = 'Vaultwarden disabled (USE_VAULTWARDEN=false)'
         return status
 
-    client_id = get_config('VAULTWARDEN_CLIENT_ID', None, 'vaultwarden_client_id')
-    client_secret = get_config('VAULTWARDEN_CLIENT_SECRET', None, 'vaultwarden_client_secret')
-    status['client_configured'] = bool(client_id and client_secret)
-    if not status['client_configured']:
-        status['error'] = 'Missing Vaultwarden client credentials'
+    if method == 'cli':
+        _, cli_status = get_api_key_from_vaultwarden_cli(return_status=True)
+        status.update(cli_status)
         return status
 
-    try:
-        token_response = requests.post(
-            f"{vault_url}/identity/connect/token",
-            data={
-                'grant_type': 'client_credentials',
-                'scope': 'api',
-                'client_id': client_id,
-                'client_secret': client_secret,
-                'deviceType': os.getenv('VAULTWARDEN_DEVICE_TYPE', '22').strip(),
-                'deviceIdentifier': get_vaultwarden_device_identifier(),
-                'deviceName': os.getenv('VAULTWARDEN_DEVICE_NAME', 'Bunq Dashboard').strip(),
-            },
-            timeout=10,
-        )
-        token_response.raise_for_status()
-        access_token = token_response.json().get('access_token')
-        status['token_ok'] = bool(access_token)
+    if method == 'api':
+        _, api_status = get_api_key_from_vaultwarden_api(return_status=True)
+        status.update(api_status)
+        return status
 
-        if not access_token:
-            status['error'] = 'Vaultwarden token response missing access_token'
-            return status
+    # auto: show CLI status first, then API fallback status when needed
+    _, cli_status = get_api_key_from_vaultwarden_cli(return_status=True)
+    status.update(cli_status)
+    if status.get('item_found') and status.get('item_has_password') and status.get('token_ok'):
+        return status
 
-        items_response = requests.get(
-            f"{vault_url}/api/ciphers",
-            headers={'Authorization': f'Bearer {access_token}'},
-            timeout=10,
-        )
-        items_response.raise_for_status()
-        items = items_response.json().get('data', [])
-
-        for item in items:
-            if item.get('name') == item_name and item.get('type') == 1:
-                status['item_found'] = True
-                password = (item.get('login', {}) or {}).get('password')
-                status['item_has_password'] = bool(password)
-                break
-    except Exception as exc:
-        status['error'] = str(exc)
-
+    _, api_status = get_api_key_from_vaultwarden_api(return_status=True)
+    status['api_fallback'] = api_status
+    if not status.get('error'):
+        status['error'] = f"CLI path failed, API fallback status: {api_status.get('error')}"
     return status
 
 # ============================================

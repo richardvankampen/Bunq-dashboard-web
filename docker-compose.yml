@@ -13,6 +13,7 @@ services:
       # Non-secret configuration (from .env or defaults)
       BASIC_AUTH_USERNAME: "${BASIC_AUTH_USERNAME:-admin}"
       VAULTWARDEN_URL: "${VAULTWARDEN_URL:-http://vaultwarden:80}"
+      VAULTWARDEN_ACCESS_METHOD: "${VAULTWARDEN_ACCESS_METHOD:-cli}"
       VAULTWARDEN_ITEM_NAME: "${VAULTWARDEN_ITEM_NAME:-Bunq API Key}"
       USE_VAULTWARDEN: "${USE_VAULTWARDEN:-true}"
       BUNQ_ENVIRONMENT: "${BUNQ_ENVIRONMENT:-PRODUCTION}"
@@ -41,6 +42,8 @@ services:
         target: vaultwarden_client_id
       - source: bunq_vaultwarden_client_secret
         target: vaultwarden_client_secret
+      - source: bunq_vaultwarden_master_password
+        target: vaultwarden_master_password
       # Optional: only when USE_VAULTWARDEN=false
       # - source: bunq_api_key
       #   target: bunq_api_key
@@ -101,6 +104,8 @@ secrets:
   bunq_vaultwarden_client_id:
     external: true
   bunq_vaultwarden_client_secret:
+    external: true
+  bunq_vaultwarden_master_password:
     external: true
   # Optional: only when USE_VAULTWARDEN=false
   # bunq_api_key:

@@ -318,7 +318,7 @@ docker logs vaultwarden
 #### B. Wrong Credentials
 ```bash
 # Verify secrets exist
-docker secret ls | grep bunq_vaultwarden_client
+docker secret ls | grep -E "bunq_vaultwarden_client|bunq_vaultwarden_master_password"
 
 # Get correct credentials from Vaultwarden:
 1. Login to http://192.168.1.100:9000
@@ -327,9 +327,11 @@ docker secret ls | grep bunq_vaultwarden_client
 4. Copy client_id and client_secret
 5. Update secrets:
    - `sudo docker secret rm bunq_vaultwarden_client_id`
-   - `printf "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -`
+   - `printf '%s' "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -`
    - `sudo docker secret rm bunq_vaultwarden_client_secret`
-   - `printf "your_client_secret" | sudo docker secret create bunq_vaultwarden_client_secret -`
+   - `printf '%s' "your_client_secret" | sudo docker secret create bunq_vaultwarden_client_secret -`
+   - `sudo docker secret rm bunq_vaultwarden_master_password`
+   - `printf '%s' "your_vaultwarden_master_password" | sudo docker secret create bunq_vaultwarden_master_password -`
 6. Redeploy: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
 ```
 
@@ -357,10 +359,11 @@ sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack 
 #### D. Item Name Mismatch
 ```bash
 # Check item name in Vaultwarden vault
-# Default: "Bunq API Key" (exact match required!)
+# Default: "Bunq API Key" (exact match required)
 
 # Verify in .env:
-VAULTWARDEN_ITEM_NAME=Bunq API Key
+VAULTWARDEN_ITEM_NAME="Bunq API Key"
+VAULTWARDEN_ACCESS_METHOD=cli
 
 # Check in Vaultwarden UI:
 1. Login to http://192.168.1.100:9000
@@ -372,7 +375,19 @@ VAULTWARDEN_ITEM_NAME=Bunq API Key
 # Option B: Update VAULTWARDEN_ITEM_NAME in .env
 ```
 
-#### E. API Key Not in Vault
+#### E. Vault Returns Encrypted Cipher Names (2.xxxx|xxxx|xxxx)
+```bash
+# Symptom in logs:
+# Item '<name>' not found, while /api/ciphers returns encrypted names.
+#
+# Fix: use CLI decrypt method (recommended/default)
+VAULTWARDEN_ACCESS_METHOD=cli
+
+# Ensure master password secret exists:
+docker secret ls | grep bunq_vaultwarden_master_password
+```
+
+#### F. API Key Not in Vault
 ```bash
 # Add Bunq API key to Vaultwarden:
 1. Login to http://192.168.1.100:9000
@@ -410,9 +425,10 @@ docker service update --force bunq_bunq-dashboard
 ```bash
 # Check .env:
 USE_VAULTWARDEN=true  # Must be true!
+VAULTWARDEN_ACCESS_METHOD=cli  # Recommended/default
 
 # Check credentials set:
-docker secret ls | grep bunq_vaultwarden_client
+docker secret ls | grep -E "bunq_vaultwarden_client|bunq_vaultwarden_master_password"
 
 # If not set, follow Vaultwarden setup in SYNOLOGY_INSTALL.md
 ```

@@ -2281,6 +2281,13 @@ function renderAdminStatusPanel(statusData = null, notice = '', isError = false,
         ['API status', statusData.api_initialized ? 'Initialized' : 'Not initialized', !statusData.api_initialized],
         ['API key source', statusData.api_key_source || '-'],
         ['Vaultwarden enabled', vault.enabled ? 'Yes' : 'No', !vault.enabled],
+        ['Vault access method', vault.access_method || '-'],
+        ['Bitwarden CLI', vault.bw_cli_installed ? 'Installed' : 'Missing', vault.enabled && vault.access_method === 'cli' && !vault.bw_cli_installed],
+        [
+            'Vault master password',
+            vault.master_password_configured === null ? 'N/A' : (vault.master_password_configured ? 'Present' : 'Missing'),
+            vault.enabled && vault.access_method === 'cli' && vault.master_password_configured === false
+        ],
         ['Vault token', vault.token_ok ? 'OK' : 'Failed', vault.enabled && !vault.token_ok],
         ['Vault item', vault.item_found ? 'Found' : 'Not found', vault.enabled && !vault.item_found],
         [

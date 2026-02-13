@@ -218,6 +218,7 @@ ALLOWED_ORIGINS=https://bunq.yourdomain.com  # YOUR domain only!
 
 # Vaultwarden
 USE_VAULTWARDEN=true         # Preferred/default
+VAULTWARDEN_ACCESS_METHOD=cli  # Recommended: decrypts Vault item values via bw CLI
 
 # Bunq
 BUNQ_ENVIRONMENT=PRODUCTION  # For real banking data
@@ -231,6 +232,7 @@ LOG_LEVEL=INFO              # Or WARNING for production
 # - bunq_flask_secret_key
 # - bunq_vaultwarden_client_id
 # - bunq_vaultwarden_client_secret
+# - bunq_vaultwarden_master_password
 # - bunq_api_key (only if USE_VAULTWARDEN=false)
 ```
 

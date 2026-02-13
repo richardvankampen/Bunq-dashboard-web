@@ -18,6 +18,11 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     curl \
+    nodejs \
+    npm \
+    ca-certificates \
+    && npm install -g @bitwarden/cli \
+    && bw --version \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
