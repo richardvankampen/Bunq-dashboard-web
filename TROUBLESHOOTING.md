@@ -433,6 +433,17 @@ docker secret ls | grep -E "bunq_vaultwarden_client|bunq_vaultwarden_master_pass
 # If not set, follow Vaultwarden setup in SYNOLOGY_INSTALL.md
 ```
 
+#### B2. Alleen healthchecks in logs na deploy/herstart
+```bash
+# Force restart + focused startup check:
+sh scripts/restart_bunq_service.sh
+
+# Of handmatig:
+sudo docker service update --force bunq_bunq-dashboard
+sudo docker service logs --since 3m bunq_bunq-dashboard | \
+  grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key"
+```
+
 #### C. Bunq API Key / IP Whitelist Mismatch
 ```bash
 # Detect the exact Bunq auth error:

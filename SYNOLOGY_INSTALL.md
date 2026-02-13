@@ -550,6 +550,9 @@ sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack 
 
 # Check logs
 sudo docker service logs -f bunq_bunq-dashboard
+
+# Force restart + startup validation (aanbevolen na updates)
+sh scripts/restart_bunq_service.sh
 ```
 
 Je zou moeten zien:
@@ -710,6 +713,7 @@ Gebruik `Reinit Bunq context` na:
    - bij Vaultwarden-flow: update key in Vaultwarden item
    - bij directe key-flow (`USE_VAULTWARDEN=false`): update Docker secret `bunq_api_key`
 3. Run: `sh scripts/register_bunq_ip.sh`
+4. Validatie: `sh scripts/restart_bunq_service.sh`
 
 No code changes needed! ✨
 
@@ -721,6 +725,7 @@ No code changes needed! ✨
 - Connectivity: `sudo docker exec $(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1) ping vaultwarden`
 - Redeploy na .env wijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
 - Alleen herstart (zonder config/secrets wijzigingen): `sudo docker service update --force bunq_bunq-dashboard`
+- Herstart + startup-validatie (aanbevolen): `sh scripts/restart_bunq_service.sh`
 - Bunq IP/device opnieuw registreren: `sh scripts/register_bunq_ip.sh`
 
 Voor uitgebreide oplossingen, zie [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

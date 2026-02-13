@@ -107,7 +107,13 @@ fi
 
 echo "[6/6] Restart service to load refreshed context and print recent logs"
 $DOCKER_CMD service update --force "${SERVICE_NAME}" >/dev/null
-$DOCKER_CMD service logs --since "${LOG_MINUTES}m" "${SERVICE_NAME}" | \
-  grep -E "Bunq API|API key|context|Incorrect API key or IP address|initialized|Failed|response id" || true
+LOG_OUTPUT="$($DOCKER_CMD service logs --since "${LOG_MINUTES}m" "${SERVICE_NAME}" 2>&1 || true)"
+printf '%s\n' "$LOG_OUTPUT" | \
+  grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|API key loaded from env/secret|Bunq API|context|Incorrect API key or IP address|initialized|Failed|response id" || true
+
+if ! printf '%s\n' "$LOG_OUTPUT" | grep -Eq "API key retrieved from vault|API key loaded from env/secret|No valid API key"; then
+  echo "WARN: expected API key startup lines were not detected."
+  echo "Tip: run 'sh scripts/restart_bunq_service.sh' for a focused restart check."
+fi
 
 echo "Done."

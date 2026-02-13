@@ -53,6 +53,13 @@ Meer details: [SECURITY.md](SECURITY.md)
 5. Gebruik `VAULTWARDEN_ACCESS_METHOD=cli` + secret `bunq_vaultwarden_master_password`
 6. Gebruik directe `bunq_api_key` alleen als nood-fallback (`USE_VAULTWARDEN=false`)
 7. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh`
+8. Na deploy/herstart kun je startup-validatie doen met `scripts/restart_bunq_service.sh`
+
+Snelle check na deploy:
+```bash
+sudo docker service update --force bunq_bunq-dashboard
+sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key"
+```
 
 ---
 
