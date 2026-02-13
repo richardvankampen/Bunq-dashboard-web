@@ -14,6 +14,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 ENV_FILE="${ENV_FILE:-.env}"
 NETWORK_NAME="${NETWORK_NAME:-bunq-net}"
 RUN_RESTART_CHECK="${RUN_RESTART_CHECK:-true}"
+NO_CACHE="${NO_CACHE:-ask}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker command not found"
@@ -144,9 +145,40 @@ ensure_secrets() {
 }
 
 build_and_deploy() {
+  NO_CACHE_NORMALIZED="$(printf '%s' "${NO_CACHE}" | tr '[:upper:]' '[:lower:]')"
+  case "${NO_CACHE_NORMALIZED}" in
+    true|false)
+      ;;
+    ask|"")
+      if [ -t 0 ]; then
+        printf "Use clean Docker build (--no-cache)? [Y/n]: "
+        read -r NO_CACHE_REPLY || NO_CACHE_REPLY=""
+        case "$(printf '%s' "${NO_CACHE_REPLY}" | tr '[:upper:]' '[:lower:]')" in
+          n|no)
+            NO_CACHE_NORMALIZED=false
+            ;;
+          *)
+            NO_CACHE_NORMALIZED=true
+            ;;
+        esac
+      else
+        # Non-interactive mode keeps the safe default.
+        NO_CACHE_NORMALIZED=true
+      fi
+      ;;
+    *)
+      say "WARN: invalid NO_CACHE='${NO_CACHE}'. Using safe default true."
+      NO_CACHE_NORMALIZED=true
+      ;;
+  esac
+
   TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
-  say "Building image ${IMAGE_REPO}:${TAG} ..."
-  $DOCKER_CMD build --no-cache -t "${IMAGE_REPO}:${TAG}" .
+  say "Building image ${IMAGE_REPO}:${TAG} (no-cache=${NO_CACHE_NORMALIZED}) ..."
+  if [ "${NO_CACHE_NORMALIZED}" = "true" ]; then
+    $DOCKER_CMD build --no-cache -t "${IMAGE_REPO}:${TAG}" .
+  else
+    $DOCKER_CMD build -t "${IMAGE_REPO}:${TAG}" .
+  fi
   $DOCKER_CMD tag "${IMAGE_REPO}:${TAG}" "${IMAGE_REPO}:local"
 
   say "Deploying stack ${STACK_NAME} ..."

@@ -541,6 +541,18 @@ cd /volume1/docker/bunq-dashboard
 sh scripts/install_or_update_synology.sh
 ```
 
+Tijdens de run vraagt het script:
+- `Use clean Docker build (--no-cache)? [Y/n]`
+
+Je kunt dit vooraf forceren:
+```bash
+# Sneller (cached build)
+NO_CACHE=false sh scripts/install_or_update_synology.sh
+
+# Volledig schone build
+NO_CACHE=true sh scripts/install_or_update_synology.sh
+```
+
 Dit script doet:
 - Swarm/network checks
 - check op vereiste secrets (maakt ze niet automatisch aan)

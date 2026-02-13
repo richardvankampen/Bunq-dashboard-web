@@ -82,6 +82,14 @@ cd /volume1/docker/bunq-dashboard
 sh scripts/install_or_update_synology.sh
 ```
 
+Het script vraagt standaard:
+- `Use clean Docker build (--no-cache)? [Y/n]`
+
+Handige overrides:
+- `NO_CACHE=false sh scripts/install_or_update_synology.sh` (sneller, cached build)
+- `NO_CACHE=true sh scripts/install_or_update_synology.sh` (volledig schone build)
+- In non-interactive runs blijft veilige default `NO_CACHE=true` actief.
+
 ---
 
 ## 📄 License
