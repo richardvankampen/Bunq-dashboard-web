@@ -18,9 +18,10 @@ ENV PYTHONUNBUFFERED=1 \
 ARG BW_VERSION=2026.1.0
 ARG BW_SHA256=f99817d95a7a6f70506bc3e17f20f65ec09d15d0f840f168f172f4db0fd5f22f
 ARG BW_NPM_VERSION=2026.1.0
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=${DEBIAN_FRONTEND} apt-get install -y \
     --no-install-recommends \
     curl \
     unzip \
@@ -33,7 +34,7 @@ RUN apt-get update && apt-get install -y \
          && install -m 0755 /tmp/bw /usr/local/bin/bw \
          && rm -f /tmp/bw.zip /tmp/bw; \
        elif [ "${ARCH}" = "arm64" ]; then \
-         apt-get install -y --no-install-recommends nodejs npm \
+         DEBIAN_FRONTEND=${DEBIAN_FRONTEND} apt-get install -y --no-install-recommends nodejs npm \
          && npm install -g "@bitwarden/cli@${BW_NPM_VERSION}" \
          && npm cache clean --force; \
        else \
