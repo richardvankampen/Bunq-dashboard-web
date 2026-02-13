@@ -3,6 +3,8 @@ set -eu
 
 SERVICE_NAME="${1:-bunq_bunq-dashboard}"
 LOG_MINUTES="${LOG_MINUTES:-3}"
+IMAGE_REPO="${IMAGE_REPO:-bunq-dashboard}"
+IMAGE_TAG="${IMAGE_TAG:-}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker command not found"
@@ -16,7 +18,13 @@ fi
 
 echo "Service: ${SERVICE_NAME}"
 echo "[1/3] Force restart service"
-$DOCKER_CMD service update --force "${SERVICE_NAME}" >/dev/null
+if [ -n "${IMAGE_TAG}" ]; then
+  TARGET_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
+  echo "Using image override: ${TARGET_IMAGE}"
+  $DOCKER_CMD service update --image "${TARGET_IMAGE}" --force "${SERVICE_NAME}" >/dev/null
+else
+  $DOCKER_CMD service update --force "${SERVICE_NAME}" >/dev/null
+fi
 sleep 6
 
 echo "[2/3] Verify runtime code marker"

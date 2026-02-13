@@ -2401,7 +2401,7 @@ async function reinitializeBunqContext() {
         await loadAdminStatus();
         renderAdminStatusPanel(
             adminStatusData,
-            'Bunq context opnieuw geïnitialiseerd. Controleer bunq whitelist met het getoonde egress IP. Voor service-level startup check: sh scripts/restart_bunq_service.sh',
+            'Bunq context opnieuw geïnitialiseerd. Controleer bunq whitelist met het getoonde egress IP. Voor service-level startup check: IMAGE_TAG=$(git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh',
             false,
             egressIp
         );

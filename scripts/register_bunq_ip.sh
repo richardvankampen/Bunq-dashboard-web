@@ -114,6 +114,7 @@ printf '%s\n' "$LOG_OUTPUT" | \
 if ! printf '%s\n' "$LOG_OUTPUT" | grep -Eq "API key retrieved from vault|API key loaded from env/secret|No valid API key"; then
   echo "WARN: expected API key startup lines were not detected."
   echo "Tip: run 'sh scripts/restart_bunq_service.sh' for a focused restart check."
+  echo "Tip: if you rebuilt with a git-tagged image, run 'IMAGE_TAG=\$(git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh'."
 fi
 
 echo "Done."

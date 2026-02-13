@@ -533,7 +533,8 @@ De `api_proxy.py` bevat standaard Vaultwarden-integratie. Zorg dat je:
 cd /volume1/docker/bunq-dashboard
 
 # Build image
-sudo docker build -t bunq-dashboard:local .
+TAG=$(sudo git rev-parse --short HEAD)
+sudo docker build --no-cache -t bunq-dashboard:$TAG .
 
 # Architectuur-opmerking (Bitwarden CLI):
 # - amd64/Intel NAS: native bw binary (kleiner image)
@@ -548,11 +549,11 @@ sudo docker build -t bunq-dashboard:local .
 # Deploy stack (Swarm) with values from .env
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
 
+# Force service to exact image tag + startup check
+IMAGE_TAG=$TAG sh scripts/restart_bunq_service.sh
+
 # Check logs
 sudo docker service logs -f bunq_bunq-dashboard
-
-# Force restart + startup validation (aanbevolen na updates)
-sh scripts/restart_bunq_service.sh
 ```
 
 Je zou moeten zien:
@@ -665,10 +666,14 @@ Package Center → Container Manager → Settings
 cd /volume1/docker/bunq-dashboard
 
 # Rebuild image
-sudo docker build -t bunq-dashboard:local .
+TAG=$(sudo git rev-parse --short HEAD)
+sudo docker build --no-cache -t bunq-dashboard:$TAG .
 
 # Redeploy stack
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+
+# Force service to exact image tag + startup validation
+IMAGE_TAG=$TAG sh scripts/restart_bunq_service.sh
 
 # Verify
 sudo docker stack ps bunq
@@ -725,7 +730,7 @@ No code changes needed! ✨
 - Connectivity: `sudo docker exec $(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1) ping vaultwarden`
 - Redeploy na .env wijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
 - Alleen herstart (zonder config/secrets wijzigingen): `sudo docker service update --force bunq_bunq-dashboard`
-- Herstart + startup-validatie (aanbevolen): `sh scripts/restart_bunq_service.sh`
+- Herstart + startup-validatie (aanbevolen): `IMAGE_TAG=$(sudo git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh`
 - Bunq IP/device opnieuw registreren: `sh scripts/register_bunq_ip.sh`
 
 Voor uitgebreide oplossingen, zie [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

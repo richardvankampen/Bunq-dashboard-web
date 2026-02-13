@@ -57,7 +57,13 @@ Meer details: [SECURITY.md](SECURITY.md)
 
 Snelle check na deploy:
 ```bash
-sudo docker service update --force bunq_bunq-dashboard
+TAG=$(sudo git rev-parse --short HEAD)
+sudo docker build --no-cache -t bunq-dashboard:$TAG .
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+IMAGE_TAG=$TAG sh scripts/restart_bunq_service.sh
+
+# Handmatige fallback:
+sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key"
 ```
 

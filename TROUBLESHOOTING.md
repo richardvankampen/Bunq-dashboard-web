@@ -66,7 +66,8 @@ ports:
 #### B. Missing Dependencies
 ```bash
 # Rebuild zonder cache
-docker build -t bunq-dashboard:local .
+TAG=$(git rev-parse --short HEAD)
+docker build --no-cache -t bunq-dashboard:$TAG .
 
 # Check requirements_web.txt bestaat
 ls -la requirements_web.txt
@@ -436,12 +437,25 @@ docker secret ls | grep -E "bunq_vaultwarden_client|bunq_vaultwarden_master_pass
 #### B2. Alleen healthchecks in logs na deploy/herstart
 ```bash
 # Force restart + focused startup check:
-sh scripts/restart_bunq_service.sh
+IMAGE_TAG=$(git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh
 
 # Of handmatig:
-sudo docker service update --force bunq_bunq-dashboard
+TAG=$(git rev-parse --short HEAD)
+sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 sudo docker service logs --since 3m bunq_bunq-dashboard | \
   grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key"
+```
+
+#### B3. Service draait met oude image/tag
+```bash
+TAG=$(git rev-parse --short HEAD)
+sudo docker build --no-cache -t bunq-dashboard:$TAG .
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
+
+# Verifieer runtime marker:
+BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
+sudo docker exec "$BUNQ_CONTAINER" sh -c "grep -n 'get_api_key_from_vaultwarden_cli' /app/api_proxy.py"
 ```
 
 #### C. Bunq API Key / IP Whitelist Mismatch
