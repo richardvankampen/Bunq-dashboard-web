@@ -2420,10 +2420,9 @@ def run_admin_maintenance():
     """
     payload = request.get_json(silent=True) or {}
 
-    auto_target_ip = parse_bool(payload.get('auto_target_ip'), default=True)
-    set_whitelist_ip = parse_bool(payload.get('set_whitelist_ip'), default=True)
+    auto_target_ip = parse_bool(payload.get('auto_target_ip'), default=False)
     deactivate_others = parse_bool(payload.get('deactivate_others'), default=False)
-    refresh_key = parse_bool(payload.get('refresh_key'), default=True)
+    refresh_key = parse_bool(payload.get('refresh_key'), default=False)
     force_recreate = parse_bool(payload.get('force_recreate'), default=True)
     clear_runtime_cache = parse_bool(payload.get('clear_runtime_cache'), default=True)
 
@@ -2436,7 +2435,7 @@ def run_admin_maintenance():
             'error': str(exc)
         }), 400
 
-    if not auto_target_ip and not target_ip and set_whitelist_ip:
+    if not auto_target_ip and not target_ip:
         return jsonify({
             'success': False,
             'error': 'target_ip is required when auto_target_ip=false'
@@ -2467,28 +2466,26 @@ def run_admin_maintenance():
         }), 500
     maintenance_steps.append('bunq_initialized')
 
-    resolved_target_ip = target_ip
-    if set_whitelist_ip:
-        effective_target_ip = target_ip
-        if auto_target_ip and not effective_target_ip:
-            effective_target_ip = None  # set_bunq_api_whitelist_ip resolves current egress IP
+    effective_target_ip = target_ip
+    if auto_target_ip and not effective_target_ip:
+        effective_target_ip = None  # set_bunq_api_whitelist_ip resolves current egress IP
 
-        whitelist_result = set_bunq_api_whitelist_ip(
-            target_ip=effective_target_ip,
-            deactivate_others=deactivate_others
-        )
-        if not whitelist_result.get('success'):
-            return jsonify({
-                'success': False,
-                'error': whitelist_result.get('error', 'Failed to update Bunq allowlist IP'),
-                'data': {
-                    'steps': maintenance_steps,
-                    'api_initialized': True,
-                    'whitelist': whitelist_result
-                }
-            }), 500
-        resolved_target_ip = whitelist_result.get('target_ip')
-        maintenance_steps.append('bunq_whitelist_updated')
+    whitelist_result = set_bunq_api_whitelist_ip(
+        target_ip=effective_target_ip,
+        deactivate_others=deactivate_others
+    )
+    if not whitelist_result.get('success'):
+        return jsonify({
+            'success': False,
+            'error': whitelist_result.get('error', 'Failed to update Bunq allowlist IP'),
+            'data': {
+                'steps': maintenance_steps,
+                'api_initialized': True,
+                'whitelist': whitelist_result
+            }
+        }), 500
+    resolved_target_ip = whitelist_result.get('target_ip')
+    maintenance_steps.append('bunq_whitelist_updated')
 
     return jsonify({
         'success': True,
@@ -2503,7 +2500,6 @@ def run_admin_maintenance():
             'whitelist': whitelist_result,
             'options': {
                 'auto_target_ip': auto_target_ip,
-                'set_whitelist_ip': set_whitelist_ip,
                 'deactivate_others': deactivate_others,
                 'refresh_key': refresh_key,
                 'force_recreate': force_recreate,

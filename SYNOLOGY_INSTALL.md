@@ -722,11 +722,13 @@ In **Settings → Admin Maintenance (P1)** kun je als ingelogde admin:
 - `Run maintenance now`: voert in 1 actie de ingestelde onderhoudsopties uit
 
 Standaardopties in het panel:
-- `Set whitelist IP`: aan
-- `Auto target IP (egress)`: aan
+- `Set whitelist IP`: altijd actief in maintenance flow
+- `Auto target IP (egress)`: uit (vink aan om egress IP automatisch te bepalen)
 - `Refresh API key`: uit (alleen aanzetten na API key rotatie)
 - `Recreate context`: aan
 - `Clear runtime cache`: aan
+- Veld `IP to set on Bunq API whitelist`: vul handmatig in als auto-target uit staat;
+  zodra je een IP invult gaat auto-target automatisch uit.
 
 Gebruik `Reinit Bunq context` na:
 - API key rotatie

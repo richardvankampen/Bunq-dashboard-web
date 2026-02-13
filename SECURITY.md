@@ -259,7 +259,9 @@ sh scripts/register_bunq_ip.sh
 **Alternatief via UI (P1):**
 - Open dashboard → Settings → `Admin Maintenance (P1)`
 - Gebruik `Run maintenance now` met standaardopties
-  - `Set whitelist IP` + `Auto target IP (egress)` + `Refresh key` + `Recreate context`
+  - Whitelist update is altijd actief
+  - `Auto target IP (egress)` standaard uit (of vul handmatig IP in)
+  - `Refresh key` standaard uit (alleen na key-rotatie)
 - Gebruik `Check egress IP` om te verifiëren welk publiek IP ge-whitelist moet zijn
 
 Dit script:

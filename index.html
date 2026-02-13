@@ -551,21 +551,18 @@
                         </button>
                     </div>
                     <div class="admin-tools-inline">
-                        <input type="text" id="adminWhitelistIp" placeholder="IPv4 (leeg = huidige egress IP)">
+                        <label for="adminWhitelistIp">IP to set on Bunq API whitelist</label>
+                        <input type="text" id="adminWhitelistIp" placeholder="IPv4 (bijv. 203.0.113.10)">
+                        <label>
+                            <input type="checkbox" id="adminOptionAutoTargetIp">
+                            Try to determine whitelist IP (egress) automatically
+                        </label>
                         <label>
                             <input type="checkbox" id="adminDeactivateOtherIps">
                             Zet andere ACTIVE whitelist IPs op INACTIVE
                         </label>
                     </div>
                     <div class="admin-tools-options">
-                        <label>
-                            <input type="checkbox" id="adminOptionSetWhitelist" checked>
-                            Set Bunq API whitelist IP
-                        </label>
-                        <label>
-                            <input type="checkbox" id="adminOptionAutoTargetIp" checked>
-                            Gebruik automatisch egress IP als whitelist doel
-                        </label>
                         <label>
                             <input type="checkbox" id="adminOptionRefreshKey">
                             Vernieuw API key uit Vaultwarden/direct secret (alleen nodig na key-rotatie)

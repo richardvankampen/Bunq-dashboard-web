@@ -8,8 +8,7 @@ const DEFAULT_API_ENDPOINT = `${window.location.origin}/api`;
 const ACCOUNT_STORAGE_KEY = 'selectedAccountIds';
 const ADMIN_MAINTENANCE_OPTIONS_KEY = 'adminMaintenanceOptions';
 const DEFAULT_ADMIN_MAINTENANCE_OPTIONS = {
-    set_whitelist_ip: true,
-    auto_target_ip: true,
+    auto_target_ip: false,
     deactivate_others: false,
     refresh_key: false,
     force_recreate: true,
@@ -78,7 +77,6 @@ function saveAdminMaintenanceOptions(options) {
 
 function getAdminMaintenanceOptionsFromUI() {
     return {
-        set_whitelist_ip: document.getElementById('adminOptionSetWhitelist')?.checked ?? DEFAULT_ADMIN_MAINTENANCE_OPTIONS.set_whitelist_ip,
         auto_target_ip: document.getElementById('adminOptionAutoTargetIp')?.checked ?? DEFAULT_ADMIN_MAINTENANCE_OPTIONS.auto_target_ip,
         deactivate_others: document.getElementById('adminDeactivateOtherIps')?.checked ?? DEFAULT_ADMIN_MAINTENANCE_OPTIONS.deactivate_others,
         refresh_key: document.getElementById('adminOptionRefreshKey')?.checked ?? DEFAULT_ADMIN_MAINTENANCE_OPTIONS.refresh_key,
@@ -90,7 +88,6 @@ function getAdminMaintenanceOptionsFromUI() {
 
 function applyAdminMaintenanceOptionsToUI() {
     const options = loadAdminMaintenanceOptions();
-    const optionSetWhitelist = document.getElementById('adminOptionSetWhitelist');
     const optionAutoTargetIp = document.getElementById('adminOptionAutoTargetIp');
     const optionRefreshKey = document.getElementById('adminOptionRefreshKey');
     const optionForceRecreate = document.getElementById('adminOptionForceRecreate');
@@ -99,7 +96,6 @@ function applyAdminMaintenanceOptionsToUI() {
     const optionDeactivateOthers = document.getElementById('adminDeactivateOtherIps');
     const whitelistIpInput = document.getElementById('adminWhitelistIp');
 
-    if (optionSetWhitelist) optionSetWhitelist.checked = Boolean(options.set_whitelist_ip);
     if (optionAutoTargetIp) optionAutoTargetIp.checked = Boolean(options.auto_target_ip);
     if (optionRefreshKey) optionRefreshKey.checked = Boolean(options.refresh_key);
     if (optionForceRecreate) optionForceRecreate.checked = Boolean(options.force_recreate);
@@ -107,14 +103,8 @@ function applyAdminMaintenanceOptionsToUI() {
     if (optionLoadStatusAfter) optionLoadStatusAfter.checked = Boolean(options.load_status_after);
     if (optionDeactivateOthers) optionDeactivateOthers.checked = Boolean(options.deactivate_others);
 
-    if (optionAutoTargetIp) {
-        optionAutoTargetIp.disabled = !options.set_whitelist_ip;
-    }
-    if (optionDeactivateOthers) {
-        optionDeactivateOthers.disabled = !options.set_whitelist_ip;
-    }
     if (whitelistIpInput) {
-        whitelistIpInput.disabled = !options.set_whitelist_ip || Boolean(options.auto_target_ip);
+        whitelistIpInput.disabled = Boolean(options.auto_target_ip);
         whitelistIpInput.placeholder = options.auto_target_ip
             ? 'IPv4 (auto: huidige egress IP)'
             : 'IPv4 (bijv. 203.0.113.10)';
@@ -592,13 +582,20 @@ function setupEventListeners() {
     document.getElementById('adminSetWhitelistIp')?.addEventListener('click', setBunqWhitelistIp);
     document.getElementById('adminReinitBunq')?.addEventListener('click', reinitializeBunqContext);
     document.getElementById('adminRunMaintenance')?.addEventListener('click', runBundledAdminMaintenance);
-    document.getElementById('adminOptionSetWhitelist')?.addEventListener('change', handleAdminMaintenanceOptionChange);
     document.getElementById('adminOptionAutoTargetIp')?.addEventListener('change', handleAdminMaintenanceOptionChange);
     document.getElementById('adminOptionRefreshKey')?.addEventListener('change', handleAdminMaintenanceOptionChange);
     document.getElementById('adminOptionForceRecreate')?.addEventListener('change', handleAdminMaintenanceOptionChange);
     document.getElementById('adminOptionClearRuntimeCache')?.addEventListener('change', handleAdminMaintenanceOptionChange);
     document.getElementById('adminOptionLoadStatusAfter')?.addEventListener('change', handleAdminMaintenanceOptionChange);
     document.getElementById('adminDeactivateOtherIps')?.addEventListener('change', handleAdminMaintenanceOptionChange);
+    document.getElementById('adminWhitelistIp')?.addEventListener('input', () => {
+        const ipInputEl = document.getElementById('adminWhitelistIp');
+        const autoTargetEl = document.getElementById('adminOptionAutoTargetIp');
+        if (ipInputEl && autoTargetEl && ipInputEl.value.trim()) {
+            autoTargetEl.checked = false;
+            handleAdminMaintenanceOptionChange();
+        }
+    });
     
     // Time range
     document.getElementById('timeRange')?.addEventListener('change', (e) => {
@@ -2566,9 +2563,9 @@ async function runBundledAdminMaintenance() {
     const options = getAdminMaintenanceOptionsFromUI();
     const ipInputEl = document.getElementById('adminWhitelistIp');
     const targetIp = (ipInputEl?.value || '').trim();
-    const targetLabel = options.auto_target_ip ? 'current egress IP (auto)' : (targetIp || '(missing)');
+    const targetLabel = options.auto_target_ip ? 'current egress IP (auto)' : targetIp;
 
-    if (options.set_whitelist_ip && !options.auto_target_ip && !targetIp) {
+    if (!options.auto_target_ip && !targetIp) {
         renderAdminStatusPanel(adminStatusData, 'Vul een IPv4 in of zet "Gebruik automatisch egress IP" aan.', true);
         return;
     }
@@ -2577,7 +2574,7 @@ async function runBundledAdminMaintenance() {
         'Run admin maintenance now?\n' +
         `- Recreate context: ${options.force_recreate ? 'yes' : 'no'}\n` +
         `- Refresh API key: ${options.refresh_key ? 'yes' : 'no'}\n` +
-        `- Set whitelist IP: ${options.set_whitelist_ip ? targetLabel : 'no'}\n` +
+        `- Set whitelist IP: ${targetLabel}\n` +
         `- Deactivate other IPs: ${options.deactivate_others ? 'yes' : 'no'}`
     );
     if (!confirmed) return;
@@ -2588,7 +2585,6 @@ async function runBundledAdminMaintenance() {
             body: JSON.stringify({
                 target_ip: targetIp || null,
                 auto_target_ip: options.auto_target_ip,
-                set_whitelist_ip: options.set_whitelist_ip,
                 deactivate_others: options.deactivate_others,
                 refresh_key: options.refresh_key,
                 force_recreate: options.force_recreate,
