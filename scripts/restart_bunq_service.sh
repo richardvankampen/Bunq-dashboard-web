@@ -5,6 +5,9 @@ SERVICE_NAME="${1:-bunq_bunq-dashboard}"
 LOG_MINUTES="${LOG_MINUTES:-3}"
 IMAGE_REPO="${IMAGE_REPO:-bunq-dashboard}"
 IMAGE_TAG="${IMAGE_TAG:-}"
+AUTO_TAG_FROM_GIT="${AUTO_TAG_FROM_GIT:-true}"
+CLEANUP_OLD_IMAGES="${CLEANUP_OLD_IMAGES:-true}"
+KEEP_IMAGE_COUNT="${KEEP_IMAGE_COUNT:-2}"
 RUN_WHITELIST_UPDATE="${RUN_WHITELIST_UPDATE:-true}"
 TARGET_IP="${TARGET_IP:-}"
 DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS:-false}"
@@ -19,10 +22,32 @@ if [ "$(id -u)" -ne 0 ]; then
   DOCKER_CMD="sudo docker"
 fi
 
-echo "Service: ${SERVICE_NAME}"
-echo "[1/4] Force restart service"
+if [ -z "${IMAGE_TAG}" ] && [ "${AUTO_TAG_FROM_GIT}" = "true" ] && command -v git >/dev/null 2>&1; then
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    IMAGE_TAG="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  fi
+fi
+
 if [ -n "${IMAGE_TAG}" ]; then
   TARGET_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
+  if ! $DOCKER_CMD image inspect "${TARGET_IMAGE}" >/dev/null 2>&1; then
+    FALLBACK_IMAGE="${IMAGE_REPO}:local"
+    if $DOCKER_CMD image inspect "${FALLBACK_IMAGE}" >/dev/null 2>&1; then
+      echo "Image ${TARGET_IMAGE} not found; tagging ${FALLBACK_IMAGE} -> ${TARGET_IMAGE}"
+      $DOCKER_CMD tag "${FALLBACK_IMAGE}" "${TARGET_IMAGE}"
+    fi
+  fi
+fi
+
+case "${KEEP_IMAGE_COUNT}" in
+  ''|*[!0-9]*)
+    KEEP_IMAGE_COUNT=2
+    ;;
+esac
+
+echo "Service: ${SERVICE_NAME}"
+echo "[1/5] Force restart service"
+if [ -n "${IMAGE_TAG}" ]; then
   echo "Using image override: ${TARGET_IMAGE}"
   if ! $DOCKER_CMD image inspect "${TARGET_IMAGE}" >/dev/null 2>&1; then
     echo "ERROR: image ${TARGET_IMAGE} not found locally."
@@ -49,7 +74,7 @@ if [ "${UPDATE_EXIT}" -ne 0 ]; then
 fi
 sleep 6
 
-echo "[2/4] Verify runtime code marker"
+echo "[2/5] Verify runtime code marker"
 CONTAINER_ID="$($DOCKER_CMD ps --filter "name=${SERVICE_NAME}" -q | head -n1 || true)"
 if [ -n "${CONTAINER_ID}" ]; then
   if $DOCKER_CMD exec "${CONTAINER_ID}" sh -c "grep -q 'get_api_key_from_vaultwarden_cli' /app/api_proxy.py"; then
@@ -61,7 +86,7 @@ else
   echo "WARN: no running container found after restart"
 fi
 
-echo "[3/4] Optional Bunq whitelist update via API calls"
+echo "[3/5] Optional Bunq whitelist update via API calls"
 if [ "${RUN_WHITELIST_UPDATE}" = "true" ] && [ -n "${CONTAINER_ID}" ]; then
   if ! $DOCKER_CMD exec \
     -e TARGET_IP="${TARGET_IP}" \
@@ -92,7 +117,7 @@ else
   echo "Skipped (RUN_WHITELIST_UPDATE=${RUN_WHITELIST_UPDATE})"
 fi
 
-echo "[4/4] Print relevant startup logs (${LOG_MINUTES}m)"
+echo "[4/5] Print relevant startup logs (${LOG_MINUTES}m)"
 LOG_OUTPUT="$($DOCKER_CMD service logs --since "${LOG_MINUTES}m" "${SERVICE_NAME}" 2>&1 || true)"
 printf '%s\n' "$LOG_OUTPUT" | grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|API key loaded from env/secret|No valid API key|Bunq API initialized|Vaultwarden|whitelist|allowlist" || true
 
@@ -100,6 +125,48 @@ if ! printf '%s\n' "$LOG_OUTPUT" | grep -Eq "API key retrieved from vault|API ke
   echo "WARN: expected API key startup lines not found yet."
   echo "Run manually:"
   echo "  sudo docker service logs --since 5m ${SERVICE_NAME} | grep -E \"Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key\""
+fi
+
+echo "[5/5] Optional cleanup of old ${IMAGE_REPO} images"
+if [ "${CLEANUP_OLD_IMAGES}" = "true" ]; then
+  if [ -z "${CONTAINER_ID}" ]; then
+    CONTAINER_ID="$($DOCKER_CMD ps --filter "name=${SERVICE_NAME}" -q | head -n1 || true)"
+  fi
+
+  if [ -z "${CONTAINER_ID}" ]; then
+    echo "WARN: no running container found; skipping cleanup"
+  else
+    RUNNING_IMAGE_ID="$($DOCKER_CMD inspect --format '{{.Image}}' "${CONTAINER_ID}" 2>/dev/null || true)"
+    if [ -z "${RUNNING_IMAGE_ID}" ]; then
+      echo "WARN: could not determine running image id; skipping cleanup"
+    else
+      IMAGE_ROWS="$($DOCKER_CMD image ls "${IMAGE_REPO}" --format '{{.Repository}}:{{.Tag}} {{.ID}}' | awk '$1 !~ /<none>/' || true)"
+      if [ -z "${IMAGE_ROWS}" ]; then
+        echo "No local ${IMAGE_REPO} images found."
+      else
+        TMP_IMAGE_ROWS="$(mktemp)"
+        printf '%s\n' "${IMAGE_ROWS}" > "${TMP_IMAGE_ROWS}"
+        KEPT_RECENT=0
+        while IFS=' ' read -r IMAGE_REF IMAGE_ID; do
+          [ -z "${IMAGE_REF}" ] && continue
+          if [ "${IMAGE_ID}" = "${RUNNING_IMAGE_ID}" ] || { [ -n "${IMAGE_TAG}" ] && [ "${IMAGE_REF}" = "${TARGET_IMAGE}" ]; }; then
+            echo "Keep active image: ${IMAGE_REF}"
+            continue
+          fi
+          if [ "${KEPT_RECENT}" -lt "${KEEP_IMAGE_COUNT}" ]; then
+            KEPT_RECENT=$((KEPT_RECENT + 1))
+            echo "Keep recent image: ${IMAGE_REF}"
+            continue
+          fi
+          echo "Remove old image: ${IMAGE_REF}"
+          $DOCKER_CMD image rm "${IMAGE_REF}" >/dev/null 2>&1 || echo "WARN: could not remove ${IMAGE_REF}"
+        done < "${TMP_IMAGE_ROWS}"
+        rm -f "${TMP_IMAGE_ROWS}"
+      fi
+    fi
+  fi
+else
+  echo "Skipped (CLEANUP_OLD_IMAGES=${CLEANUP_OLD_IMAGES})"
 fi
 
 echo "Done."

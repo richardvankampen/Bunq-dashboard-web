@@ -54,20 +54,26 @@ Meer details: [SECURITY.md](SECURITY.md)
 5. Gebruik `VAULTWARDEN_ACCESS_METHOD=cli` + secret `bunq_vaultwarden_master_password`
 6. Gebruik directe `bunq_api_key` alleen als nood-fallback (`USE_VAULTWARDEN=false`)
 7. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh`
-8. Na deploy/herstart kun je startup-validatie doen met `scripts/restart_bunq_service.sh`
+8. Na deploy/herstart kun je startup-validatie doen met `scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
 9. Build/deploy probeert whitelisting ook automatisch (best effort) via Bunq API calls
 
 Snelle check na deploy:
 ```bash
 TAG=$(sudo git rev-parse --short HEAD)
 sudo docker build --no-cache -t bunq-dashboard:$TAG .
+sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-IMAGE_TAG=$TAG sh scripts/restart_bunq_service.sh
+sh scripts/restart_bunq_service.sh
 
 # Handmatige fallback:
 sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key"
 ```
+
+Nuttige script-opties:
+- `AUTO_TAG_FROM_GIT=false` om zonder image-tag override te herstarten
+- `CLEANUP_OLD_IMAGES=false` om geen oude images te verwijderen
+- `KEEP_IMAGE_COUNT=3` om meer recente oudere tags te bewaren
 
 ---
 

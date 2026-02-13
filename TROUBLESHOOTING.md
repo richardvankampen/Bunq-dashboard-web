@@ -437,7 +437,7 @@ docker secret ls | grep -E "bunq_vaultwarden_client|bunq_vaultwarden_master_pass
 #### B2. Alleen healthchecks in logs na deploy/herstart
 ```bash
 # Force restart + focused startup check:
-IMAGE_TAG=$(git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh
+sh scripts/restart_bunq_service.sh
 
 # Of handmatig:
 TAG=$(git rev-parse --short HEAD)

@@ -541,6 +541,7 @@ cd /volume1/docker/bunq-dashboard
 # Build image
 TAG=$(sudo git rev-parse --short HEAD)
 sudo docker build --no-cache -t bunq-dashboard:$TAG .
+sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
 
 # Architectuur-opmerking (Bitwarden CLI):
 # - amd64/Intel NAS: native bw binary (kleiner image)
@@ -555,8 +556,8 @@ sudo docker build --no-cache -t bunq-dashboard:$TAG .
 # Deploy stack (Swarm) with values from .env
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
 
-# Force service to exact image tag + startup check
-IMAGE_TAG=$TAG sh scripts/restart_bunq_service.sh
+# Force service restart + startup check (script gebruikt standaard git-tag)
+sh scripts/restart_bunq_service.sh
 
 # Check logs
 sudo docker service logs -f bunq_bunq-dashboard
@@ -679,12 +680,13 @@ cd /volume1/docker/bunq-dashboard
 # Rebuild image
 TAG=$(sudo git rev-parse --short HEAD)
 sudo docker build --no-cache -t bunq-dashboard:$TAG .
+sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
 
 # Redeploy stack
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
 
-# Force service to exact image tag + startup validation
-IMAGE_TAG=$TAG sh scripts/restart_bunq_service.sh
+# Force service restart + startup validation
+sh scripts/restart_bunq_service.sh
 
 # Verify
 sudo docker stack ps bunq
@@ -730,7 +732,7 @@ Gebruik `Reinit Bunq context` na:
    - bij Vaultwarden-flow: update key in Vaultwarden item
    - bij directe key-flow (`USE_VAULTWARDEN=false`): update Docker secret `bunq_api_key`
 3. Run: `sh scripts/register_bunq_ip.sh`
-4. Validatie: `IMAGE_TAG=$(sudo git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh`
+4. Validatie: `sh scripts/restart_bunq_service.sh`
 
 No code changes needed! ✨
 
@@ -742,7 +744,7 @@ No code changes needed! ✨
 - Connectivity: `sudo docker exec $(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1) ping vaultwarden`
 - Redeploy na .env wijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
 - Alleen herstart (zonder config/secrets wijzigingen): `sudo docker service update --force bunq_bunq-dashboard`
-- Herstart + startup-validatie (aanbevolen): `IMAGE_TAG=$(sudo git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh`
+- Herstart + startup-validatie (aanbevolen): `sh scripts/restart_bunq_service.sh`
 - Bunq IP/device opnieuw registreren: `sh scripts/register_bunq_ip.sh`
 
 Voor uitgebreide oplossingen, zie [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
