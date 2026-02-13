@@ -466,13 +466,15 @@ docker service logs bunq_bunq-dashboard | grep -E "Incorrect API key or IP addre
 # Run automated fix (in repo):
 cd /volume1/docker/bunq-dashboard
 sh scripts/register_bunq_ip.sh
+# Optional non-interactive target:
+# TARGET_IP=203.0.113.10 DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 
 # Script output shows the container egress public IP.
 # In Bunq app: Profile -> Security -> API Keys
 # Ensure API key is active and allowlist includes that IP.
 
 # Via UI kan dit ook:
-# Settings -> Admin Maintenance (P1) -> Check egress IP / Reinit Bunq context
+# Settings -> Admin Maintenance (P1) -> Check egress IP / Set Bunq API whitelist IP / Reinit Bunq context
 
 # If you rotated API key AND use direct fallback mode (USE_VAULTWARDEN=false), update secret first:
 printf "Paste BUNQ API key: "

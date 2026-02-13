@@ -540,9 +540,19 @@
                         <button type="button" class="admin-tool-btn" id="adminCheckEgressIp">
                             <i class="fas fa-globe"></i> Check egress IP
                         </button>
+                        <button type="button" class="admin-tool-btn" id="adminSetWhitelistIp">
+                            <i class="fas fa-network-wired"></i> Set Bunq API whitelist IP
+                        </button>
                         <button type="button" class="admin-tool-btn admin-tool-btn-warn" id="adminReinitBunq">
                             <i class="fas fa-sync-alt"></i> Reinit Bunq context
                         </button>
+                    </div>
+                    <div class="admin-tools-inline">
+                        <input type="text" id="adminWhitelistIp" placeholder="IPv4 (leeg = huidige egress IP)">
+                        <label>
+                            <input type="checkbox" id="adminDeactivateOtherIps">
+                            Zet andere ACTIVE whitelist IPs op INACTIVE
+                        </label>
                     </div>
                     <div id="adminStatusPanel" class="admin-status-panel">
                         <p class="setting-help">Open eerst Settings en klik op <strong>Check status</strong>.</p>

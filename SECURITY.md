@@ -222,6 +222,8 @@ VAULTWARDEN_ACCESS_METHOD=cli  # Recommended: decrypts Vault item values via bw 
 
 # Bunq
 BUNQ_ENVIRONMENT=PRODUCTION  # For real banking data
+AUTO_SET_BUNQ_WHITELIST_IP=true
+AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS=false
 
 # Application
 FLASK_DEBUG=false            # NEVER true in production!
@@ -256,11 +258,13 @@ sh scripts/register_bunq_ip.sh
 
 **Alternatief via UI (P1):**
 - Open dashboard → Settings → `Admin Maintenance (P1)`
-- Klik `Reinit Bunq context` om installation/device opnieuw te registreren
+- Klik `Set Bunq API whitelist IP` om het gekozen IP (of auto egress IP) op ACTIVE te zetten
+- Klik daarna `Reinit Bunq context` om installation/device opnieuw te registreren
 - Gebruik `Check egress IP` om te verifiëren welk publiek IP ge-whitelist moet zijn
 
 Dit script:
 - toont het actuele publieke egress-IP van de container
+- zet Bunq allowlist IP bij via API calls
 - bij directe key-flow valideert het `bunq_api_key` secret formaat
 - maakt een nieuwe Bunq `ApiContext` (installation + device registration)
 - herstart de service en toont relevante logs
@@ -424,9 +428,11 @@ ls -lh /volume1/docker/bunq-dashboard/backups/
 # - Test dashboard still works
 
 # 3. Review and update packages
-docker build -t bunq-dashboard:local .
-set -a; source .env; set +a
+TAG=$(git rev-parse --short HEAD)
+docker build --no-cache -t bunq-dashboard:$TAG .
+set -a; . .env; set +a
 docker stack deploy -c docker-compose.yml bunq
+docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 
 # 4. Security audit
 # - Review access logs

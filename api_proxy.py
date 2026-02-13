@@ -27,6 +27,7 @@ import uuid
 import importlib
 import pkgutil
 import inspect
+import ipaddress
 import shutil
 import subprocess
 import threading
@@ -60,9 +61,21 @@ def get_int_env(name, default):
         logger.warning(f"⚠️ Invalid {name}='{value}', using default {default}")
         return default
 
+def get_bool_env(name, default=False):
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
 _MONETARY_ACCOUNT_ENDPOINT = None
 _PAYMENT_ENDPOINT = None
 _PAYMENT_LIST_MODE = None
+_CREDENTIAL_PASSWORD_ENDPOINT = None
+_CREDENTIAL_PASSWORD_LIST_MODE = None
+_CREDENTIAL_PASSWORD_IP_ENDPOINT = None
+_CREDENTIAL_PASSWORD_IP_LIST_MODE = None
+_CREDENTIAL_PASSWORD_IP_CREATE_MODE = None
+_CREDENTIAL_PASSWORD_IP_UPDATE_MODE = None
 _FX_RUNTIME_CACHE = {}
 _VAULTWARDEN_CLI_LOCK = threading.Lock()
 
@@ -358,6 +371,574 @@ def list_payments_for_account(account_id):
 
     raise RuntimeError(f"bunq-sdk payment list failed: {last_exc}")
 
+def _unwrap_endpoint_result(result):
+    value = getattr(result, 'value', result)
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    try:
+        return list(value)
+    except TypeError:
+        return [value]
+
+def _normalize_endpoint_name(name):
+    return str(name or '').lower().replace('_', '').replace('-', '').replace('.', '')
+
+def _is_credential_password_endpoint(name_hint, candidate):
+    if candidate is None or not callable(getattr(candidate, 'list', None)):
+        return False
+    normalized = _normalize_endpoint_name(name_hint)
+    if not normalized.startswith('credentialpasswordip'):
+        return False
+    # Exclude the nested /ip endpoint class here.
+    if 'credentialpasswordipip' in normalized:
+        return False
+    return True
+
+def _is_credential_password_ip_endpoint(name_hint, candidate):
+    if candidate is None or not callable(getattr(candidate, 'list', None)):
+        return False
+    normalized = _normalize_endpoint_name(name_hint)
+    if 'credentialpasswordip' not in normalized:
+        return False
+    if 'credentialpasswordipip' not in normalized and not normalized.endswith('ip'):
+        return False
+    return callable(getattr(candidate, 'create', None)) or callable(getattr(candidate, 'post', None))
+
+def discover_credential_password_endpoints():
+    direct_candidates = (
+        'CredentialPasswordIp',
+        'CredentialPasswordIpApiObject',
+    )
+    discovered = []
+    seen = set()
+
+    def add_candidate(display_name, candidate_name, candidate_obj):
+        name_hint = f"{display_name}.{candidate_name}" if display_name else candidate_name
+        if not _is_credential_password_endpoint(name_hint, candidate_obj):
+            return
+        candidate_id = id(candidate_obj)
+        if candidate_id in seen:
+            return
+        seen.add(candidate_id)
+        discovered.append((name_hint, candidate_obj))
+
+    for name in direct_candidates:
+        add_candidate('', name, getattr(endpoint, name, None))
+
+    for attr_name in dir(endpoint):
+        if attr_name in direct_candidates:
+            continue
+        add_candidate('', attr_name, getattr(endpoint, attr_name, None))
+
+    endpoint_path = getattr(endpoint, '__path__', None)
+    if endpoint_path:
+        base_module = endpoint.__name__
+        for module_info in pkgutil.iter_modules(endpoint_path):
+            module_name = module_info.name
+            normalized_module = _normalize_endpoint_name(module_name)
+            if 'credentialpasswordip' not in normalized_module:
+                continue
+            try:
+                module = importlib.import_module(f"{base_module}.{module_name}")
+            except Exception:
+                continue
+
+            for class_name in direct_candidates:
+                add_candidate(module_name, class_name, getattr(module, class_name, None))
+            for class_name in dir(module):
+                if class_name in direct_candidates:
+                    continue
+                add_candidate(module_name, class_name, getattr(module, class_name, None))
+
+    return discovered
+
+def discover_credential_password_ip_endpoints():
+    direct_candidates = (
+        'CredentialPasswordIpIp',
+        'CredentialPasswordIpIpApiObject',
+    )
+    discovered = []
+    seen = set()
+
+    def add_candidate(display_name, candidate_name, candidate_obj):
+        name_hint = f"{display_name}.{candidate_name}" if display_name else candidate_name
+        if not _is_credential_password_ip_endpoint(name_hint, candidate_obj):
+            return
+        candidate_id = id(candidate_obj)
+        if candidate_id in seen:
+            return
+        seen.add(candidate_id)
+        discovered.append((name_hint, candidate_obj))
+
+    for name in direct_candidates:
+        add_candidate('', name, getattr(endpoint, name, None))
+
+    for attr_name in dir(endpoint):
+        if attr_name in direct_candidates:
+            continue
+        add_candidate('', attr_name, getattr(endpoint, attr_name, None))
+
+    endpoint_path = getattr(endpoint, '__path__', None)
+    if endpoint_path:
+        base_module = endpoint.__name__
+        for module_info in pkgutil.iter_modules(endpoint_path):
+            module_name = module_info.name
+            normalized_module = _normalize_endpoint_name(module_name)
+            if 'credentialpasswordip' not in normalized_module:
+                continue
+            try:
+                module = importlib.import_module(f"{base_module}.{module_name}")
+            except Exception:
+                continue
+
+            for class_name in direct_candidates:
+                add_candidate(module_name, class_name, getattr(module, class_name, None))
+            for class_name in dir(module):
+                if class_name in direct_candidates:
+                    continue
+                add_candidate(module_name, class_name, getattr(module, class_name, None))
+
+    return discovered
+
+def get_bunq_user_id():
+    try:
+        user_context = BunqContext.user_context()
+    except Exception as exc:
+        logger.warning(f"⚠️ Unable to read Bunq user context: {exc}")
+        return None
+
+    for attr_name in ('user_id', 'user_id_', 'id_', 'id'):
+        value = getattr(user_context, attr_name, None)
+        if value:
+            return value
+    getter = getattr(user_context, 'get_user_id', None)
+    if callable(getter):
+        try:
+            value = getter()
+            if value:
+                return value
+        except Exception:
+            pass
+    return None
+
+def _call_credential_password_list(password_endpoint, user_id, mode):
+    if mode == 'kw_user_id':
+        return password_endpoint.list(user_id=user_id)
+    if mode == 'positional_user_id':
+        return password_endpoint.list(user_id)
+    if mode == 'no_args':
+        return password_endpoint.list()
+    raise RuntimeError(f"Unknown credential-password list mode: {mode}")
+
+def list_credential_password_profiles(user_id):
+    global _CREDENTIAL_PASSWORD_ENDPOINT, _CREDENTIAL_PASSWORD_LIST_MODE
+
+    modes = ('kw_user_id', 'positional_user_id', 'no_args')
+    candidates = []
+    if _CREDENTIAL_PASSWORD_ENDPOINT is not None and _CREDENTIAL_PASSWORD_LIST_MODE is not None:
+        candidates.append(('cached', _CREDENTIAL_PASSWORD_ENDPOINT, (_CREDENTIAL_PASSWORD_LIST_MODE,)))
+
+    for name, candidate in discover_credential_password_endpoints():
+        if _CREDENTIAL_PASSWORD_ENDPOINT is not None and candidate is _CREDENTIAL_PASSWORD_ENDPOINT:
+            continue
+        candidates.append((name, candidate, modes))
+
+    if not candidates:
+        raise RuntimeError('bunq-sdk missing credential-password endpoint')
+
+    last_exc = None
+    for name, password_endpoint, candidate_modes in candidates:
+        for mode in candidate_modes:
+            try:
+                result = _call_credential_password_list(password_endpoint, user_id, mode)
+                profiles = _unwrap_endpoint_result(result)
+                if _CREDENTIAL_PASSWORD_ENDPOINT is not password_endpoint or _CREDENTIAL_PASSWORD_LIST_MODE != mode:
+                    logger.info(f"Using bunq credential endpoint: {name} ({mode})")
+                _CREDENTIAL_PASSWORD_ENDPOINT = password_endpoint
+                _CREDENTIAL_PASSWORD_LIST_MODE = mode
+                return profiles
+            except TypeError as exc:
+                last_exc = exc
+                continue
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Bunq credential endpoint {name} ({mode}) failed: {exc}")
+                break
+
+    raise RuntimeError(f"bunq-sdk credential-password list failed: {last_exc}")
+
+def _call_credential_password_ip_list(ip_endpoint, user_id, credential_password_ip_id, mode):
+    if mode == 'kw_user_credential':
+        return ip_endpoint.list(user_id=user_id, credential_password_ip_id=credential_password_ip_id)
+    if mode == 'positional_user_credential':
+        return ip_endpoint.list(user_id, credential_password_ip_id)
+    if mode == 'kw_credential_only':
+        return ip_endpoint.list(credential_password_ip_id=credential_password_ip_id)
+    if mode == 'positional_credential_only':
+        return ip_endpoint.list(credential_password_ip_id)
+    raise RuntimeError(f"Unknown credential-password-ip list mode: {mode}")
+
+def _call_credential_password_ip_create(ip_endpoint, user_id, credential_password_ip_id, payload, mode):
+    creator = getattr(ip_endpoint, 'create', None) or getattr(ip_endpoint, 'post', None)
+    if not callable(creator):
+        raise RuntimeError('Endpoint has no create/post method')
+    if mode == 'kw_user_credential_payload':
+        return creator(user_id=user_id, credential_password_ip_id=credential_password_ip_id, data=payload)
+    if mode == 'kw_user_credential_object':
+        return creator(user_id=user_id, credential_password_ip_id=credential_password_ip_id, object_=payload)
+    if mode == 'positional_user_credential_payload':
+        return creator(user_id, credential_password_ip_id, payload)
+    if mode == 'kw_credential_payload':
+        return creator(credential_password_ip_id=credential_password_ip_id, data=payload)
+    if mode == 'positional_credential_payload':
+        return creator(credential_password_ip_id, payload)
+    raise RuntimeError(f"Unknown credential-password-ip create mode: {mode}")
+
+def _call_credential_password_ip_update(ip_endpoint, user_id, credential_password_ip_id, ip_entry_id, payload, mode):
+    updater = getattr(ip_endpoint, 'update', None) or getattr(ip_endpoint, 'put', None)
+    if not callable(updater):
+        raise RuntimeError('Endpoint has no update/put method')
+    if mode == 'kw_full_payload':
+        return updater(
+            user_id=user_id,
+            credential_password_ip_id=credential_password_ip_id,
+            credential_password_ip_ip_id=ip_entry_id,
+            data=payload
+        )
+    if mode == 'kw_full_ip_id':
+        return updater(
+            user_id=user_id,
+            credential_password_ip_id=credential_password_ip_id,
+            ip_id=ip_entry_id,
+            data=payload
+        )
+    if mode == 'kw_full_item_id':
+        return updater(
+            user_id=user_id,
+            credential_password_ip_id=credential_password_ip_id,
+            item_id=ip_entry_id,
+            data=payload
+        )
+    if mode == 'positional_full_payload':
+        return updater(user_id, credential_password_ip_id, ip_entry_id, payload)
+    if mode == 'kw_credential_ip_payload':
+        return updater(
+            credential_password_ip_id=credential_password_ip_id,
+            credential_password_ip_ip_id=ip_entry_id,
+            data=payload
+        )
+    if mode == 'positional_credential_ip_payload':
+        return updater(credential_password_ip_id, ip_entry_id, payload)
+    raise RuntimeError(f"Unknown credential-password-ip update mode: {mode}")
+
+def list_credential_password_ip_entries(user_id, credential_password_ip_id):
+    global _CREDENTIAL_PASSWORD_IP_ENDPOINT, _CREDENTIAL_PASSWORD_IP_LIST_MODE
+
+    modes = (
+        'kw_user_credential',
+        'positional_user_credential',
+        'kw_credential_only',
+        'positional_credential_only',
+    )
+    candidates = []
+    if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not None and _CREDENTIAL_PASSWORD_IP_LIST_MODE is not None:
+        candidates.append(('cached', _CREDENTIAL_PASSWORD_IP_ENDPOINT, (_CREDENTIAL_PASSWORD_IP_LIST_MODE,)))
+
+    for name, candidate in discover_credential_password_ip_endpoints():
+        if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not None and candidate is _CREDENTIAL_PASSWORD_IP_ENDPOINT:
+            continue
+        candidates.append((name, candidate, modes))
+
+    if not candidates:
+        raise RuntimeError('bunq-sdk missing credential-password-ip endpoint')
+
+    last_exc = None
+    for name, ip_endpoint, candidate_modes in candidates:
+        for mode in candidate_modes:
+            try:
+                result = _call_credential_password_ip_list(ip_endpoint, user_id, credential_password_ip_id, mode)
+                entries = _unwrap_endpoint_result(result)
+                if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not ip_endpoint or _CREDENTIAL_PASSWORD_IP_LIST_MODE != mode:
+                    logger.info(f"Using bunq credential-ip endpoint: {name} ({mode})")
+                _CREDENTIAL_PASSWORD_IP_ENDPOINT = ip_endpoint
+                _CREDENTIAL_PASSWORD_IP_LIST_MODE = mode
+                return entries
+            except TypeError as exc:
+                last_exc = exc
+                continue
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Bunq credential-ip endpoint {name} ({mode}) failed: {exc}")
+                break
+
+    raise RuntimeError(f"bunq-sdk credential-password-ip list failed: {last_exc}")
+
+def create_credential_password_ip_entry(user_id, credential_password_ip_id, payload):
+    global _CREDENTIAL_PASSWORD_IP_ENDPOINT, _CREDENTIAL_PASSWORD_IP_CREATE_MODE
+
+    modes = (
+        'kw_user_credential_payload',
+        'kw_user_credential_object',
+        'positional_user_credential_payload',
+        'kw_credential_payload',
+        'positional_credential_payload',
+    )
+    candidates = []
+    if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not None and _CREDENTIAL_PASSWORD_IP_CREATE_MODE is not None:
+        candidates.append(('cached', _CREDENTIAL_PASSWORD_IP_ENDPOINT, (_CREDENTIAL_PASSWORD_IP_CREATE_MODE,)))
+
+    for name, candidate in discover_credential_password_ip_endpoints():
+        if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not None and candidate is _CREDENTIAL_PASSWORD_IP_ENDPOINT:
+            continue
+        candidates.append((name, candidate, modes))
+
+    last_exc = None
+    for name, ip_endpoint, candidate_modes in candidates:
+        for mode in candidate_modes:
+            try:
+                result = _call_credential_password_ip_create(ip_endpoint, user_id, credential_password_ip_id, payload, mode)
+                if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not ip_endpoint or _CREDENTIAL_PASSWORD_IP_CREATE_MODE != mode:
+                    logger.info(f"Using bunq credential-ip create mode: {name} ({mode})")
+                _CREDENTIAL_PASSWORD_IP_ENDPOINT = ip_endpoint
+                _CREDENTIAL_PASSWORD_IP_CREATE_MODE = mode
+                return result
+            except TypeError as exc:
+                last_exc = exc
+                continue
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Bunq credential-ip create {name} ({mode}) failed: {exc}")
+                break
+
+    raise RuntimeError(f"bunq-sdk credential-password-ip create failed: {last_exc}")
+
+def update_credential_password_ip_entry(user_id, credential_password_ip_id, ip_entry_id, payload):
+    global _CREDENTIAL_PASSWORD_IP_ENDPOINT, _CREDENTIAL_PASSWORD_IP_UPDATE_MODE
+
+    modes = (
+        'kw_full_payload',
+        'kw_full_ip_id',
+        'kw_full_item_id',
+        'positional_full_payload',
+        'kw_credential_ip_payload',
+        'positional_credential_ip_payload',
+    )
+    candidates = []
+    if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not None and _CREDENTIAL_PASSWORD_IP_UPDATE_MODE is not None:
+        candidates.append(('cached', _CREDENTIAL_PASSWORD_IP_ENDPOINT, (_CREDENTIAL_PASSWORD_IP_UPDATE_MODE,)))
+
+    for name, candidate in discover_credential_password_ip_endpoints():
+        if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not None and candidate is _CREDENTIAL_PASSWORD_IP_ENDPOINT:
+            continue
+        candidates.append((name, candidate, modes))
+
+    last_exc = None
+    for name, ip_endpoint, candidate_modes in candidates:
+        for mode in candidate_modes:
+            try:
+                result = _call_credential_password_ip_update(
+                    ip_endpoint,
+                    user_id,
+                    credential_password_ip_id,
+                    ip_entry_id,
+                    payload,
+                    mode
+                )
+                if _CREDENTIAL_PASSWORD_IP_ENDPOINT is not ip_endpoint or _CREDENTIAL_PASSWORD_IP_UPDATE_MODE != mode:
+                    logger.info(f"Using bunq credential-ip update mode: {name} ({mode})")
+                _CREDENTIAL_PASSWORD_IP_ENDPOINT = ip_endpoint
+                _CREDENTIAL_PASSWORD_IP_UPDATE_MODE = mode
+                return result
+            except TypeError as exc:
+                last_exc = exc
+                continue
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Bunq credential-ip update {name} ({mode}) failed: {exc}")
+                break
+
+    raise RuntimeError(f"bunq-sdk credential-password-ip update failed: {last_exc}")
+
+def validate_ipv4_or_none(ip_value):
+    if ip_value is None:
+        return None
+    candidate = str(ip_value).strip()
+    if not candidate:
+        return None
+    parsed = ipaddress.ip_address(candidate)
+    if parsed.version != 4:
+        raise ValueError(f"Only IPv4 is supported by Bunq allowlist (received {candidate})")
+    return str(parsed)
+
+def extract_credential_profile_id(profile):
+    return get_obj_field(profile, 'id_', 'id')
+
+def extract_whitelist_ip_entry(entry):
+    entry_id = get_obj_field(entry, 'id_', 'id')
+    status = str(get_obj_field(entry, 'status', default='')).strip().upper()
+    raw_ip = get_obj_field(entry, 'ip')
+    ip_value = ''
+    if isinstance(raw_ip, dict):
+        ip_value = str(raw_ip.get('ip') or raw_ip.get('value') or '').strip()
+    elif hasattr(raw_ip, 'ip'):
+        ip_value = str(getattr(raw_ip, 'ip')).strip()
+    elif raw_ip is not None:
+        ip_value = str(raw_ip).strip()
+    return {
+        'id': entry_id,
+        'ip': ip_value,
+        'status': status,
+    }
+
+def pick_credential_password_profile(profiles):
+    preferred_id = os.getenv('BUNQ_CREDENTIAL_PASSWORD_IP_ID', '').strip()
+    if preferred_id:
+        for profile in profiles:
+            profile_id = str(extract_credential_profile_id(profile) or '').strip()
+            if profile_id == preferred_id:
+                return profile
+
+    active_profiles = []
+    for profile in profiles:
+        status = str(get_obj_field(profile, 'status', default='')).strip().upper()
+        if status == 'ACTIVE':
+            active_profiles.append(profile)
+    target_pool = active_profiles if active_profiles else profiles
+    # Most recent profile usually has the highest id.
+    sorted_profiles = sorted(
+        target_pool,
+        key=lambda item: int(get_obj_field(item, 'id_', 'id', default=0) or 0),
+        reverse=True
+    )
+    return sorted_profiles[0] if sorted_profiles else None
+
+def set_bunq_api_whitelist_ip(target_ip=None, deactivate_others=False):
+    """
+    Ensure target IPv4 is ACTIVE in Bunq API allowlist via SDK endpoints.
+    """
+    try:
+        resolved_target_ip = validate_ipv4_or_none(target_ip)
+        if not resolved_target_ip:
+            resolved_target_ip = validate_ipv4_or_none(get_public_egress_ip())
+    except ValueError as exc:
+        return {
+            'success': False,
+            'error': str(exc)
+        }
+    if not resolved_target_ip:
+        return {
+            'success': False,
+            'error': 'Unable to determine target IPv4 for Bunq allowlist'
+        }
+
+    user_id = get_bunq_user_id()
+    if not user_id:
+        return {
+            'success': False,
+            'error': 'Unable to resolve Bunq user_id from current session context'
+        }
+
+    try:
+        profiles = list_credential_password_profiles(user_id)
+        if not profiles:
+            return {
+                'success': False,
+                'error': 'No credential-password profiles returned by Bunq API'
+            }
+
+        selected_profile = pick_credential_password_profile(profiles)
+        credential_password_ip_id = extract_credential_profile_id(selected_profile)
+        if not credential_password_ip_id:
+            return {
+                'success': False,
+                'error': 'Unable to determine credential_password_ip_id'
+            }
+
+        entries = list_credential_password_ip_entries(user_id, credential_password_ip_id)
+        normalized_entries = [extract_whitelist_ip_entry(item) for item in entries]
+
+        actions = {
+            'created': [],
+            'activated': [],
+            'deactivated': [],
+            'unchanged': [],
+        }
+
+        matching_entry = None
+        for entry in normalized_entries:
+            if entry.get('ip') == resolved_target_ip:
+                matching_entry = entry
+                break
+
+        if matching_entry is None:
+            create_credential_password_ip_entry(
+                user_id,
+                credential_password_ip_id,
+                {'ip': resolved_target_ip, 'status': 'ACTIVE'}
+            )
+            actions['created'].append(resolved_target_ip)
+        elif matching_entry.get('status') != 'ACTIVE':
+            matching_entry_id = matching_entry.get('id')
+            if not matching_entry_id:
+                create_credential_password_ip_entry(
+                    user_id,
+                    credential_password_ip_id,
+                    {'ip': resolved_target_ip, 'status': 'ACTIVE'}
+                )
+                actions['created'].append(resolved_target_ip)
+            else:
+                update_credential_password_ip_entry(
+                    user_id,
+                    credential_password_ip_id,
+                    matching_entry_id,
+                    {'ip': resolved_target_ip, 'status': 'ACTIVE'}
+                )
+                actions['activated'].append(resolved_target_ip)
+        else:
+            actions['unchanged'].append(resolved_target_ip)
+
+        if deactivate_others:
+            for entry in normalized_entries:
+                if entry.get('ip') == resolved_target_ip:
+                    continue
+                if entry.get('status') != 'ACTIVE':
+                    continue
+                entry_id = entry.get('id')
+                entry_ip = entry.get('ip')
+                if not entry_id or not entry_ip:
+                    continue
+                update_credential_password_ip_entry(
+                    user_id,
+                    credential_password_ip_id,
+                    entry_id,
+                    {'ip': entry_ip, 'status': 'INACTIVE'}
+                )
+                actions['deactivated'].append(entry_ip)
+
+        final_entries = [
+            extract_whitelist_ip_entry(item)
+            for item in list_credential_password_ip_entries(user_id, credential_password_ip_id)
+        ]
+        return {
+            'success': True,
+            'target_ip': resolved_target_ip,
+            'user_id': user_id,
+            'credential_password_ip_id': credential_password_ip_id,
+            'actions': actions,
+            'entries': final_entries,
+        }
+    except Exception as exc:
+        logger.exception(f"❌ Failed updating Bunq whitelist IP: {exc}")
+        return {
+            'success': False,
+            'target_ip': resolved_target_ip,
+            'error': str(exc)
+        }
+
 # ============================================
 # SECRET HELPERS (Docker Swarm secrets)
 # ============================================
@@ -435,6 +1016,8 @@ FX_ENABLED = os.getenv('FX_ENABLED', 'true').lower() == 'true'
 FX_RATE_SOURCE = os.getenv('FX_RATE_SOURCE', 'frankfurter').strip().lower()
 FX_REQUEST_TIMEOUT_SECONDS = get_int_env('FX_REQUEST_TIMEOUT_SECONDS', 8)
 FX_CACHE_HOURS = get_int_env('FX_CACHE_HOURS', 24)
+AUTO_SET_BUNQ_WHITELIST_IP = get_bool_env('AUTO_SET_BUNQ_WHITELIST_IP', True)
+AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS = get_bool_env('AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS', False)
 
 def get_data_db_connection():
     if not DATA_DB_ENABLED:
@@ -1620,6 +2203,31 @@ def init_bunq(force_recreate=False, refresh_key=False):
         logger.info("✅ Bunq API initialized successfully")
         logger.info(f"   Environment: {ENVIRONMENT_LABEL}")
         logger.info(f"   Access Level: READ-ONLY")
+
+        if AUTO_SET_BUNQ_WHITELIST_IP:
+            try:
+                whitelist_result = set_bunq_api_whitelist_ip(
+                    target_ip=None,
+                    deactivate_others=AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS
+                )
+                if whitelist_result.get('success'):
+                    actions = whitelist_result.get('actions', {})
+                    logger.info(
+                        "✅ Bunq whitelist ensured for %s (created=%d activated=%d deactivated=%d unchanged=%d)",
+                        whitelist_result.get('target_ip'),
+                        len(actions.get('created', [])),
+                        len(actions.get('activated', [])),
+                        len(actions.get('deactivated', [])),
+                        len(actions.get('unchanged', [])),
+                    )
+                else:
+                    logger.warning(
+                        "⚠️ Bunq whitelist auto-update failed: %s",
+                        whitelist_result.get('error', 'unknown error')
+                    )
+            except Exception as whitelist_exc:
+                logger.warning(f"⚠️ Bunq whitelist auto-update exception: {whitelist_exc}")
+
         return True
         
     except Exception as e:
@@ -1685,6 +2293,8 @@ def get_admin_status():
             'history_db_exists': db_exists,
             'session_cookie_secure': app.config['SESSION_COOKIE_SECURE'],
             'allowed_origins': ALLOWED_ORIGINS,
+            'auto_set_bunq_whitelist_ip': AUTO_SET_BUNQ_WHITELIST_IP,
+            'auto_set_bunq_whitelist_deactivate_others': AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS,
         }
     }
     return jsonify(response)
@@ -1747,6 +2357,53 @@ def reinitialize_bunq_context():
                 else 'direct-secret'
             )
         }
+    })
+
+@app.route('/api/admin/bunq/whitelist-ip', methods=['POST'])
+@requires_auth
+@rate_limit('general')
+def set_bunq_whitelist_ip():
+    """
+    Ensure Bunq API allowlist contains the requested IPv4.
+    If no ip is supplied, current container egress IP is used.
+    """
+    payload = request.get_json(silent=True) or {}
+    deactivate_others = parse_bool(payload.get('deactivate_others'), default=False)
+    refresh_key = parse_bool(payload.get('refresh_key'), default=True)
+    force_recreate = parse_bool(payload.get('force_recreate'), default=False)
+    clear_runtime_cache = parse_bool(payload.get('clear_runtime_cache'), default=False)
+
+    target_ip = payload.get('ip')
+    try:
+        target_ip = validate_ipv4_or_none(target_ip)
+    except ValueError as exc:
+        return jsonify({
+            'success': False,
+            'error': str(exc)
+        }), 400
+
+    if clear_runtime_cache:
+        cache.clear()
+        _FX_RUNTIME_CACHE.clear()
+
+    if not init_bunq(force_recreate=force_recreate, refresh_key=refresh_key):
+        return jsonify({
+            'success': False,
+            'error': 'Bunq API is not initialized'
+        }), 500
+
+    result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=deactivate_others)
+    if not result.get('success'):
+        return jsonify({
+            'success': False,
+            'error': result.get('error', 'Failed to set Bunq allowlist IP'),
+            'data': result
+        }), 500
+
+    return jsonify({
+        'success': True,
+        'message': 'Bunq API allowlist updated',
+        'data': result
     })
 
 @app.route('/api/accounts', methods=['GET'])

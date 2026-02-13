@@ -293,6 +293,8 @@ Maak `/volume1/docker/bunq-dashboard/.env` met **niet‑gevoelige** settings.
 | `VAULTWARDEN_ITEM_NAME` | Naam van het Vault item met je Bunq API key | `Bunq API Key` |
 | `USE_VAULTWARDEN` | Gebruik Vaultwarden i.p.v. directe API key | `true` |
 | `BUNQ_ENVIRONMENT` | Bunq omgeving | `PRODUCTION` (of `SANDBOX` voor test) |
+| `AUTO_SET_BUNQ_WHITELIST_IP` | Probeer Bunq allowlist automatisch te updaten op startup/reinit | `true` |
+| `AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS` | Zet andere ACTIVE IPs automatisch op INACTIVE | `false` (veiligste default) |
 | `ALLOWED_ORIGINS` | Toegestane frontend origins voor CORS | `https://bunq.jouwdomein.nl` (of `http://<NAS-IP>:5000` bij lokale HTTP) |
 | `SESSION_COOKIE_SECURE` | Alleen veilige cookies via HTTPS | `true` (aanbevolen/default), alleen `false` bij lokale HTTP |
 
@@ -332,6 +334,8 @@ VAULTWARDEN_ACCESS_METHOD=cli
 VAULTWARDEN_ITEM_NAME="Bunq API Key"
 USE_VAULTWARDEN=true
 BUNQ_ENVIRONMENT=PRODUCTION
+AUTO_SET_BUNQ_WHITELIST_IP=true
+AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS=false
 ALLOWED_ORIGINS=https://bunq.jouwdomein.nl
 # Alleen bij lokale HTTP:
 # ALLOWED_ORIGINS=http://192.168.1.100:5000
@@ -445,6 +449,8 @@ services:
       VAULTWARDEN_ITEM_NAME: "${VAULTWARDEN_ITEM_NAME:-Bunq API Key}"
       USE_VAULTWARDEN: "${USE_VAULTWARDEN:-true}"
       BUNQ_ENVIRONMENT: "${BUNQ_ENVIRONMENT:-PRODUCTION}"
+      AUTO_SET_BUNQ_WHITELIST_IP: "${AUTO_SET_BUNQ_WHITELIST_IP:-true}"
+      AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS: "${AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS:-false}"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-https://bunq.jouwdomein.nl}"
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
       FLASK_DEBUG: "${FLASK_DEBUG:-false}"
@@ -558,7 +564,7 @@ sudo docker service logs -f bunq_bunq-dashboard
 
 Je zou moeten zien:
 ```
-✅ Vaultwarden authentication successful
+🔐 Retrieving API key from Vaultwarden (cli method)...
 ✅ API key retrieved from vault
 ✅ Bunq API initialized
 🚀 Starting Bunq Dashboard API...
@@ -586,12 +592,17 @@ sh scripts/register_bunq_ip.sh
 
 Het script doet automatisch:
 - egress publieke IP tonen vanuit de container
+- optioneel target IPv4 vragen (leeg = huidige egress IP)
 - auth-mode detectie (`USE_VAULTWARDEN=true/false`)
+- Bunq API allowlist updaten via API calls (ACTIVE op target IP)
 - bij directe key-flow: `bunq_api_key` secret valideren (64 hex chars)
 - oude Bunq context verwijderen
 - bij directe key-flow: nieuwe `ApiContext` maken (installation + device registration)
 - service forceren te herstarten
 - relevante Bunq logs tonen
+
+Daarnaast probeert de backend bij startup/reinit automatisch hetzelfde te doen
+als `AUTO_SET_BUNQ_WHITELIST_IP=true` in `.env`.
 
 **Als het script nog steeds `Incorrect API key or IP address` toont:**
 1. Open bunq app en controleer API key status/IP-restrictie.
@@ -704,6 +715,7 @@ sudo docker logs vaultwarden
 In **Settings → Admin Maintenance (P1)** kun je als ingelogde admin:
 - `Check status`: runtime status van Vaultwarden, context file, cookie/CORS instellingen
 - `Check egress IP`: huidig publiek uitgaand IP van de container
+- `Set Bunq API whitelist IP`: zet gekozen IPv4 (of auto egress) op ACTIVE via Bunq API
 - `Reinit Bunq context`: context verwijderen + opnieuw opbouwen (installation/device registration)
 
 Gebruik `Reinit Bunq context` na:
@@ -718,7 +730,7 @@ Gebruik `Reinit Bunq context` na:
    - bij Vaultwarden-flow: update key in Vaultwarden item
    - bij directe key-flow (`USE_VAULTWARDEN=false`): update Docker secret `bunq_api_key`
 3. Run: `sh scripts/register_bunq_ip.sh`
-4. Validatie: `sh scripts/restart_bunq_service.sh`
+4. Validatie: `IMAGE_TAG=$(sudo git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh`
 
 No code changes needed! ✨
 

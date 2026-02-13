@@ -6,6 +6,7 @@ set -eu
 
 SERVICE_NAME="${1:-bunq_bunq-dashboard}"
 LOG_MINUTES="${LOG_MINUTES:-5}"
+DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS:-true}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker command not found"
@@ -26,18 +27,55 @@ if [ -z "${CONTAINER_ID}" ]; then
   exit 1
 fi
 
-echo "[1/6] Container egress public IP"
-$DOCKER_CMD exec "${CONTAINER_ID}" python3 - <<'PY'
+echo "[1/8] Container egress public IP"
+EGRESS_IP="$($DOCKER_CMD exec "${CONTAINER_ID}" python3 - <<'PY'
 import requests
 print(requests.get("https://api64.ipify.org", timeout=10).text.strip())
 PY
+)"
+echo "${EGRESS_IP}"
+
+TARGET_IP="${TARGET_IP:-${EGRESS_IP}}"
+if [ -t 0 ]; then
+  printf "Whitelist IPv4 [%s]: " "${TARGET_IP}"
+  IFS= read -r INPUT_IP || true
+  if [ -n "${INPUT_IP:-}" ]; then
+    TARGET_IP="${INPUT_IP}"
+  fi
+fi
+
+echo "[2/8] Target whitelist IP: ${TARGET_IP}"
 
 USE_VAULTWARDEN="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -c 'echo "${USE_VAULTWARDEN:-true}"' | tr '[:upper:]' '[:lower:]')"
 VAULTWARDEN_ACCESS_METHOD="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -c 'echo "${VAULTWARDEN_ACCESS_METHOD:-cli}"' | tr '[:upper:]' '[:lower:]')"
-echo "[2/6] Auth mode: USE_VAULTWARDEN=${USE_VAULTWARDEN}"
+echo "[3/8] Auth mode: USE_VAULTWARDEN=${USE_VAULTWARDEN}"
+
+echo "[4/8] Set Bunq API allowlist IP via API calls"
+$DOCKER_CMD exec \
+  -e TARGET_IP="${TARGET_IP}" \
+  -e DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS}" \
+  -e AUTO_SET_BUNQ_WHITELIST_IP=false \
+  "${CONTAINER_ID}" python3 - <<'PY'
+import json
+import os
+import sys
+from api_proxy import init_bunq, set_bunq_api_whitelist_ip
+
+target_ip = (os.getenv("TARGET_IP", "") or "").strip() or None
+deactivate_others = (os.getenv("DEACTIVATE_OTHERS", "true") or "").strip().lower() in ("1", "true", "yes", "on")
+
+if not init_bunq(force_recreate=False, refresh_key=True):
+    print("ERROR: Bunq init failed before whitelist update")
+    sys.exit(1)
+
+result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=deactivate_others)
+print(json.dumps(result, ensure_ascii=False))
+if not result.get("success"):
+    sys.exit(1)
+PY
 
 if [ "${USE_VAULTWARDEN}" = "false" ]; then
-  echo "[3/6] Validate bunq_api_key secret (must be 64 hex chars)"
+  echo "[5/8] Validate bunq_api_key secret (must be 64 hex chars)"
   if ! $DOCKER_CMD exec "${CONTAINER_ID}" test -f /run/secrets/bunq_api_key; then
     echo "ERROR: missing /run/secrets/bunq_api_key (create Docker secret first)"
     exit 1
@@ -56,11 +94,11 @@ if [ "${USE_VAULTWARDEN}" = "false" ]; then
   fi
 fi
 
-echo "[4/6] Remove existing Bunq API context"
+echo "[6/8] Remove existing Bunq API context"
 $DOCKER_CMD exec "${CONTAINER_ID}" sh -c "rm -f /app/config/bunq_production.conf /app/config/bunq_sandbox.conf"
 
 if [ "${USE_VAULTWARDEN}" = "false" ]; then
-  echo "[5/6] Create fresh Bunq API context (installation + device registration)"
+  echo "[7/8] Create fresh Bunq API context (installation + device registration)"
   $DOCKER_CMD exec "${CONTAINER_ID}" python3 - <<'PY'
 import os
 import sys
@@ -102,10 +140,10 @@ else
       exit 1
     fi
   fi
-  echo "[5/6] Vaultwarden mode: context will be recreated on service restart"
+  echo "[7/8] Vaultwarden mode: context will be recreated on service restart"
 fi
 
-echo "[6/6] Restart service to load refreshed context and print recent logs"
+echo "[8/8] Restart service to load refreshed context and print recent logs"
 $DOCKER_CMD service update --force "${SERVICE_NAME}" >/dev/null
 LOG_OUTPUT="$($DOCKER_CMD service logs --since "${LOG_MINUTES}m" "${SERVICE_NAME}" 2>&1 || true)"
 printf '%s\n' "$LOG_OUTPUT" | \

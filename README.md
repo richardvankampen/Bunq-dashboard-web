@@ -21,6 +21,7 @@ Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseer
 - Caching en pagination voor performance
 - Synology‑ready deployment
 - Admin maintenance tools in Settings (status, egress IP, Bunq context re-init)
+- Admin knop `Set Bunq API whitelist IP` (optioneel met handmatig IP)
 
 **Visualisaties:**
 - KPI Cards (inkomsten/uitgaven/sparen)
@@ -54,6 +55,7 @@ Meer details: [SECURITY.md](SECURITY.md)
 6. Gebruik directe `bunq_api_key` alleen als nood-fallback (`USE_VAULTWARDEN=false`)
 7. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh`
 8. Na deploy/herstart kun je startup-validatie doen met `scripts/restart_bunq_service.sh`
+9. Build/deploy probeert whitelisting ook automatisch (best effort) via Bunq API calls
 
 Snelle check na deploy:
 ```bash

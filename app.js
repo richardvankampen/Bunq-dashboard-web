@@ -511,6 +511,7 @@ function setupEventListeners() {
     document.getElementById('closeBalanceDetail')?.addEventListener('click', closeBalanceDetail);
     document.getElementById('adminLoadStatus')?.addEventListener('click', loadAdminStatus);
     document.getElementById('adminCheckEgressIp')?.addEventListener('click', checkAdminEgressIp);
+    document.getElementById('adminSetWhitelistIp')?.addEventListener('click', setBunqWhitelistIp);
     document.getElementById('adminReinitBunq')?.addEventListener('click', reinitializeBunqContext);
     
     // Time range
@@ -2295,6 +2296,16 @@ function renderAdminStatusPanel(statusData = null, notice = '', isError = false,
             vault.item_has_password ? 'Present' : 'Missing',
             vault.enabled && vault.item_found && !vault.item_has_password
         ],
+        [
+            'Auto whitelist on init',
+            statusData.auto_set_bunq_whitelist_ip ? 'Enabled' : 'Disabled',
+            false
+        ],
+        [
+            'Auto deactivate other IPs',
+            statusData.auto_set_bunq_whitelist_deactivate_others ? 'Enabled' : 'Disabled',
+            false
+        ],
         ['Context file', statusData.context_exists ? 'Present' : 'Missing', !statusData.context_exists],
         ['Session cookie secure', statusData.session_cookie_secure ? 'True' : 'False', !statusData.session_cookie_secure],
         ['Allowed origins', allowedOrigins || '-', false],
@@ -2366,7 +2377,58 @@ async function checkAdminEgressIp() {
             return;
         }
         const egressIp = response?.data?.egress_ip || '';
+        const ipInputEl = document.getElementById('adminWhitelistIp');
+        if (ipInputEl && !ipInputEl.value && egressIp) {
+            ipInputEl.value = egressIp;
+        }
         renderAdminStatusPanel(adminStatusData, `Egress IP resolved: ${egressIp}`, false, egressIp);
+    });
+}
+
+async function setBunqWhitelistIp() {
+    if (!isAuthenticated) {
+        renderAdminStatusPanel(adminStatusData, 'Login required om Bunq whitelist IP te zetten.', true);
+        return;
+    }
+
+    const ipInputEl = document.getElementById('adminWhitelistIp');
+    const deactivateEl = document.getElementById('adminDeactivateOtherIps');
+    const targetIp = (ipInputEl?.value || '').trim();
+    const deactivateOthers = Boolean(deactivateEl?.checked);
+    const targetLabel = targetIp || 'current egress IP (auto)';
+
+    const confirmed = window.confirm(
+        `Set Bunq API whitelist IP to "${targetLabel}"?\n` +
+        (deactivateOthers ? 'Andere ACTIVE IPs worden op INACTIVE gezet.' : 'Andere ACTIVE IPs blijven ongewijzigd.')
+    );
+    if (!confirmed) return;
+
+    await runAdminAction('adminSetWhitelistIp', '<i class="fas fa-spinner fa-spin"></i> Setting...', async () => {
+        const response = await authenticatedFetch(`${CONFIG.apiEndpoint}/admin/bunq/whitelist-ip`, {
+            method: 'POST',
+            body: JSON.stringify({
+                ip: targetIp || null,
+                deactivate_others: deactivateOthers,
+                refresh_key: true,
+                force_recreate: false,
+                clear_runtime_cache: false
+            })
+        });
+
+        if (!response || !response.success) {
+            const errorText = response?.error || 'Bunq whitelist update mislukt.';
+            renderAdminStatusPanel(adminStatusData, errorText, true);
+            return;
+        }
+
+        const data = response.data || {};
+        const actions = data.actions || {};
+        const message = `Whitelist set for ${data.target_ip || targetLabel}. ` +
+            `created=${(actions.created || []).length}, ` +
+            `activated=${(actions.activated || []).length}, ` +
+            `deactivated=${(actions.deactivated || []).length}.`;
+        await loadAdminStatus();
+        renderAdminStatusPanel(adminStatusData, message, false, data.target_ip || '');
     });
 }
 

@@ -1134,6 +1134,34 @@ body.reduce-animations .play-btn:hover {
     background: rgba(251, 191, 36, 0.16);
 }
 
+.admin-tools-inline {
+    margin-top: var(--spacing-sm);
+    display: grid;
+    gap: var(--spacing-xs);
+}
+
+.admin-tools-inline input[type="text"] {
+    width: 100%;
+    border: 1px solid var(--glass-border);
+    background: rgba(15, 23, 42, 0.35);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.65rem;
+    font-size: 0.82rem;
+}
+
+.admin-tools-inline input[type="text"]::placeholder {
+    color: var(--text-muted);
+}
+
+.admin-tools-inline label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
 .admin-status-panel {
     margin-top: var(--spacing-sm);
     border: 1px solid var(--glass-border);
@@ -1312,6 +1340,10 @@ body.reduce-animations .play-btn:hover {
 
     .admin-tools-actions {
         flex-direction: column;
+    }
+
+    .admin-tools-inline label {
+        align-items: flex-start;
     }
 }
 
