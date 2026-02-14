@@ -69,3 +69,25 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - needs-vs-wants breakdown
   - merchant concentration
 - Money Flow kaart zelf is nu ook klikbaar voor detailweergave (niet alleen via action button).
+
+### Aanvullend opgeleverd (late update)
+
+- Dashboardvisualisatie en UX verbeterd:
+  - `Cashflow Timeline` downloadknop werkt nu (PNG export).
+  - KPI mini-charts tonen nu assen (X/Y) voor `Total Income`, `Total Expenses`, `Net Savings`.
+  - Betaal-/spaar-KPI kaarten tonen altijd een mini-chart (ook bij weinig datapunten).
+  - Balans-detailmodal is breder gemaakt, viewport-safe en beter leesbaar.
+  - Rekeninglijst in balans-detail staat nu alfabetisch i.p.v. op saldo.
+  - `Day Pattern` vereenvoudigd naar duidelijke dagdelen.
+- Datakwaliteit verbeterd voor categorieën/merchants:
+  - Merchant fallback gebruikt nu ook `counterparty`/`description` voor betere dekking.
+  - Sunburst en Top Merchants tonen hierdoor meer complete data.
+  - Category race verhoogd naar meer zichtbare categorieën.
+- Savings/FX nauwkeurigheid verbeterd:
+  - Backend gebruikt waar mogelijk Bunq `balance_converted` (EUR) vóór eigen FX-fallback.
+  - Accountclassificatie uitgebreid (o.a. `spaarrekening`, `onvoorzien`) voor betere savings-detectie.
+  - Categorisatie uitgebreid met MCC fallback en extra NL-merchantregels.
+
+### Relevante commit
+
+- `fc30a08` Fix balance/merchant analytics and dashboard interaction issues
