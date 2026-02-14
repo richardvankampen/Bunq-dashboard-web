@@ -36,21 +36,28 @@ trim_crlf() {
   printf '%s' "$1" | tr -d '\r\n'
 }
 
-prompt_visible() {
-  prompt="$1"
-  printf '%s' "$prompt" >/dev/tty
+prompt_visible_client_id() {
+  printf '%s' "New Vaultwarden client_id (enter = keep current): " >/dev/tty
   IFS= read -r value </dev/tty || true
-  printf '%s' "$value"
+  NEW_CLIENT_ID="$value"
 }
 
-prompt_hidden() {
-  prompt="$1"
-  printf '%s' "$prompt" >/dev/tty
+prompt_hidden_client_secret() {
+  printf '%s' "New Vaultwarden client_secret (enter = keep current): " >/dev/tty
   stty -echo </dev/tty
   IFS= read -r value </dev/tty || true
   stty echo </dev/tty
   printf '\n' >/dev/tty
-  printf '%s' "$value"
+  NEW_CLIENT_SECRET="$value"
+}
+
+prompt_hidden_master_password() {
+  printf '%s' "New Vaultwarden master password (enter = keep current): " >/dev/tty
+  stty -echo </dev/tty
+  IFS= read -r value </dev/tty || true
+  stty echo </dev/tty
+  printf '\n' >/dev/tty
+  NEW_MASTER_PASSWORD="$value"
 }
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -75,13 +82,19 @@ fi
 
 if [ -t 0 ]; then
   if [ -z "${NEW_CLIENT_ID}" ]; then
-    NEW_CLIENT_ID="$(prompt_visible "New Vaultwarden client_id (enter = keep current): ")"
+    prompt_visible_client_id
+  else
+    say "Using NEW_VAULTWARDEN_CLIENT_ID from environment (prompt skipped)."
   fi
   if [ -z "${NEW_CLIENT_SECRET}" ]; then
-    NEW_CLIENT_SECRET="$(prompt_hidden "New Vaultwarden client_secret (enter = keep current): ")"
+    prompt_hidden_client_secret
+  else
+    say "Using NEW_VAULTWARDEN_CLIENT_SECRET from environment (prompt skipped)."
   fi
   if [ -z "${NEW_MASTER_PASSWORD}" ]; then
-    NEW_MASTER_PASSWORD="$(prompt_hidden "New Vaultwarden master password (enter = keep current): ")"
+    prompt_hidden_master_password
+  else
+    say "Using NEW_VAULTWARDEN_MASTER_PASSWORD from environment (prompt skipped)."
   fi
 fi
 
