@@ -38,18 +38,18 @@ trim_crlf() {
 
 prompt_visible() {
   prompt="$1"
-  printf '%s' "$prompt"
+  printf '%s' "$prompt" >/dev/tty
   IFS= read -r value || true
   printf '%s' "$value"
 }
 
 prompt_hidden() {
   prompt="$1"
-  printf '%s' "$prompt"
+  printf '%s' "$prompt" >/dev/tty
   stty -echo
   IFS= read -r value || true
   stty echo
-  printf '\n'
+  printf '\n' >/dev/tty
   printf '%s' "$value"
 }
 
