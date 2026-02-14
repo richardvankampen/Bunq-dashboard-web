@@ -1042,28 +1042,6 @@ function calculateBalanceMetrics(transactions, accounts, historyData = null) {
             }));
         });
 
-        if (historyData.account_breakdown) {
-            ['checking', 'savings', 'investment'].forEach((accountType) => {
-                const rows = Array.isArray(historyData.account_breakdown[accountType])
-                    ? historyData.account_breakdown[accountType]
-                    : [];
-                grouped[accountType] = rows.map((row) => ({
-                    ...row,
-                    id: String(row.id),
-                    account_type: classifyAccountType(row),
-                    balanceValue: Number(row?.balance?.value) || 0,
-                    balanceCurrency: String(row?.balance?.currency || 'EUR').toUpperCase(),
-                    balanceEurValue: Number.isFinite(Number(row?.balance_eur?.value))
-                        ? Number(row.balance_eur.value)
-                        : (
-                            String(row?.balance?.currency || 'EUR').toUpperCase() === 'EUR'
-                                ? (Number(row.balance.value) || 0)
-                                : null
-                        )
-                }));
-            });
-        }
-
         if (historyData.latest_totals) {
             ['checking', 'savings', 'investment'].forEach((accountType) => {
                 const value = Number(historyData.latest_totals[accountType]);
@@ -1224,13 +1202,36 @@ function applyClientFilters(data) {
 }
 
 function resolveMerchantLabel(transaction) {
-    const raw = [
-        transaction?.merchant,
+    const isOpaqueMerchantValue = (value) => {
+        const text = String(value || '').trim();
+        if (!text) return true;
+
+        const compact = text.replace(/\s+/g, '');
+        const ibanLike = /^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/i.test(compact);
+        if (ibanLike) return true;
+
+        const opaqueCode = /^[A-Z0-9._:-]{12,}$/i.test(compact) && !/\s/.test(text);
+        if (opaqueCode) return true;
+
+        return false;
+    };
+
+    const preferred = [
         transaction?.counterparty,
+        transaction?.merchant,
         transaction?.description
-    ].find((value) => typeof value === 'string' && value.trim().length > 0);
-    if (!raw) return 'Onbekend';
-    return raw.trim();
+    ];
+
+    const readable = preferred.find((value) => (
+        typeof value === 'string'
+        && value.trim().length > 0
+        && !isOpaqueMerchantValue(value)
+    ));
+    if (readable) return readable.trim();
+
+    const fallback = preferred.find((value) => typeof value === 'string' && value.trim().length > 0);
+    if (!fallback) return 'Onbekend';
+    return fallback.trim();
 }
 
 function resolveCategoryLabel(transaction) {
@@ -2223,6 +2224,9 @@ function renderSunburstChart(data) {
         branchvalues: 'total',
         maxdepth: 3,
         insidetextorientation: 'radial',
+        insidetextfont: { color: '#ffffff' },
+        outsidetextfont: { color: '#ffffff' },
+        textfont: { color: '#ffffff' },
         marker: {
             colors,
             line: {
@@ -2236,7 +2240,7 @@ function renderSunburstChart(data) {
     const layout = {
         margin: { t: 20, r: 10, l: 10, b: 10 },
         paper_bgcolor: 'rgba(0,0,0,0)',
-        font: { color: '#cbd5f5' },
+        font: { color: '#ffffff' },
         uniformtext: { minsize: 10, mode: 'hide' }
     };
     

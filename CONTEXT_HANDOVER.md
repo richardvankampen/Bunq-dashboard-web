@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-02-14
+Laatste update: 2026-02-14 (late)
 
 ## Waar we staan
 
@@ -9,6 +9,7 @@ Laatste update: 2026-02-14
 - Recente fixes zijn gepusht op `main`:
   - `fc30a08`: balance/merchant analytics + UI/visualisatie fixes
   - `8c8a69e`: worklog update
+  - `c690891`: persistent context handover bestand
 
 ## Wat net is aangepast (samenvatting)
 
@@ -21,14 +22,18 @@ Laatste update: 2026-02-14
 - Cashflow download-knop werkt.
 - Day Pattern is vereenvoudigd naar duidelijke dagdelen.
 - Sunburst/Top Merchants/Category Race tonen meer data.
+- Nieuwe gerichte fix (nog te deployen op NAS):
+  - spaarrekening-classificatie robuuster (incl. endpoint-hints), zodat savings totaal beter klopt;
+  - merchantlabels filteren opaque codes (zoals `JNQ...`) en prefereren leesbare namen;
+  - Category Breakdown/Sunburst tekst geforceerd wit.
 
 ## Belangrijk voor volgende sessie
 
-- Open punt: valideren op echte data op NAS of:
+- Open punt: valideren op echte data op NAS:
   - spaarrekeningen nu correct totaal tonen (EUR + ZAR),
-  - merchants/categorieën volledig genoeg zijn,
-  - gewenste UX van day-pattern helder genoeg is.
-- Daarna doorgaan met volgende P1-substap op visualisaties.
+  - merchantnamen tonen i.p.v. codes (`JNQ...`),
+  - Category Breakdown tekst overal wit en leesbaar.
+- Daarna doorgaan met volgende P1-substap op visualisaties (na jouw feedback).
 
 ## Handige update/deploy flow op NAS
 

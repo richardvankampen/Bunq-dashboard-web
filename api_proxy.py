@@ -27,6 +27,7 @@ import uuid
 import importlib
 import pkgutil
 import inspect
+import re
 import ipaddress
 import shutil
 import subprocess
@@ -226,6 +227,41 @@ def list_monetary_accounts():
         return merged_accounts
 
     raise RuntimeError(f"bunq-sdk monetary account list failed: {last_exc}")
+
+def discover_account_type_hints():
+    """
+    Build account-type hints from endpoint names when available.
+    Useful for SDK variants where savings products are represented as bank accounts.
+    """
+    hints = {}
+    for name, account_endpoint in discover_monetary_account_endpoints():
+        normalized = str(name or '').lower().replace('_', '').replace('-', '').replace('.', '')
+        hinted_type = None
+        if 'savings' in normalized:
+            hinted_type = 'savings'
+        elif any(token in normalized for token in ('investment', 'stock', 'crypto')):
+            hinted_type = 'investment'
+
+        if hinted_type is None:
+            continue
+
+        try:
+            result = account_endpoint.list()
+            accounts = getattr(result, 'value', result)
+            if accounts is None:
+                continue
+            for account in accounts:
+                account_id = get_obj_field(account, 'id_', 'id')
+                if account_id is None:
+                    continue
+                key = str(account_id)
+                if hints.get(key) == 'savings':
+                    continue
+                hints[key] = hinted_type
+        except Exception as exc:
+            logger.warning(f"⚠️ Account type hint endpoint {name} failed: {exc}")
+
+    return hints
 
 def _is_payment_list_endpoint(name, candidate):
     if candidate is None:
@@ -1404,6 +1440,26 @@ def extract_counterparty_name(counterparty_alias):
 
     return 'Unknown'
 
+def is_opaque_reference_value(value):
+    """
+    Detect machine-like values that are poor merchant labels
+    (e.g. IBANs, opaque ids, hash/reference codes).
+    """
+    if value is None:
+        return False
+    text = str(value).strip()
+    if not text:
+        return True
+
+    compact = text.replace(' ', '')
+    if normalize_iban(compact):
+        return True
+
+    if re.fullmatch(r'[A-Z0-9._:-]{12,}', compact) and ' ' not in text:
+        return True
+
+    return False
+
 def parse_bunq_datetime(value, context='datetime'):
     """
     Parse bunq datetime strings and always return timezone-aware UTC datetimes.
@@ -1448,8 +1504,30 @@ def classify_account_type(account):
     """
     class_name = account.__class__.__name__.lower()
     description = (get_obj_field(account, 'description', 'display_name', default='') or '').lower()
-    subtype = (get_obj_field(account, 'sub_type', 'type_', 'type', default='') or '').lower()
-    fingerprint = f"{class_name} {description} {subtype}"
+    profile = get_obj_field(account, 'monetary_account_profile')
+    subtype = (
+        get_obj_field(
+            account,
+            'sub_type',
+            'subtype',
+            'type_',
+            'type',
+            'monetary_account_type',
+            default=''
+        ) or ''
+    ).lower()
+    profile_type = (
+        get_obj_field(
+            profile,
+            'sub_type',
+            'type_',
+            'type',
+            'profile_type',
+            'account_type',
+            default=''
+        ) or ''
+    ).lower()
+    fingerprint = f"{class_name} {description} {subtype} {profile_type}"
 
     if any(token in fingerprint for token in (
         'savings', 'spaar', 'spaarrekening', 'sparen',
@@ -2534,6 +2612,7 @@ def get_accounts():
         
         logger.info(f"📊 Fetching accounts for {session.get('username')}")
         accounts = list_monetary_accounts()
+        account_type_hints = discover_account_type_hints()
         
         accounts_data = []
         for account in accounts:
@@ -2542,7 +2621,7 @@ def get_accounts():
                 get_obj_field(account, 'balance'),
                 context=f"account {account_id} balance"
             )
-            account_type = classify_account_type(account)
+            account_type = account_type_hints.get(str(account_id)) or classify_account_type(account)
             balance_eur_value = None
             fx_rate_to_eur = None
             fx_converted = False
@@ -2737,7 +2816,20 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             is_internal_transfer,
             merchant_category_code=merchant_category_code
         )
-        merchant_label = merchant_reference or counterparty_name or description or 'Onbekend'
+        merchant_candidates = [counterparty_name, description, merchant_reference]
+        merchant_label = next(
+            (
+                value.strip()
+                for value in merchant_candidates
+                if isinstance(value, str) and value.strip() and not is_opaque_reference_value(value)
+            ),
+            None
+        )
+        if merchant_label is None:
+            merchant_label = next(
+                (value.strip() for value in merchant_candidates if isinstance(value, str) and value.strip()),
+                'Onbekend'
+            )
         
         transactions.append({
             'id': payment_id,
