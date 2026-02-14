@@ -28,7 +28,7 @@ say() {
 }
 
 cleanup_tty() {
-  stty echo 2>/dev/null || true
+  stty echo </dev/tty 2>/dev/null || true
 }
 trap cleanup_tty EXIT INT TERM
 
@@ -39,16 +39,16 @@ trim_crlf() {
 prompt_visible() {
   prompt="$1"
   printf '%s' "$prompt" >/dev/tty
-  IFS= read -r value || true
+  IFS= read -r value </dev/tty || true
   printf '%s' "$value"
 }
 
 prompt_hidden() {
   prompt="$1"
   printf '%s' "$prompt" >/dev/tty
-  stty -echo
-  IFS= read -r value || true
-  stty echo
+  stty -echo </dev/tty
+  IFS= read -r value </dev/tty || true
+  stty echo </dev/tty
   printf '\n' >/dev/tty
   printf '%s' "$value"
 }
