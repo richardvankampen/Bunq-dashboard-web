@@ -1451,7 +1451,11 @@ def classify_account_type(account):
     subtype = (get_obj_field(account, 'sub_type', 'type_', 'type', default='') or '').lower()
     fingerprint = f"{class_name} {description} {subtype}"
 
-    if any(token in fingerprint for token in ('savings', 'spaar', 'reserve', 'buffer', 'vakantie', 'doel', 'goal')):
+    if any(token in fingerprint for token in (
+        'savings', 'spaar', 'spaarrekening', 'sparen',
+        'reserve', 'buffer', 'onvoorzien', 'emergency',
+        'vakantie', 'doel', 'goal'
+    )):
         return 'savings'
     if any(token in fingerprint for token in ('investment', 'stock', 'share', 'crypto', 'belegging')):
         return 'investment'
@@ -2539,10 +2543,28 @@ def get_accounts():
                 context=f"account {account_id} balance"
             )
             account_type = classify_account_type(account)
-            balance_eur_value, fx_rate_to_eur, fx_converted = convert_amount_to_eur(
-                balance_value,
-                balance_currency,
-            )
+            balance_eur_value = None
+            fx_rate_to_eur = None
+            fx_converted = False
+
+            # Prefer Bunq-provided converted balance when available.
+            converted_obj = get_obj_field(account, 'balance_converted')
+            if converted_obj is not None:
+                converted_value, converted_currency = parse_monetary_value(
+                    converted_obj,
+                    context=f"account {account_id} balance_converted"
+                )
+                if converted_currency.upper() == 'EUR':
+                    balance_eur_value = converted_value
+                    fx_converted = balance_currency.upper() != 'EUR'
+                    if abs(balance_value) > 1e-9:
+                        fx_rate_to_eur = balance_eur_value / balance_value
+
+            if balance_eur_value is None:
+                balance_eur_value, fx_rate_to_eur, fx_converted = convert_amount_to_eur(
+                    balance_value,
+                    balance_currency,
+                )
             accounts_data.append({
                 'id': account_id,
                 'description': get_obj_field(account, 'description', 'display_name') or f"Account {account_id}",
@@ -2707,7 +2729,15 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             get_obj_field(payment, 'amount', 'monetary_value'),
             context=f"payment {payment_id} amount"
         )
-        category = categorize_transaction(description, counterparty_name, is_internal_transfer)
+        merchant_reference = get_obj_field(payment, 'merchant_reference', 'merchant_reference_')
+        merchant_category_code = get_obj_field(counterparty_alias, 'merchant_category_code')
+        category = categorize_transaction(
+            description,
+            counterparty_name,
+            is_internal_transfer,
+            merchant_category_code=merchant_category_code
+        )
+        merchant_label = merchant_reference or counterparty_name or description or 'Onbekend'
         
         transactions.append({
             'id': payment_id,
@@ -2716,7 +2746,7 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             'currency': amount_currency,
             'description': description,
             'counterparty': counterparty_name,
-            'merchant': get_obj_field(payment, 'merchant_reference', 'merchant_reference_'),
+            'merchant': merchant_label,
             'category': category,
             'type': get_obj_field(payment, 'type_', 'type'),
             'account_id': account_id,
@@ -2726,27 +2756,54 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
     
     return transactions
 
-def categorize_transaction(description, counterparty_name, is_internal=False):
-    """Simple rule-based categorization"""
+def categorize_transaction(description, counterparty_name, is_internal=False, merchant_category_code=None):
+    """Rule-based categorization with MCC fallback."""
     if is_internal:
         return 'Internal Transfer'
+
     desc_lower = description.lower() if description else ''
     counter_lower = counterparty_name.lower() if counterparty_name else ''
-    combined = desc_lower + ' ' + counter_lower
-    
-    if any(word in combined for word in ['albert heijn', 'ah ', 'jumbo', 'lidl', 'aldi', 'plus', 'supermarkt']):
+    combined = f"{desc_lower} {counter_lower}".strip()
+
+    mcc = str(merchant_category_code or '').strip()
+    if mcc:
+        if mcc in {'5411', '5422', '5441', '5451', '5462', '5499'}:
+            return 'Boodschappen'
+        if mcc in {'5812', '5813', '5814'}:
+            return 'Horeca'
+        if mcc in {'4111', '4121', '4789', '5541', '5542'}:
+            return 'Vervoer'
+        if mcc in {'4900', '4814'}:
+            return 'Utilities'
+        if mcc in {'5912', '8011', '8021', '8099'}:
+            return 'Zorg'
+        if mcc in {'7832', '7922', '7997', '7999'}:
+            return 'Entertainment'
+        if mcc in {'5311', '5331', '5399', '5651', '5732'}:
+            return 'Shopping'
+
+    if any(word in combined for word in [
+        'albert heijn', ' ah ', 'jumbo', 'lidl', 'aldi', 'plus', 'dirk',
+        'picnic', 'ekoplaza', 'spar ', 'coop', 'supermarkt', 'carrefour'
+    ]):
         return 'Boodschappen'
-    elif any(word in combined for word in ['restaurant', 'cafe', 'bar', 'pizza', 'burger', 'starbucks']):
+    elif any(word in combined for word in [
+        'restaurant', 'cafe', 'bar', 'pizza', 'burger', 'starbucks',
+        'thuisbezorgd', 'ubereats', 'deliveroo', 'mcdonald'
+    ]):
         return 'Horeca'
-    elif any(word in combined for word in ['ns ', 'train', 'bus', 'taxi', 'uber', 'parking', 'shell', 'benzine']):
+    elif any(word in combined for word in [
+        'ns ', 'train', 'bus', 'taxi', 'uber', 'ov ', 'parking',
+        'q-park', 'shell', 'texaco', 'esso', 'total', 'benzine'
+    ]):
         return 'Vervoer'
-    elif any(word in combined for word in ['huur', 'rent', 'hypotheek', 'mortgage']):
+    elif any(word in combined for word in ['huur', 'rent', 'hypotheek', 'mortgage', 'vve']):
         return 'Wonen'
-    elif any(word in combined for word in ['eneco', 'energie', 'gas', 'water', 'ziggo', 'kpn', 'telecom']):
+    elif any(word in combined for word in ['eneco', 'essent', 'energie', 'gas', 'water', 'ziggo', 'kpn', 'telecom']):
         return 'Utilities'
-    elif any(word in combined for word in ['bol.com', 'coolblue', 'mediamarkt', 'zara', 'h&m', 'shop']):
+    elif any(word in combined for word in ['bol.com', 'coolblue', 'mediamarkt', 'amazon', 'zara', 'h&m', 'shop']):
         return 'Shopping'
-    elif any(word in combined for word in ['netflix', 'spotify', 'youtube', 'cinema', 'pathé', 'concert']):
+    elif any(word in combined for word in ['netflix', 'spotify', 'youtube', 'cinema', 'pathé', 'concert', 'steam']):
         return 'Entertainment'
     elif any(word in combined for word in ['apotheek', 'pharmacy', 'dokter', 'doctor', 'tandarts', 'dentist']):
         return 'Zorg'

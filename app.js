@@ -782,6 +782,27 @@ function setupCardActionButtons() {
         });
     });
 
+    const downloadButtons = document.querySelectorAll('.action-btn[title="Download"]');
+    downloadButtons.forEach((button) => {
+        button.addEventListener('click', async () => {
+            const card = button.closest('.viz-card');
+            if (!card || !window.Plotly) return;
+            const plot = card.querySelector('#cashflowChart, #sankeyChart, #sunburstChart, #timeTravelChart, #heatmapChart, #merchantsChart, #racingChart');
+            if (!plot) return;
+            try {
+                await window.Plotly.downloadImage(plot, {
+                    format: 'png',
+                    filename: `${plot.id}-${new Date().toISOString().slice(0, 10)}`,
+                    width: 1600,
+                    height: 900,
+                    scale: 1.5
+                });
+            } catch (error) {
+                console.error('Download failed:', error);
+            }
+        });
+    });
+
     document.addEventListener('fullscreenchange', updateFullscreenButtonState);
     document.addEventListener('webkitfullscreenchange', updateFullscreenButtonState);
     document.addEventListener('MSFullscreenChange', updateFullscreenButtonState);
@@ -945,6 +966,8 @@ function classifyAccountType(account) {
         || fingerprint.includes('spaar')
         || fingerprint.includes('reserve')
         || fingerprint.includes('buffer')
+        || fingerprint.includes('onvoorzien')
+        || fingerprint.includes('emergency')
         || fingerprint.includes('vakantie')
         || fingerprint.includes('doel')
         || fingerprint.includes('goal')
@@ -1019,15 +1042,6 @@ function calculateBalanceMetrics(transactions, accounts, historyData = null) {
             }));
         });
 
-        if (historyData.latest_totals) {
-            ['checking', 'savings', 'investment'].forEach((accountType) => {
-                const value = Number(historyData.latest_totals[accountType]);
-                if (Number.isFinite(value)) {
-                    totals[accountType] = value;
-                }
-            });
-        }
-
         if (historyData.account_breakdown) {
             ['checking', 'savings', 'investment'].forEach((accountType) => {
                 const rows = Array.isArray(historyData.account_breakdown[accountType])
@@ -1047,6 +1061,16 @@ function calculateBalanceMetrics(transactions, accounts, historyData = null) {
                                 : null
                         )
                 }));
+            });
+        }
+
+        if (historyData.latest_totals) {
+            ['checking', 'savings', 'investment'].forEach((accountType) => {
+                const value = Number(historyData.latest_totals[accountType]);
+                const hasBreakdown = (grouped[accountType] || []).length > 0;
+                if (Number.isFinite(value) && !hasBreakdown) {
+                    totals[accountType] = value;
+                }
             });
         }
 
@@ -1199,13 +1223,31 @@ function applyClientFilters(data) {
     return filtered;
 }
 
+function resolveMerchantLabel(transaction) {
+    const raw = [
+        transaction?.merchant,
+        transaction?.counterparty,
+        transaction?.description
+    ].find((value) => typeof value === 'string' && value.trim().length > 0);
+    if (!raw) return 'Onbekend';
+    return raw.trim();
+}
+
+function resolveCategoryLabel(transaction) {
+    const raw = transaction?.category;
+    if (typeof raw === 'string' && raw.trim()) {
+        return raw.trim();
+    }
+    return 'Overig';
+}
+
 function normalizeTransactions(data) {
     return data.map(t => ({
         ...t,
         date: t.date instanceof Date ? t.date : new Date(t.date),
-        merchant: t.merchant || t.counterparty || t.description || 'Unknown',
+        merchant: resolveMerchantLabel(t),
         amount: Number(t.amount) || 0,
-        category: t.category || 'Overig'
+        category: resolveCategoryLabel(t)
     }));
 }
 
@@ -1300,9 +1342,21 @@ function renderKPIs(kpis, data) {
         savingsTrend.parentElement?.classList.toggle('negative', savingsChange < 0);
     }
     
-    renderSparkline('incomeSparkline', incomeSeries, '#22c55e');
-    renderSparkline('expensesSparkline', expenseSeries, '#ef4444');
-    renderSparkline('savingsSparkline', savingsSeries, '#8b5cf6');
+    renderMetricMiniChart(
+        'incomeSparkline',
+        daily.map((point) => ({ date: point.date, total: point.income })),
+        '#22c55e'
+    );
+    renderMetricMiniChart(
+        'expensesSparkline',
+        daily.map((point) => ({ date: point.date, total: point.expenses })),
+        '#ef4444'
+    );
+    renderMetricMiniChart(
+        'savingsSparkline',
+        daily.map((point) => ({ date: point.date, total: point.net })),
+        '#8b5cf6'
+    );
 }
 
 function calculateSeriesChange(series) {
@@ -1322,8 +1376,25 @@ function renderMetricMiniChart(canvasId, points, color) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
-    const labels = (points || []).map((point) => formatShortDate(point.date));
-    const values = (points || []).map((point) => Number(point.total) || 0);
+    const sourcePoints = Array.isArray(points) ? points : [];
+    let normalizedPoints = sourcePoints;
+    if (!normalizedPoints.length) {
+        normalizedPoints = [
+            { date: new Date(Date.now() - 24 * 60 * 60 * 1000), total: 0 },
+            { date: new Date(), total: 0 }
+        ];
+    } else if (normalizedPoints.length === 1) {
+        const only = normalizedPoints[0];
+        const anchorDate = only?.date instanceof Date && !Number.isNaN(only.date.getTime())
+            ? only.date
+            : new Date();
+        normalizedPoints = [
+            { date: new Date(anchorDate.getTime() - 24 * 60 * 60 * 1000), total: Number(only.total) || 0 },
+            { date: anchorDate, total: Number(only.total) || 0 }
+        ];
+    }
+    const labels = normalizedPoints.map((point) => formatShortDate(point.date));
+    const values = normalizedPoints.map((point) => Number(point.total) || 0);
 
     if (chartRegistry.chartjs[canvasId]) {
         chartRegistry.chartjs[canvasId].destroy();
@@ -1400,8 +1471,14 @@ function renderBalanceKPIs(metrics) {
     if (checkingEl) checkingEl.textContent = formatCurrency(metrics.totals.checking || 0);
     if (savingsEl) savingsEl.textContent = formatCurrency(metrics.totals.savings || 0);
 
-    const checkingSeries = (metrics.series.checking || []).map((p) => p.total);
-    const savingsSeries = (metrics.series.savings || []).map((p) => p.total);
+    const checkingPoints = (metrics.series.checking || []).length
+        ? metrics.series.checking
+        : [{ date: new Date(), total: Number(metrics.totals.checking || 0) }];
+    const savingsPoints = (metrics.series.savings || []).length
+        ? metrics.series.savings
+        : [{ date: new Date(), total: Number(metrics.totals.savings || 0) }];
+    const checkingSeries = checkingPoints.map((p) => p.total);
+    const savingsSeries = savingsPoints.map((p) => p.total);
 
     const checkingChange = calculateSeriesChange(checkingSeries);
     const savingsChange = calculateSeriesChange(savingsSeries);
@@ -1409,8 +1486,8 @@ function renderBalanceKPIs(metrics) {
     if (checkingTrendEl) checkingTrendEl.textContent = `${checkingChange.toFixed(1)}%`;
     if (savingsTrendEl) savingsTrendEl.textContent = `${savingsChange.toFixed(1)}%`;
 
-    renderMetricMiniChart('checkingSparkline', metrics.series.checking || [], '#38bdf8');
-    renderMetricMiniChart('savingsBalanceSparkline', metrics.series.savings || [], '#22c55e');
+    renderMetricMiniChart('checkingSparkline', checkingPoints, '#38bdf8');
+    renderMetricMiniChart('savingsBalanceSparkline', savingsPoints, '#22c55e');
 }
 
 function showBalanceDetail(type) {
@@ -1422,7 +1499,11 @@ function showBalanceDetail(type) {
         investment: 'Beleggingen / Crypto'
     };
     const label = labels[type] || 'Rekeningen';
-    const accounts = [...(balanceMetrics.grouped[type] || [])].sort((a, b) => b.balanceValue - a.balanceValue);
+    const accounts = [...(balanceMetrics.grouped[type] || [])].sort((a, b) => {
+        const aName = (a.description || `Account ${a.id}`).toLocaleLowerCase('nl-NL');
+        const bName = (b.description || `Account ${b.id}`).toLocaleLowerCase('nl-NL');
+        return aName.localeCompare(bName, 'nl-NL');
+    });
     const total = accounts.reduce((sum, acc) => sum + (Number(acc.balanceEurValue) || 0), 0);
     const nonEurNote = balanceMetrics.missingFxCount > 0
         ? ` (${balanceMetrics.missingFxCount} non-EUR rekening(en) zonder FX-rate)`
@@ -1456,11 +1537,12 @@ function showBalanceDetail(type) {
                     ? `${formatCurrencyWithCode(acc.balanceValue, acc.balanceCurrency)}`
                     : formatCurrency(acc.balanceEurValue)
             )).reverse(),
-            textposition: 'outside',
+            textposition: 'auto',
+            cliponaxis: false,
             hovertemplate: '%{y}<br>%{x:.2f} EUR<extra></extra>'
         };
         const layout = {
-            margin: { t: 10, r: 20, l: 140, b: 30 },
+            margin: { t: 10, r: 90, l: 220, b: 34 },
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             font: { color: '#cbd5f5' },
@@ -1529,7 +1611,7 @@ function buildTransactionRows(transactions, options = {}) {
             const accountLabel = includeAccount
                 ? ` · ${account?.description || `Rekening ${transaction.account_id}`}`
                 : '';
-            const label = `${transaction.date.toLocaleDateString('nl-NL')} · ${transaction.merchant || transaction.description || 'Onbekend'}${accountLabel}`;
+            const label = `${transaction.date.toLocaleDateString('nl-NL')} · ${resolveMerchantLabel(transaction)}${accountLabel}`;
             return {
                 label,
                 value: formatCurrency(transaction.amount)
@@ -1698,7 +1780,7 @@ function showTransactionDetail(detailType) {
         const merchantTotals = new Map();
         transactions.forEach((transaction) => {
             if ((transaction.amount || 0) >= 0) return;
-            const merchant = transaction.merchant || transaction.counterparty || transaction.description || 'Onbekend';
+            const merchant = resolveMerchantLabel(transaction);
             merchantTotals.set(merchant, (merchantTotals.get(merchant) || 0) + Math.abs(transaction.amount || 0));
         });
 
@@ -1878,42 +1960,6 @@ function showTransactionDetail(detailType) {
         summary: 'Geen detailweergave beschikbaar voor dit onderdeel.',
         rows: [{ label: 'Onbekend detailtype.', value: detailType || 'n/a' }],
         chart: null
-    });
-}
-
-function renderSparkline(canvasId, data, color) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    
-    if (chartRegistry.chartjs[canvasId]) {
-        chartRegistry.chartjs[canvasId].destroy();
-    }
-    
-    chartRegistry.chartjs[canvasId] = new Chart(canvas, {
-        type: 'line',
-        data: {
-            labels: data.map((_, i) => i),
-            datasets: [{
-                data,
-                borderColor: color,
-                backgroundColor: 'rgba(0,0,0,0)',
-                borderWidth: 2,
-                pointRadius: 0,
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: { enabled: false }
-            },
-            scales: {
-                x: { display: false },
-                y: { display: false }
-            }
-        }
     });
 }
 
@@ -2106,7 +2152,7 @@ function renderSunburstChart(data) {
 
     data.forEach((transaction) => {
         const category = transaction.category || 'Overig';
-        const merchant = transaction.merchant || 'Unknown';
+        const merchant = resolveMerchantLabel(transaction);
         if (transaction.amount >= 0) {
             incomeByCategory.set(category, (incomeByCategory.get(category) || 0) + transaction.amount);
             return;
@@ -2155,7 +2201,8 @@ function renderSunburstChart(data) {
             pushNode(categoryId, category, 'expenses', amount, categoryColor);
 
             const merchants = Array.from((merchantByCategory.get(category) || new Map()).entries())
-                .sort((a, b) => b[1] - a[1]);
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 16);
             merchants.forEach(([merchant, merchantAmount]) => {
                 pushNode(
                     `${categoryId}:${merchant}`,
@@ -2180,7 +2227,7 @@ function renderSunburstChart(data) {
             colors,
             line: {
                 color: 'rgba(15, 23, 42, 0.9)',
-                width: 1.4
+                width: 2.2
             }
         },
         hovertemplate: '%{label}<br>%{value:.2f} EUR<extra></extra>'
@@ -2245,30 +2292,43 @@ function renderTimeTravelChart(data) {
 function renderHeatmapChart(data) {
     const container = document.getElementById('heatmapChart');
     if (!container) return;
-    
-    const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
-    data.forEach(t => {
-        if (t.amount >= 0) return;
-        const date = t.date;
-        const day = (date.getDay() + 6) % 7; // Monday=0
+
+    const dayParts = [
+        { label: 'Nacht (00-06)', start: 0, end: 6 },
+        { label: 'Ochtend (06-12)', start: 6, end: 12 },
+        { label: 'Middag (12-18)', start: 12, end: 18 },
+        { label: 'Avond (18-24)', start: 18, end: 24 }
+    ];
+    const weekdays = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
+    const grid = Array.from({ length: weekdays.length }, () => Array(dayParts.length).fill(0));
+
+    data.forEach((transaction) => {
+        if ((transaction.amount || 0) >= 0) return;
+        const date = transaction.date;
+        const dayIndex = (date.getDay() + 6) % 7;
         const hour = date.getHours();
-        grid[day][hour] += Math.abs(t.amount);
+        const partIndex = dayParts.findIndex((part) => hour >= part.start && hour < part.end);
+        if (partIndex >= 0) {
+            grid[dayIndex][partIndex] += Math.abs(transaction.amount || 0);
+        }
     });
-    
+
     const trace = {
         z: grid,
-        x: Array.from({ length: 24 }, (_, i) => i),
-        y: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        x: dayParts.map((part) => part.label),
+        y: weekdays,
         type: 'heatmap',
-        colorscale: 'YlOrRd'
+        colorscale: 'YlOrRd',
+        hovertemplate: '%{y} · %{x}<br>Uitgaven: %{z:.2f} EUR<extra></extra>'
     };
-    
+
     const layout = {
-        margin: { t: 20, r: 10, l: 40, b: 30 },
+        margin: { t: 10, r: 10, l: 44, b: 60 },
         paper_bgcolor: 'rgba(0,0,0,0)',
-        font: { color: '#cbd5f5' }
+        font: { color: '#cbd5f5' },
+        xaxis: { tickangle: -20 }
     };
-    
+
     Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
 }
 
@@ -2279,11 +2339,14 @@ function renderMerchantsChart(data) {
     const totals = {};
     data.forEach(t => {
         if (t.amount >= 0) return;
-        const merchant = t.merchant || 'Unknown';
+        const merchant = resolveMerchantLabel(t);
         totals[merchant] = (totals[merchant] || 0) + Math.abs(t.amount);
     });
     
-    const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const sorted = Object.entries(totals)
+        .filter(([merchant]) => merchant && merchant !== 'Onbekend')
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12);
     const labels = sorted.map(([name]) => name);
     const values = sorted.map(([, value]) => value);
     
@@ -2388,7 +2451,7 @@ function updateRacingChart(monthIndex) {
     if (!racingData || !racingData.months.length) return;
     const month = racingData.months[monthIndex];
     const totals = racingData.byMonth[month] || {};
-    const items = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const items = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 12);
     const labels = items.map(([cat]) => cat);
     const values = items.map(([, value]) => value);
     
@@ -2582,7 +2645,7 @@ function renderInsights(data, kpis) {
     const merchantExpenses = {};
     data.forEach((transaction) => {
         if ((transaction.amount || 0) >= 0) return;
-        const merchant = transaction.merchant || transaction.counterparty || transaction.description || 'Onbekend';
+        const merchant = resolveMerchantLabel(transaction);
         merchantExpenses[merchant] = (merchantExpenses[merchant] || 0) + Math.abs(transaction.amount || 0);
     });
     const merchantsSorted = Object.entries(merchantExpenses).sort((a, b) => b[1] - a[1]);
