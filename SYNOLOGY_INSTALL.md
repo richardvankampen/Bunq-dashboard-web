@@ -615,6 +615,14 @@ cd /volume1/docker/bunq-dashboard
 sh scripts/register_bunq_ip.sh
 ```
 
+**Snelle non-interactieve variant (expliciet target IP):**
+```bash
+cd /volume1/docker/bunq-dashboard
+TARGET_IP=<PUBLIEK_IPV4> DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+# Voorbeeld:
+# TARGET_IP=178.228.65.1 DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+```
+
 Het script doet automatisch:
 - egress publieke IP tonen vanuit de container
 - optioneel target IPv4 vragen (leeg = huidige egress IP)
