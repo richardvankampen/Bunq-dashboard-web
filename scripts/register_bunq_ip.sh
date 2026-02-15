@@ -7,6 +7,7 @@ set -eu
 SERVICE_NAME="${1:-bunq_bunq-dashboard}"
 LOG_MINUTES="${LOG_MINUTES:-5}"
 DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS:-true}"
+NO_PROMPT="${NO_PROMPT:-false}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker command not found"
@@ -29,14 +30,38 @@ fi
 
 echo "[1/8] Container egress public IP"
 EGRESS_IP="$($DOCKER_CMD exec "${CONTAINER_ID}" python3 - <<'PY'
+import ipaddress
 import requests
-print(requests.get("https://api64.ipify.org", timeout=10).text.strip())
+
+urls = (
+    "https://api64.ipify.org",
+    "https://ifconfig.me/ip",
+    "https://ipinfo.io/ip",
+)
+
+resolved = ""
+for url in urls:
+    try:
+        value = requests.get(url, timeout=10).text.strip()
+        ip_obj = ipaddress.ip_address(value)
+        if ip_obj.version != 4:
+            continue
+        if any((ip_obj.is_private, ip_obj.is_loopback, ip_obj.is_link_local, ip_obj.is_reserved, ip_obj.is_multicast)):
+            continue
+        resolved = value
+        break
+    except Exception:
+        continue
+
+if not resolved:
+    raise SystemExit("ERROR: unable to resolve public IPv4 egress from container")
+print(resolved)
 PY
 )"
 echo "${EGRESS_IP}"
 
 TARGET_IP="${TARGET_IP:-${EGRESS_IP}}"
-if [ -t 0 ]; then
+if [ "${NO_PROMPT}" != "true" ] && [ -t 0 ]; then
   printf "Whitelist IPv4 [%s]: " "${TARGET_IP}"
   IFS= read -r INPUT_IP || true
   if [ -n "${INPUT_IP:-}" ]; then
@@ -45,13 +70,31 @@ if [ -t 0 ]; then
 fi
 
 echo "[2/8] Target whitelist IP: ${TARGET_IP}"
+$DOCKER_CMD exec -e TARGET_IP="${TARGET_IP}" "${CONTAINER_ID}" python3 - <<'PY'
+import ipaddress
+import os
+
+target = (os.getenv("TARGET_IP") or "").strip()
+if not target:
+    raise SystemExit("ERROR: TARGET_IP is empty")
+try:
+    ip_obj = ipaddress.ip_address(target)
+except ValueError:
+    raise SystemExit(f"ERROR: invalid TARGET_IP '{target}'")
+
+if ip_obj.version != 4:
+    raise SystemExit(f"ERROR: TARGET_IP must be IPv4, got '{target}'")
+
+if any((ip_obj.is_private, ip_obj.is_loopback, ip_obj.is_link_local, ip_obj.is_reserved, ip_obj.is_multicast)):
+    raise SystemExit(f"ERROR: TARGET_IP must be public IPv4, got '{target}'")
+PY
 
 USE_VAULTWARDEN="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -c 'echo "${USE_VAULTWARDEN:-true}"' | tr '[:upper:]' '[:lower:]')"
 VAULTWARDEN_ACCESS_METHOD="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -c 'echo "${VAULTWARDEN_ACCESS_METHOD:-cli}"' | tr '[:upper:]' '[:lower:]')"
 echo "[3/8] Auth mode: USE_VAULTWARDEN=${USE_VAULTWARDEN}"
 
 echo "[4/8] Set Bunq API allowlist IP via API calls"
-$DOCKER_CMD exec \
+WHITELIST_RESULT="$($DOCKER_CMD exec \
   -e TARGET_IP="${TARGET_IP}" \
   -e DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS}" \
   -e AUTO_SET_BUNQ_WHITELIST_IP=false \
@@ -64,15 +107,22 @@ from api_proxy import init_bunq, set_bunq_api_whitelist_ip
 target_ip = (os.getenv("TARGET_IP", "") or "").strip() or None
 deactivate_others = (os.getenv("DEACTIVATE_OTHERS", "true") or "").strip().lower() in ("1", "true", "yes", "on")
 
-if not init_bunq(force_recreate=False, refresh_key=True):
+if not init_bunq(force_recreate=False, refresh_key=True, run_auto_whitelist=False):
     print("ERROR: Bunq init failed before whitelist update")
     sys.exit(1)
 
 result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=deactivate_others)
-print(json.dumps(result, ensure_ascii=False))
+print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 if not result.get("success"):
     sys.exit(1)
 PY
+  2>&1)" || {
+  echo "ERROR: whitelist update failed"
+  printf '%s\n' "${WHITELIST_RESULT}"
+  echo "Tip: check if the running context can still authenticate; if not, first restore API key/context and rerun."
+  exit 1
+}
+printf '%s\n' "${WHITELIST_RESULT}"
 
 if [ "${USE_VAULTWARDEN}" = "false" ]; then
   echo "[5/8] Validate bunq_api_key secret (must be 64 hex chars)"

@@ -44,6 +44,24 @@ Laatste update: 2026-02-14 (P1 actionable update)
   - checken of nieuwe categorieën (`Verzekering`, `Belastingen`, `Refund`, `Rente`) goed landen in visualisaties,
   - eventuele extra deep-dives voor budgetcoach use-cases.
 
+## Concreet vervolgstappenplan
+
+1. NAS updaten/deployen:
+   - `cd /volume1/docker/bunq-dashboard`
+   - `sudo git pull`
+   - `sh scripts/install_or_update_synology.sh`
+2. Health + logs checken:
+   - `curl -s http://127.0.0.1:5000/api/health`
+   - `sudo docker service logs --since 5m bunq_bunq-dashboard | grep -E "ERROR|Warning|API key|initialized"`
+3. UI-functioneel testen:
+   - cards: `Spend Volatility`, `Recurring Costs`, `Next Best Action`
+   - detailmodals: `Budget Discipline`, `Action plan`, `Recurring costs`
+4. Datakwaliteit valideren:
+   - categorisatie op nieuwe labels (`Verzekering`, `Belastingen`, `Refund`, `Rente`)
+   - accounttype-classificatie (checking/savings/investment)
+5. Op basis van feedback:
+   - action-rules en thresholds verder bijstellen voor minder ruis en hogere relevantie.
+
 ## Handige update/deploy flow op NAS
 
 ```bash

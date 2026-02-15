@@ -1051,7 +1051,11 @@ def set_bunq_api_whitelist_ip(target_ip=None, deactivate_others=False):
             'entries': final_entries,
         }
     except Exception as exc:
-        logger.exception(f"❌ Failed updating Bunq whitelist IP: {exc}")
+        # Whitelist sync is best-effort for SDK variants that may not expose credential-password endpoints.
+        logger.warning(
+            f"⚠️ Failed updating Bunq whitelist IP: {exc}",
+            exc_info=logger.isEnabledFor(logging.DEBUG)
+        )
         return {
             'success': False,
             'target_ip': resolved_target_ip,
