@@ -11,6 +11,8 @@ KEEP_IMAGE_COUNT="${KEEP_IMAGE_COUNT:-2}"
 RUN_WHITELIST_UPDATE="${RUN_WHITELIST_UPDATE:-true}"
 TARGET_IP="${TARGET_IP:-}"
 DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS:-false}"
+MAX_UPDATE_RETRIES="${MAX_UPDATE_RETRIES:-6}"
+UPDATE_RETRY_DELAY="${UPDATE_RETRY_DELAY:-3}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker command not found"
@@ -55,17 +57,48 @@ if [ -n "${IMAGE_TAG}" ]; then
     echo "  sudo docker build -t ${TARGET_IMAGE} ."
     exit 1
   fi
-  set +e
-  $DOCKER_CMD service update --image "${TARGET_IMAGE}" --force "${SERVICE_NAME}" >/dev/null
-  UPDATE_EXIT=$?
-  set -e
+  UPDATE_ATTEMPT=1
+  UPDATE_EXIT=1
+  UPDATE_ERR=""
+  while [ "${UPDATE_ATTEMPT}" -le "${MAX_UPDATE_RETRIES}" ]; do
+    set +e
+    UPDATE_ERR="$($DOCKER_CMD service update --image "${TARGET_IMAGE}" --force "${SERVICE_NAME}" 2>&1 >/dev/null)"
+    UPDATE_EXIT=$?
+    set -e
+    [ "${UPDATE_EXIT}" -eq 0 ] && break
+    if printf '%s\n' "${UPDATE_ERR}" | grep -qi "update out of sequence"; then
+      if [ "${UPDATE_ATTEMPT}" -lt "${MAX_UPDATE_RETRIES}" ]; then
+        echo "WARN: update out of sequence (attempt ${UPDATE_ATTEMPT}/${MAX_UPDATE_RETRIES}), retrying in ${UPDATE_RETRY_DELAY}s ..."
+        sleep "${UPDATE_RETRY_DELAY}"
+        UPDATE_ATTEMPT=$((UPDATE_ATTEMPT + 1))
+        continue
+      fi
+    fi
+    break
+  done
 else
-  set +e
-  $DOCKER_CMD service update --force "${SERVICE_NAME}" >/dev/null
-  UPDATE_EXIT=$?
-  set -e
+  UPDATE_ATTEMPT=1
+  UPDATE_EXIT=1
+  UPDATE_ERR=""
+  while [ "${UPDATE_ATTEMPT}" -le "${MAX_UPDATE_RETRIES}" ]; do
+    set +e
+    UPDATE_ERR="$($DOCKER_CMD service update --force "${SERVICE_NAME}" 2>&1 >/dev/null)"
+    UPDATE_EXIT=$?
+    set -e
+    [ "${UPDATE_EXIT}" -eq 0 ] && break
+    if printf '%s\n' "${UPDATE_ERR}" | grep -qi "update out of sequence"; then
+      if [ "${UPDATE_ATTEMPT}" -lt "${MAX_UPDATE_RETRIES}" ]; then
+        echo "WARN: update out of sequence (attempt ${UPDATE_ATTEMPT}/${MAX_UPDATE_RETRIES}), retrying in ${UPDATE_RETRY_DELAY}s ..."
+        sleep "${UPDATE_RETRY_DELAY}"
+        UPDATE_ATTEMPT=$((UPDATE_ATTEMPT + 1))
+        continue
+      fi
+    fi
+    break
+  done
 fi
 if [ "${UPDATE_EXIT}" -ne 0 ]; then
+  [ -n "${UPDATE_ERR}" ] && printf '%s\n' "${UPDATE_ERR}"
   echo "ERROR: service update failed (exit ${UPDATE_EXIT}). Recent task state:"
   $DOCKER_CMD service ps --no-trunc --format "table {{.Name}}\t{{.CurrentState}}\t{{.Error}}" "${SERVICE_NAME}" || true
   echo "You can rollback with:"
