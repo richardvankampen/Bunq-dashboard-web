@@ -2364,9 +2364,15 @@ def build_data_quality_summary(days=90):
             'expense_transactions': 0,
             'income_transactions': 0,
             'internal_transactions': 0,
+            'active_transaction_days': 0,
+            'dataset_span_days': 0,
             'categorized_expenses': 0,
             'merchant_named_expenses': 0,
+            'expense_amount_total': 0.0,
+            'categorized_expense_amount': 0.0,
+            'merchant_named_expense_amount': 0.0,
             'amount_eur_known': 0,
+            'earliest_transaction_at': None,
             'latest_transaction_at': None,
             'latest_capture_at': None,
             'capture_freshness_hours': None,
@@ -2381,6 +2387,8 @@ def build_data_quality_summary(days=90):
         'coverage': {
             'category_coverage': None,
             'merchant_coverage': None,
+            'category_amount_coverage': None,
+            'merchant_amount_coverage': None,
             'amount_eur_coverage': None,
             'fx_coverage': None,
             'internal_share': None,
@@ -2410,6 +2418,8 @@ def build_data_quality_summary(days=90):
                 SUM(CASE WHEN amount < 0 THEN 1 ELSE 0 END) AS expense_transactions,
                 SUM(CASE WHEN amount > 0 THEN 1 ELSE 0 END) AS income_transactions,
                 SUM(CASE WHEN is_internal_transfer = 1 THEN 1 ELSE 0 END) AS internal_transactions,
+                COUNT(DISTINCT SUBSTR(tx_date, 1, 10)) AS active_transaction_days,
+                SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) AS expense_amount_total,
                 SUM(
                     CASE
                         WHEN amount < 0
@@ -2423,6 +2433,16 @@ def build_data_quality_summary(days=90):
                 SUM(
                     CASE
                         WHEN amount < 0
+                             AND category IS NOT NULL
+                             AND TRIM(category) != ''
+                             AND LOWER(TRIM(category)) NOT IN ('overig', 'unknown', 'onbekend')
+                        THEN ABS(amount)
+                        ELSE 0
+                    END
+                ) AS categorized_expense_amount,
+                SUM(
+                    CASE
+                        WHEN amount < 0
                              AND merchant IS NOT NULL
                              AND TRIM(merchant) != ''
                              AND LOWER(TRIM(merchant)) NOT IN ('unknown', 'onbekend')
@@ -2430,7 +2450,18 @@ def build_data_quality_summary(days=90):
                         ELSE 0
                     END
                 ) AS merchant_named_expenses,
+                SUM(
+                    CASE
+                        WHEN amount < 0
+                             AND merchant IS NOT NULL
+                             AND TRIM(merchant) != ''
+                             AND LOWER(TRIM(merchant)) NOT IN ('unknown', 'onbekend')
+                        THEN ABS(amount)
+                        ELSE 0
+                    END
+                ) AS merchant_named_expense_amount,
                 SUM(CASE WHEN amount_eur IS NOT NULL THEN 1 ELSE 0 END) AS amount_eur_known,
+                MIN(tx_date) AS earliest_transaction_at,
                 MAX(tx_date) AS latest_transaction_at,
                 MAX(captured_at) AS latest_capture_at
             FROM transaction_cache
@@ -2484,9 +2515,30 @@ def build_data_quality_summary(days=90):
         expense_transactions = int(tx_row['expense_transactions'] or 0)
         income_transactions = int(tx_row['income_transactions'] or 0)
         internal_transactions = int(tx_row['internal_transactions'] or 0)
+        active_transaction_days = int(tx_row['active_transaction_days'] or 0)
         categorized_expenses = int(tx_row['categorized_expenses'] or 0)
         merchant_named_expenses = int(tx_row['merchant_named_expenses'] or 0)
+        expense_amount_total = float(tx_row['expense_amount_total'] or 0.0)
+        categorized_expense_amount = float(tx_row['categorized_expense_amount'] or 0.0)
+        merchant_named_expense_amount = float(tx_row['merchant_named_expense_amount'] or 0.0)
         amount_eur_known = int(tx_row['amount_eur_known'] or 0)
+
+        earliest_transaction_raw = tx_row['earliest_transaction_at']
+        earliest_transaction_dt = parse_bunq_datetime(
+            earliest_transaction_raw,
+            context='transaction_cache.earliest_transaction_at'
+        )
+        latest_transaction_raw = tx_row['latest_transaction_at']
+        latest_transaction_dt = parse_bunq_datetime(
+            latest_transaction_raw,
+            context='transaction_cache.latest_transaction_at'
+        )
+        dataset_span_days = 0
+        if earliest_transaction_dt and latest_transaction_dt:
+            dataset_span_days = max(
+                (latest_transaction_dt.date() - earliest_transaction_dt.date()).days + 1,
+                0
+            )
 
         capture_freshness_hours = None
         latest_capture_raw = tx_row['latest_capture_at']
@@ -2502,10 +2554,16 @@ def build_data_quality_summary(days=90):
             'expense_transactions': expense_transactions,
             'income_transactions': income_transactions,
             'internal_transactions': internal_transactions,
+            'active_transaction_days': active_transaction_days,
+            'dataset_span_days': dataset_span_days,
             'categorized_expenses': categorized_expenses,
             'merchant_named_expenses': merchant_named_expenses,
+            'expense_amount_total': expense_amount_total,
+            'categorized_expense_amount': categorized_expense_amount,
+            'merchant_named_expense_amount': merchant_named_expense_amount,
             'amount_eur_known': amount_eur_known,
-            'latest_transaction_at': tx_row['latest_transaction_at'],
+            'earliest_transaction_at': earliest_transaction_raw,
+            'latest_transaction_at': latest_transaction_raw,
             'latest_capture_at': latest_capture_raw,
             'capture_freshness_hours': capture_freshness_hours,
             'latest_snapshot_date': latest_snapshot_date,
@@ -2514,6 +2572,8 @@ def build_data_quality_summary(days=90):
 
         category_coverage = _safe_ratio(categorized_expenses, expense_transactions, default=None)
         merchant_coverage = _safe_ratio(merchant_named_expenses, expense_transactions, default=None)
+        category_amount_coverage = _safe_ratio(categorized_expense_amount, expense_amount_total, default=None)
+        merchant_amount_coverage = _safe_ratio(merchant_named_expense_amount, expense_amount_total, default=None)
         amount_eur_coverage = _safe_ratio(amount_eur_known, total_transactions, default=None)
         fx_coverage = _safe_ratio(
             accounts_metrics['non_eur_converted_accounts'],
@@ -2525,6 +2585,8 @@ def build_data_quality_summary(days=90):
         summary['coverage'].update({
             'category_coverage': category_coverage,
             'merchant_coverage': merchant_coverage,
+            'category_amount_coverage': category_amount_coverage,
+            'merchant_amount_coverage': merchant_amount_coverage,
             'amount_eur_coverage': amount_eur_coverage,
             'fx_coverage': fx_coverage,
             'internal_share': internal_share,
@@ -2532,6 +2594,8 @@ def build_data_quality_summary(days=90):
 
         category_component = category_coverage if category_coverage is not None else 0.0
         merchant_component = merchant_coverage if merchant_coverage is not None else 0.0
+        category_amount_component = category_amount_coverage if category_amount_coverage is not None else category_component
+        merchant_amount_component = merchant_amount_coverage if merchant_amount_coverage is not None else merchant_component
         amount_component = amount_eur_coverage if amount_eur_coverage is not None else 0.0
         fx_component = fx_coverage if fx_coverage is not None else 0.0
         score = int(round(
@@ -2540,10 +2604,12 @@ def build_data_quality_summary(days=90):
                 min(
                     100.0,
                     100.0 * (
-                        (0.35 * category_component)
-                        + (0.30 * merchant_component)
-                        + (0.20 * amount_component)
-                        + (0.15 * fx_component)
+                        (0.25 * category_component)
+                        + (0.20 * merchant_component)
+                        + (0.20 * category_amount_component)
+                        + (0.15 * merchant_amount_component)
+                        + (0.10 * amount_component)
+                        + (0.10 * fx_component)
                     )
                 )
             )
@@ -2561,12 +2627,26 @@ def build_data_quality_summary(days=90):
         if total_transactions < 120:
             warnings.append('Relatief weinig transacties in cache voor geselecteerde periode.')
             recommendations.append('Gebruik een langere periode of laad live transacties opnieuw in het dashboard.')
+        minimum_active_days = max(10, int(days * 0.35))
+        if active_transaction_days < minimum_active_days:
+            warnings.append(f'Beperkte dagdekking: {active_transaction_days} actieve dagen in de periode.')
+            recommendations.append('Gebruik langere datumfilters voor stabielere trend- en budgetanalyse.')
+        minimum_span_days = max(14, int(days * 0.5))
+        if dataset_span_days and dataset_span_days < minimum_span_days:
+            warnings.append(f'Dataset bevat slechts {dataset_span_days} dagen aan transacties.')
+            recommendations.append('Controleer of historische transacties volledig worden opgehaald (paginatie/range).')
         if category_coverage is not None and category_coverage < 0.78:
             warnings.append('Categorie-dekking op uitgaven is laag.')
             recommendations.append('Verfijn categorisatieregels voor veel voorkomende merchants/descriptions.')
+        if category_amount_coverage is not None and category_amount_coverage < 0.84:
+            warnings.append('Groot deel van uitgavenvolume valt in categorie Overig/onbekend.')
+            recommendations.append('Prioriteer categorisatie op merchants met hoogste uitgavenimpact.')
         if merchant_coverage is not None and merchant_coverage < 0.85:
             warnings.append('Merchant-dekking op uitgaven is laag.')
             recommendations.append('Controleer merchant parsing en tegenpartijvelden in Bunq responses.')
+        if merchant_amount_coverage is not None and merchant_amount_coverage < 0.88:
+            warnings.append('Merchant-attributie mist op uitgaven met relatief hoge bedragen.')
+            recommendations.append('Voeg fallback regels toe op description/counterparty voor merchant extractie.')
         if amount_eur_coverage is not None and amount_eur_coverage < 0.95:
             warnings.append('Niet alle transacties hebben EUR-waarde in lokale store.')
             recommendations.append('Controleer FX lookup en amount-eur opslag in transaction cache.')
@@ -2581,7 +2661,7 @@ def build_data_quality_summary(days=90):
             recommendations.append('Gebruik filter `exclude_internal=true` voor zuivere uitgavenanalyses.')
 
         summary['warnings'] = warnings
-        summary['recommendations'] = recommendations
+        summary['recommendations'] = list(dict.fromkeys(recommendations))
         return summary
 
     except Exception as exc:

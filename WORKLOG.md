@@ -167,3 +167,18 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - Visualisaties informatiever gemaakt:
   - Sankey bevat nu link-aandelen (% van bron) in hover + totaalannotatie (in/uit/netto).
   - Sunburst toont meer categorieën/merchants met share-aware selectie en duidelijke parent-percentage hover.
+
+## 2026-02-16
+
+### Aanvullende P1-finetuning (actionability + datakwaliteit)
+
+- Action plan verfijnd met dynamische impactdrempels en confidence-score per actie.
+- `Next Best Action` toont nu confidence naast prioriteit/impact.
+- Nieuwe action rules toegevoegd:
+  - structurele vaste-lasten-risico (hoog aandeel recurring costs),
+  - income-side focus wanneer essentials structureel dominant zijn.
+- Data quality uitgebreid met bedrag-gedreven dekking:
+  - category coverage op aantallen én op uitgavenvolume,
+  - merchant coverage op aantallen én op uitgavenvolume.
+- Data quality gebruikt nu ook dagdekking/datasetspan signalen in warnings/recommendations.
+- Data quality detailmodal uitgebreid met actieve transactiedagen, dataspan en bedrag-gebaseerde dekkingsregels.

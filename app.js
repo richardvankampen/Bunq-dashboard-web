@@ -1361,28 +1361,60 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null)
     const mergedCoverage = {
         category_coverage: categoryCoverage ?? serverCoverage.category_coverage,
         merchant_coverage: merchantCoverage ?? serverCoverage.merchant_coverage,
+        category_amount_coverage: serverCoverage.category_amount_coverage ?? categoryCoverage,
+        merchant_amount_coverage: serverCoverage.merchant_amount_coverage ?? merchantCoverage,
         amount_eur_coverage: serverCoverage.amount_eur_coverage ?? 1,
         fx_coverage: serverCoverage.fx_coverage ?? fxCoverage,
         internal_share: internalShare ?? serverCoverage.internal_share
     };
 
+    const categoryComponent = mergedCoverage.category_coverage ?? 0;
+    const merchantComponent = mergedCoverage.merchant_coverage ?? 0;
+    const categoryAmountComponent = mergedCoverage.category_amount_coverage ?? categoryComponent;
+    const merchantAmountComponent = mergedCoverage.merchant_amount_coverage ?? merchantComponent;
+    const amountComponent = mergedCoverage.amount_eur_coverage ?? 0;
+    const fxComponent = mergedCoverage.fx_coverage ?? 0;
+
     const score = Math.round(
         100 * (
-            0.35 * (mergedCoverage.category_coverage ?? 0) +
-            0.30 * (mergedCoverage.merchant_coverage ?? 0) +
-            0.20 * (mergedCoverage.amount_eur_coverage ?? 0) +
-            0.15 * (mergedCoverage.fx_coverage ?? 0)
+            0.25 * categoryComponent +
+            0.20 * merchantComponent +
+            0.20 * categoryAmountComponent +
+            0.15 * merchantAmountComponent +
+            0.10 * amountComponent +
+            0.10 * fxComponent
         )
     );
 
     const warnings = [];
     if (totalTransactions < 120) warnings.push('Relatief weinig transacties in deze periode.');
+    if ((serverSummary?.metrics?.active_transaction_days ?? 0) > 0) {
+        const activeDays = Number(serverSummary.metrics.active_transaction_days) || 0;
+        const expectedDays = Math.max(10, Math.floor((Number(serverSummary.days) || 90) * 0.35));
+        if (activeDays < expectedDays) warnings.push(`Beperkte dagdekking: ${activeDays} actieve dagen.`);
+    }
     if ((mergedCoverage.category_coverage ?? 1) < 0.78) warnings.push('Categorie-dekking op uitgaven is laag.');
+    if ((mergedCoverage.category_amount_coverage ?? 1) < 0.84) warnings.push('Hoge uitgaven staan nog in categorie Overig/onbekend.');
     if ((mergedCoverage.merchant_coverage ?? 1) < 0.85) warnings.push('Merchant-dekking op uitgaven is laag.');
+    if ((mergedCoverage.merchant_amount_coverage ?? 1) < 0.88) warnings.push('Merchant-attributie mist op hoge uitgavenbedragen.');
     if ((mergedCoverage.amount_eur_coverage ?? 1) < 0.95) warnings.push('Niet alle transacties hebben EUR-waarde in lokale store.');
     if ((mergedCoverage.fx_coverage ?? 1) < 0.95) warnings.push('Niet alle non-EUR rekeningen zijn omgerekend.');
     if ((mergedCoverage.internal_share ?? 0) > 0.5) warnings.push('Meer dan 50% lijkt internal transfer.');
     if (serverSummary?.metrics?.capture_freshness_hours > 24) warnings.push('Lokale cache is ouder dan 24 uur.');
+
+    const mergedWarnings = Array.from(new Set([
+        ...(Array.isArray(serverSummary?.warnings) ? serverSummary.warnings : []),
+        ...warnings
+    ]));
+    const mergedRecommendations = Array.from(new Set([
+        ...(Array.isArray(serverSummary?.recommendations) ? serverSummary.recommendations : []),
+        ...((mergedCoverage.category_amount_coverage ?? 1) < 0.84
+            ? ['Prioriteer categorisatie op merchants met hoogste uitgavenimpact.']
+            : []),
+        ...((mergedCoverage.merchant_amount_coverage ?? 1) < 0.88
+            ? ['Voeg extra merchant-fallbacks toe op description/counterparty.']
+            : [])
+    ]));
 
     let qualityLabel = 'Needs attention';
     if (score >= 85) qualityLabel = 'Good';
@@ -1395,8 +1427,13 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null)
             total_transactions: totalTransactions,
             expense_transactions: expenseTransactions.length,
             internal_transactions: internalTransactions,
+            active_transaction_days: Number(serverSummary?.metrics?.active_transaction_days) || 0,
+            dataset_span_days: Number(serverSummary?.metrics?.dataset_span_days) || 0,
             categorized_expenses: categorizedExpenses,
             merchant_named_expenses: merchantNamedExpenses,
+            expense_amount_total: Number(serverSummary?.metrics?.expense_amount_total) || 0,
+            categorized_expense_amount: Number(serverSummary?.metrics?.categorized_expense_amount) || 0,
+            merchant_named_expense_amount: Number(serverSummary?.metrics?.merchant_named_expense_amount) || 0,
             total_accounts: validAccounts.length,
             non_eur_accounts: nonEurAccounts.length,
             non_eur_converted_accounts: nonEurConvertedAccounts.length,
@@ -1404,8 +1441,8 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null)
             capture_freshness_hours: serverSummary?.metrics?.capture_freshness_hours ?? null
         },
         coverage: mergedCoverage,
-        warnings,
-        recommendations: Array.isArray(serverSummary?.recommendations) ? serverSummary.recommendations : [],
+        warnings: mergedWarnings,
+        recommendations: mergedRecommendations,
         source: serverSummary ? 'server+client' : 'client-only'
     };
 }
@@ -2235,10 +2272,12 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-list-check"></i> Action plan (prioriteit)',
-            summary: `Topprioriteiten op basis van huidige periode (${actions.length} acties).`,
+            summary: actions.length
+                ? `Topprioriteiten op basis van huidige periode (${actions.length} acties, hoogste confidence ${Math.round((Number(actions[0].confidence) || 0.75) * 100)}%).`
+                : 'Geen acties beschikbaar.',
             rows: actions.map((action) => ({
                 label: `P${action.priority} · ${action.title}`,
-                value: `${action.summary}${(Number(action.impact) || 0) > 0.01 ? ` · Impact ${formatCurrency(action.impact)}` : ''}`
+                value: `${action.summary}${(Number(action.impact) || 0) > 0.01 ? ` · Impact ${formatCurrency(action.impact)}` : ''} · Confidence ${Math.round((Number(action.confidence) || 0.75) * 100)}%`
             })),
             chart
         });
@@ -2307,6 +2346,8 @@ function showTransactionDetail(detailType) {
         const componentRows = [
             { label: 'Categorie-dekking', value: Number(coverage.category_coverage) || 0 },
             { label: 'Merchant-dekking', value: Number(coverage.merchant_coverage) || 0 },
+            { label: 'Categorie-dekking (bedrag)', value: Number(coverage.category_amount_coverage) || 0 },
+            { label: 'Merchant-dekking (bedrag)', value: Number(coverage.merchant_amount_coverage) || 0 },
             { label: 'EUR-dekking', value: Number(coverage.amount_eur_coverage) || 0 },
             { label: 'FX-dekking', value: Number(coverage.fx_coverage) || 0 }
         ];
@@ -2342,8 +2383,12 @@ function showTransactionDetail(detailType) {
         const rows = [
             { label: 'Quality score', value: `${quality.score}/100 (${quality.qualityLabel})` },
             { label: 'Transacties (periode)', value: String(metrics.total_transactions ?? 0) },
+            { label: 'Actieve transactiedagen', value: String(metrics.active_transaction_days ?? 0) },
+            { label: 'Dataspan (dagen)', value: String(metrics.dataset_span_days ?? 0) },
             { label: 'Uitgaven met categorie', value: `${metrics.categorized_expenses ?? 0}/${metrics.expense_transactions ?? 0} (${formatRatioPercent(coverage.category_coverage)})` },
+            { label: 'Uitgavenvolume met categorie', value: `${formatCurrency(metrics.categorized_expense_amount ?? 0)} / ${formatCurrency(metrics.expense_amount_total ?? 0)} (${formatRatioPercent(coverage.category_amount_coverage)})` },
             { label: 'Uitgaven met merchant', value: `${metrics.merchant_named_expenses ?? 0}/${metrics.expense_transactions ?? 0} (${formatRatioPercent(coverage.merchant_coverage)})` },
+            { label: 'Uitgavenvolume met merchant', value: `${formatCurrency(metrics.merchant_named_expense_amount ?? 0)} / ${formatCurrency(metrics.expense_amount_total ?? 0)} (${formatRatioPercent(coverage.merchant_amount_coverage)})` },
             { label: 'EUR-dekking', value: formatRatioPercent(coverage.amount_eur_coverage) },
             { label: 'FX-dekking (non-EUR)', value: formatRatioPercent(coverage.fx_coverage) },
             { label: 'Internal share', value: formatRatioPercent(coverage.internal_share) },
@@ -3350,46 +3395,31 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         }), { income: 0, essentials: 0, discretionary: 0, netSavings: 0 })
         : null;
 
-    if (baseline && baseline.income > 0.01) {
-        const scale = 1 / baselineMonths.length;
-        const avgIncome = baseline.income * scale;
-        const avgEssentials = baseline.essentials * scale;
-        const avgDiscretionary = baseline.discretionary * scale;
-        const avgNetSavings = baseline.netSavings * scale;
+    const uniqueDays = new Set(
+        (transactions || [])
+            .filter((transaction) => transaction.date instanceof Date && !Number.isNaN(transaction.date.getTime()))
+            .map((transaction) => toDateKey(transaction.date))
+    ).size;
+    const coverageFactor = Math.min(1, Math.max(0.45, uniqueDays / 75));
+    const baselineConfidence = Math.min(1, Math.max(0.55, (baselineMonths.length / 3) * 0.95));
 
-        const savingsTarget = avgIncome * 0.2;
-        const savingsGap = savingsTarget - avgNetSavings;
-        if (savingsGap > 25) {
-            actions.push({
-                priority: 1,
-                title: 'Verhoog netto sparen richting 20%',
-                summary: `Gemiddeld tekort t.o.v. 20%-target: ${formatCurrency(savingsGap)} per maand.`,
-                impact: savingsGap
-            });
-        }
-
-        const discretionaryTarget = avgIncome * 0.3;
-        const discretionaryGap = avgDiscretionary - discretionaryTarget;
-        if (discretionaryGap > 25) {
-            actions.push({
-                priority: 1,
-                title: 'Verlaag discretionary uitgaven',
-                summary: `Gemiddeld discretionary ${formatCurrency(avgDiscretionary)} vs target ${formatCurrency(discretionaryTarget)}.`,
-                impact: discretionaryGap
-            });
-        }
-
-        const essentialTarget = avgIncome * 0.5;
-        const essentialGap = avgEssentials - essentialTarget;
-        if (essentialGap > 35) {
-            actions.push({
-                priority: 2,
-                title: 'Herzie vaste lasten / essentials',
-                summary: `Gemiddeld essentials ${formatCurrency(avgEssentials)} vs target ${formatCurrency(essentialTarget)}.`,
-                impact: essentialGap
-            });
-        }
-    }
+    const pushAction = ({
+        priority,
+        title,
+        summary,
+        impact = 0,
+        confidence = 0.75,
+        reason = 'general'
+    }) => {
+        actions.push({
+            priority: Math.max(1, Math.min(3, Number(priority) || 3)),
+            title,
+            summary,
+            impact: Math.max(0, Number(impact) || 0),
+            confidence: Math.max(0.4, Math.min(0.98, (Number(confidence) || 0.75) * coverageFactor)),
+            reason
+        });
+    };
 
     const windows = splitRollingWindows(transactions, 30);
     const recentExpenses = windows.recent
@@ -3405,26 +3435,94 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         .filter((transaction) => transaction.amount > 0)
         .reduce((sum, transaction) => sum + (transaction.amount || 0), 0);
 
+    const baseImpactFloor = Math.max(25, recentExpenses * 0.015, (kpis.expenses || 0) * 0.012);
+    const trendImpactFloor = Math.max(baseImpactFloor, priorExpenses * 0.05);
+    const incomeImpactFloor = Math.max(60, priorIncome * 0.05);
+
+    if (baseline && baseline.income > 0.01) {
+        const scale = 1 / baselineMonths.length;
+        const avgIncome = baseline.income * scale;
+        const avgEssentials = baseline.essentials * scale;
+        const avgDiscretionary = baseline.discretionary * scale;
+        const avgNetSavings = baseline.netSavings * scale;
+
+        const savingsTarget = avgIncome * 0.2;
+        const savingsGap = savingsTarget - avgNetSavings;
+        if (savingsGap > baseImpactFloor) {
+            pushAction({
+                priority: 1,
+                title: 'Verhoog netto sparen richting 20%',
+                summary: `Gemiddeld tekort t.o.v. 20%-target: ${formatCurrency(savingsGap)} per maand.`,
+                impact: savingsGap,
+                confidence: 0.9 * baselineConfidence,
+                reason: 'budget-rule'
+            });
+        }
+
+        const discretionaryTarget = avgIncome * 0.3;
+        const discretionaryGap = avgDiscretionary - discretionaryTarget;
+        if (discretionaryGap > baseImpactFloor) {
+            pushAction({
+                priority: 1,
+                title: 'Verlaag discretionary uitgaven',
+                summary: `Gemiddeld discretionary ${formatCurrency(avgDiscretionary)} vs target ${formatCurrency(discretionaryTarget)}.`,
+                impact: discretionaryGap,
+                confidence: 0.88 * baselineConfidence,
+                reason: 'budget-rule'
+            });
+        }
+
+        const essentialTarget = avgIncome * 0.5;
+        const essentialGap = avgEssentials - essentialTarget;
+        if (essentialGap > Math.max(baseImpactFloor, 35)) {
+            pushAction({
+                priority: 2,
+                title: 'Herzie vaste lasten / essentials',
+                summary: `Gemiddeld essentials ${formatCurrency(avgEssentials)} vs target ${formatCurrency(essentialTarget)}.`,
+                impact: essentialGap,
+                confidence: 0.84 * baselineConfidence,
+                reason: 'fixed-cost'
+            });
+        }
+
+        if (latest && latest.essentialsPct > 62 && latest.discretionaryPct < 28) {
+            pushAction({
+                priority: 2,
+                title: 'Vergroot inkomensruimte naast besparen',
+                summary: `Essentials nemen ${latest.essentialsPct.toFixed(1)}% in van inkomen; extra inkomsten hebben nu meer effect dan extra kleine cuts.`,
+                impact: Math.max((latest.essentialsPct - 50) * (latest.income / 100), baseImpactFloor * 0.7),
+                confidence: 0.76 * baselineConfidence,
+                reason: 'income-side'
+            });
+        }
+    }
+
     if (priorExpenses > 0.01) {
         const increasePct = ((recentExpenses - priorExpenses) / priorExpenses) * 100;
-        if (increasePct > 10 && (recentExpenses - priorExpenses) > 35) {
-            actions.push({
+        const expenseDelta = recentExpenses - priorExpenses;
+        if (increasePct > 10 && expenseDelta > trendImpactFloor) {
+            pushAction({
                 priority: 2,
                 title: 'Stop uitgavengroei',
-                summary: `Uitgaven stegen ${increasePct.toFixed(1)}% in laatste 30 dagen (${formatCurrency(recentExpenses - priorExpenses)}).`,
-                impact: Math.max(recentExpenses - priorExpenses, 0)
+                summary: `Uitgaven stegen ${increasePct.toFixed(1)}% in laatste 30 dagen (${formatCurrency(expenseDelta)}).`,
+                impact: Math.max(expenseDelta, 0),
+                confidence: 0.79,
+                reason: 'expense-trend'
             });
         }
     }
 
     if (priorIncome > 0.01) {
         const incomeDeltaPct = ((recentIncome - priorIncome) / priorIncome) * 100;
-        if (incomeDeltaPct < -12 && (priorIncome - recentIncome) > 75) {
-            actions.push({
+        const incomeDelta = priorIncome - recentIncome;
+        if (incomeDeltaPct < -12 && incomeDelta > incomeImpactFloor) {
+            pushAction({
                 priority: 1,
                 title: 'Anticipeer op lagere inkomensstroom',
-                summary: `Inkomen daalde ${Math.abs(incomeDeltaPct).toFixed(1)}% in laatste 30 dagen (${formatCurrency(priorIncome - recentIncome)}).`,
-                impact: Math.max((priorIncome - recentIncome) * 0.2, 0)
+                summary: `Inkomen daalde ${Math.abs(incomeDeltaPct).toFixed(1)}% in laatste 30 dagen (${formatCurrency(incomeDelta)}).`,
+                impact: Math.max(incomeDelta * 0.2, 0),
+                confidence: 0.83,
+                reason: 'income-trend'
             });
         }
     }
@@ -3434,11 +3532,13 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
     if (topCategory && kpis.expenses > 0.01) {
         const topCategoryShare = (topCategory[1] / kpis.expenses) * 100;
         if (topCategoryShare > 38) {
-            actions.push({
+            pushAction({
                 priority: 2,
                 title: 'Verminder categorie-concentratie',
                 summary: `${topCategory[0]} is ${topCategoryShare.toFixed(1)}% van alle uitgaven (${formatCurrency(topCategory[1])}).`,
-                impact: topCategory[1] * 0.1
+                impact: topCategory[1] * 0.1,
+                confidence: 0.81,
+                reason: 'category-concentration'
             });
         }
     }
@@ -3453,33 +3553,53 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
     if (topMerchant && kpis.expenses > 0.01) {
         const share = (topMerchant[1] / kpis.expenses) * 100;
         if (share > 25) {
-            actions.push({
+            pushAction({
                 priority: 3,
                 title: 'Verlaag merchant-concentratie',
                 summary: `${topMerchant[0]} is ${share.toFixed(1)}% van alle uitgaven (${formatCurrency(topMerchant[1])}).`,
-                impact: topMerchant[1] * 0.08
+                impact: topMerchant[1] * 0.08,
+                confidence: 0.72,
+                reason: 'merchant-concentration'
             });
         }
     }
 
     const recurring = summarizeRecurringCosts(transactions);
     const recurringTop = recurring.rows[0];
-    if (recurringTop && recurringTop.avgMonthly > 40) {
-        actions.push({
+    if (recurringTop && recurringTop.avgMonthly > Math.max(40, baseImpactFloor)) {
+        pushAction({
             priority: 2,
             title: 'Optimaliseer terugkerende kosten',
             summary: `${recurringTop.merchant} gemiddeld ${formatCurrency(recurringTop.avgMonthly)}/mnd over ${recurringTop.monthsPresent} maanden.`,
-            impact: recurringTop.avgMonthly * 0.12
+            impact: recurringTop.avgMonthly * 0.12,
+            confidence: recurringTop.monthsPresent >= 4 ? 0.87 : 0.74,
+            reason: 'recurring'
         });
+    }
+    const recurringMonthlyTotal = recurring.rows.reduce((sum, row) => sum + (row.avgMonthly || 0), 0);
+    if (recentExpenses > 0.01) {
+        const recurringShare = recurringMonthlyTotal / recentExpenses;
+        if (recurringShare > 0.45 && recurringMonthlyTotal > baseImpactFloor * 2) {
+            pushAction({
+                priority: 1,
+                title: 'Verlaag structurele vaste lasten',
+                summary: `Terugkerende kosten zijn circa ${(recurringShare * 100).toFixed(1)}% van recente maanduitgaven (${formatCurrency(recurringMonthlyTotal)}).`,
+                impact: recurringMonthlyTotal * 0.1,
+                confidence: 0.86,
+                reason: 'recurring-structure'
+            });
+        }
     }
 
     const volatility = computeDailyExpenseVolatility(transactions);
     if (volatility.cv > 0.9 && volatility.mean > 20) {
-        actions.push({
+        pushAction({
             priority: 3,
             title: 'Verminder uitgavenvolatiliteit',
             summary: `Dagelijkse uitgavenvolatiliteit is hoog (${(volatility.cv * 100).toFixed(0)}% van het gemiddelde).`,
-            impact: volatility.mean * 0.08
+            impact: volatility.mean * 0.08,
+            confidence: 0.68,
+            reason: 'volatility'
         });
     }
 
@@ -3488,55 +3608,77 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         if (runwayDays < 60) {
             const targetBuffer = dailyBurn * 90;
             const bufferGap = Math.max(targetBuffer - liquidBalance, 0);
-            actions.push({
+            pushAction({
                 priority: 1,
                 title: 'Urgent: buffer onder 2 maanden',
                 summary: `Runway is ${Math.round(runwayDays)} dagen. Richt op minimaal 90 dagen buffer.`,
-                impact: bufferGap
+                impact: bufferGap,
+                confidence: 0.94,
+                reason: 'runway'
             });
         }
         else if (runwayDays < 90) {
             const targetBuffer = dailyBurn * 90;
             const bufferGap = Math.max(targetBuffer - liquidBalance, 0);
-            actions.push({
+            pushAction({
                 priority: 2,
                 title: 'Bouw 3 maanden buffer op',
                 summary: `Runway ${Math.round(runwayDays)} dagen. Aanvullende buffer nodig: ${formatCurrency(bufferGap)}.`,
-                impact: bufferGap
+                impact: bufferGap,
+                confidence: 0.87,
+                reason: 'runway'
             });
         }
     }
 
     if (latest && latest.income > 0.01 && latest.savingsPct < 0) {
-        actions.push({
+        pushAction({
             priority: 1,
             title: 'Herstel negatieve maandelijkse besparing',
             summary: `Laatste maand is netto negatief (${latest.savingsPct.toFixed(1)}%).`,
-            impact: Math.abs(latest.netSavings)
+            impact: Math.abs(latest.netSavings),
+            confidence: 0.9,
+            reason: 'negative-savings'
         });
     }
 
     if (!actions.length) {
-        actions.push({
+        pushAction({
             priority: 3,
             title: 'Huidige koers vasthouden',
             summary: 'Kernratio’s liggen rond target. Monitor maandelijks en optimaliseer op categorie-niveau.',
-            impact: 0
+            impact: 0,
+            confidence: 0.72,
+            reason: 'steady'
         });
     }
 
-    const deduped = [];
-    const seenTitles = new Set();
+    const dedupedMap = new Map();
     actions.forEach((action) => {
-        if (seenTitles.has(action.title)) return;
-        seenTitles.add(action.title);
-        deduped.push(action);
+        const existing = dedupedMap.get(action.title);
+        if (!existing) {
+            dedupedMap.set(action.title, action);
+            return;
+        }
+        if ((action.priority < existing.priority) || (
+            action.priority === existing.priority && (
+                (action.confidence > existing.confidence)
+                || ((action.confidence === existing.confidence) && ((action.impact || 0) > (existing.impact || 0)))
+            )
+        )) {
+            dedupedMap.set(action.title, action);
+        }
     });
 
-    return deduped.sort((a, b) => {
-        if (a.priority !== b.priority) return a.priority - b.priority;
-        return (Number(b.impact) || 0) - (Number(a.impact) || 0);
-    }).slice(0, 8);
+    return Array.from(dedupedMap.values())
+        .sort((a, b) => {
+            if (a.priority !== b.priority) return a.priority - b.priority;
+            if ((Number(b.confidence) || 0) !== (Number(a.confidence) || 0)) {
+                return (Number(b.confidence) || 0) - (Number(a.confidence) || 0);
+            }
+            return (Number(b.impact) || 0) - (Number(a.impact) || 0);
+        })
+        .slice(0, 8);
 }
 
 function renderInsights(data, kpis, qualitySummary = null) {
@@ -3680,9 +3822,10 @@ function renderInsights(data, kpis, qualitySummary = null) {
         if (!topAction) {
             nextBestAction.textContent = 'N/A';
         } else {
+            const confidencePct = Math.round((Number(topAction.confidence) || 0.75) * 100);
             nextBestAction.textContent = topAction.impact > 0.01
-                ? `P${topAction.priority} · ${topAction.title} (${formatCurrency(topAction.impact)})`
-                : `P${topAction.priority} · ${topAction.title}`;
+                ? `P${topAction.priority} · ${topAction.title} (${formatCurrency(topAction.impact)}) · ${confidencePct}%`
+                : `P${topAction.priority} · ${topAction.title} · ${confidencePct}%`;
         }
     }
 

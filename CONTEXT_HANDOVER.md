@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-02-14 (P1 actionable update)
+Laatste update: 2026-02-16 (P1 finetuning update)
 
 ## Waar we staan
 
@@ -106,3 +106,18 @@ curl -s http://127.0.0.1:5000/api/health
 - Sankey/Sunburst verfijnd voor meer informatiedichtheid:
   - Sankey link-shares en in/uit/netto annotatie,
   - Sunburst share-aware selectie (minder missende categorieën/merchants) + parent-percentage hover.
+
+## Update 2026-02-16 (P1 finetuning vervolg)
+
+- Action plan aangescherpt:
+  - dynamische impactdrempels o.b.v. recente spend-scale (minder ruis op kleine datasets),
+  - confidence-score per actie en sortering op prioriteit + confidence + impact,
+  - extra rule voor structurele vaste-lasten-risico (hoog recurring share),
+  - extra rule voor income-side focus als essentials structureel dominant zijn.
+- `Next Best Action` kaart toont nu confidence-percentage.
+- Data quality is uitgebreid met bedrag-gebaseerde dekkingen:
+  - `category_amount_coverage` en `merchant_amount_coverage`,
+  - nieuwe signalen: `active_transaction_days` en `dataset_span_days`.
+- Data quality detailmodal toont nu extra diagnostiek:
+  - actieve transactiedagen, dataspan,
+  - dekkingsratio’s op zowel aantallen als uitgavenvolume.
