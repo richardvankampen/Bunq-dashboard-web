@@ -121,3 +121,4 @@ curl -s http://127.0.0.1:5000/api/health
 - Data quality detailmodal toont nu extra diagnostiek:
   - actieve transactiedagen, dataspan,
   - dekkingsratio’s op zowel aantallen als uitgavenvolume.
+- Relevante commit: `94e5b9d`.

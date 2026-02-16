@@ -182,3 +182,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - merchant coverage op aantallen én op uitgavenvolume.
 - Data quality gebruikt nu ook dagdekking/datasetspan signalen in warnings/recommendations.
 - Data quality detailmodal uitgebreid met actieve transactiedagen, dataspan en bedrag-gebaseerde dekkingsregels.
+
+### Relevante commit
+
+- `94e5b9d` Refine P1 action plan scoring and data-quality diagnostics
