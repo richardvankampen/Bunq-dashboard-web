@@ -310,6 +310,8 @@ Gebruik daarom **altijd dezelfde URL** (HTTP of HTTPS), anders werkt je sessie n
 |---|---|---|
 | `LOG_LEVEL` | Log niveau | `INFO` |
 | `FLASK_DEBUG` | Debug mode | `false` |
+| `BUNQ_INIT_AUTO_ATTEMPT` | Lazy Bunq init voor API requests (WSGI/Gunicorn) | `true` |
+| `BUNQ_INIT_RETRY_SECONDS` | Wachttijd tussen automatische init-retries | `120` |
 | `CACHE_ENABLED` | Cache aan/uit | `true` |
 | `CACHE_TTL_SECONDS` | Cache TTL in seconden | `60` |
 | `DEFAULT_PAGE_SIZE` | Default pagination size | `500` |
@@ -321,6 +323,14 @@ Gebruik daarom **altijd dezelfde URL** (HTTP of HTTPS), anders werkt je sessie n
 | `FX_RATE_SOURCE` | Wisselkoersbron | `frankfurter` |
 | `FX_REQUEST_TIMEOUT_SECONDS` | Timeout FX API call | `8` |
 | `FX_CACHE_HOURS` | Hoe lang FX rates gecached worden | `24` |
+| `GUNICORN_WORKERS` | Aantal Gunicorn workers | `2` |
+| `GUNICORN_THREADS` | Aantal threads per worker | `4` |
+| `GUNICORN_TIMEOUT` | Request timeout (seconden) | `120` |
+| `GUNICORN_KEEPALIVE` | Keepalive (seconden) | `5` |
+| `GUNICORN_MAX_REQUESTS` | Requests per worker voor recycle | `1200` |
+| `GUNICORN_MAX_REQUESTS_JITTER` | Random extra op worker recycle | `120` |
+| `GUNICORN_LOG_LEVEL` | Gunicorn log level | `info` |
+| `BUNQ_PREBOOT_INIT` | Probeer Bunq init tijdens container startup | `true` |
 | `VAULTWARDEN_DEVICE_IDENTIFIER` | Device ID voor Vaultwarden OAuth | Automatisch gegenereerd |
 | `VAULTWARDEN_DEVICE_NAME` | Device naam voor Vaultwarden OAuth | `Bunq Dashboard` |
 | `VAULTWARDEN_DEVICE_TYPE` | Device type voor Vaultwarden OAuth | `22` |
@@ -344,8 +354,19 @@ SESSION_COOKIE_SECURE=true
 # SESSION_COOKIE_SECURE=false
 LOG_LEVEL=INFO
 FLASK_DEBUG=false
+BUNQ_INIT_AUTO_ATTEMPT=true
+BUNQ_INIT_RETRY_SECONDS=120
 DATA_DB_ENABLED=true
 FX_ENABLED=true
+# Gunicorn (optioneel, defaults zijn prima):
+# GUNICORN_WORKERS=2
+# GUNICORN_THREADS=4
+# GUNICORN_TIMEOUT=120
+# GUNICORN_KEEPALIVE=5
+# GUNICORN_MAX_REQUESTS=1200
+# GUNICORN_MAX_REQUESTS_JITTER=120
+# GUNICORN_LOG_LEVEL=info
+# BUNQ_PREBOOT_INIT=true
 ```
 
 **Tip:** Gebruik `http://vaultwarden:80` als Vaultwarden op hetzelfde `bunq-net` netwerk draait.
@@ -455,6 +476,8 @@ services:
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
       FLASK_DEBUG: "${FLASK_DEBUG:-false}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      BUNQ_INIT_AUTO_ATTEMPT: "${BUNQ_INIT_AUTO_ATTEMPT:-true}"
+      BUNQ_INIT_RETRY_SECONDS: "${BUNQ_INIT_RETRY_SECONDS:-120}"
       CACHE_ENABLED: "${CACHE_ENABLED:-true}"
       CACHE_TTL_SECONDS: "${CACHE_TTL_SECONDS:-60}"
       DEFAULT_PAGE_SIZE: "${DEFAULT_PAGE_SIZE:-500}"
@@ -466,6 +489,14 @@ services:
       FX_RATE_SOURCE: "${FX_RATE_SOURCE:-frankfurter}"
       FX_REQUEST_TIMEOUT_SECONDS: "${FX_REQUEST_TIMEOUT_SECONDS:-8}"
       FX_CACHE_HOURS: "${FX_CACHE_HOURS:-24}"
+      GUNICORN_WORKERS: "${GUNICORN_WORKERS:-2}"
+      GUNICORN_THREADS: "${GUNICORN_THREADS:-4}"
+      GUNICORN_TIMEOUT: "${GUNICORN_TIMEOUT:-120}"
+      GUNICORN_KEEPALIVE: "${GUNICORN_KEEPALIVE:-5}"
+      GUNICORN_MAX_REQUESTS: "${GUNICORN_MAX_REQUESTS:-1200}"
+      GUNICORN_MAX_REQUESTS_JITTER: "${GUNICORN_MAX_REQUESTS_JITTER:-120}"
+      GUNICORN_LOG_LEVEL: "${GUNICORN_LOG_LEVEL:-info}"
+      BUNQ_PREBOOT_INIT: "${BUNQ_PREBOOT_INIT:-true}"
 
     secrets:
       - source: bunq_basic_auth_password
@@ -557,6 +588,7 @@ Dit script doet:
 - Swarm/network checks
 - check op vereiste secrets (maakt ze niet automatisch aan)
 - build + deploy + startup-validatie
+- post-deploy Bunq checks (API key/init + egress-IP vs actieve whitelist)
 
 **Handmatige route (equivalent):**
 ```bash
@@ -589,11 +621,11 @@ sudo docker service logs -f bunq_bunq-dashboard
 
 Je zou moeten zien:
 ```
+== Bunq Dashboard Gunicorn startup ==
 🔐 Retrieving API key from Vaultwarden (cli method)...
 ✅ API key retrieved from vault
 ✅ Bunq API initialized
-🚀 Starting Bunq Dashboard API...
-✅ Dashboard running on http://0.0.0.0:5000
+Listening at: http://0.0.0.0:5000
 ```
 
 ### Stap 3.7: Open Dashboard
@@ -618,9 +650,9 @@ sh scripts/register_bunq_ip.sh
 **Snelle non-interactieve variant (expliciet target IP):**
 ```bash
 cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIEK_IPV4> DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 # Voorbeeld:
-# TARGET_IP=178.228.65.1 DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 ```
 
 Het script doet automatisch:
@@ -633,6 +665,7 @@ Het script doet automatisch:
 - bij directe key-flow: nieuwe `ApiContext` maken (installation + device registration)
 - service forceren te herstarten
 - relevante Bunq logs tonen
+- egress-IP match checken tegen actieve Bunq whitelist (mismatch = duidelijke fout + herstelcommando)
 
 Daarnaast probeert de backend bij startup/reinit automatisch hetzelfde te doen
 als `AUTO_SET_BUNQ_WHITELIST_IP=true` in `.env`.
@@ -756,7 +789,9 @@ sudo docker logs vaultwarden
 In **Settings → Admin Maintenance (P1)** kun je als ingelogde admin:
 - `Check status`: runtime status van Vaultwarden, context file, cookie/CORS instellingen
 - `Check egress IP`: huidig publiek uitgaand IP van de container
-- `Set Bunq API whitelist IP`: zet gekozen IPv4 (of auto egress) op ACTIVE via Bunq API
+- `Set Bunq API whitelist IP`: veilige 2-staps flow
+  1) activeer doel-IP
+  2) deactiveer overige ACTIVE IPs (na succesvolle stap 1)
 - `Reinit Bunq context`: context verwijderen + opnieuw opbouwen (installation/device registration)
 - `Run maintenance now`: voert in 1 actie de ingestelde onderhoudsopties uit
 - `Show install/update commands`: toont copy-ready terminalstappen voor host-level install/update script
@@ -783,7 +818,7 @@ Gebruik `Reinit Bunq context` na:
 2. Update secret:
    - bij Vaultwarden-flow: update key in Vaultwarden item
    - bij directe key-flow (`USE_VAULTWARDEN=false`): update Docker secret `bunq_api_key`
-3. Run: `sh scripts/register_bunq_ip.sh`
+3. Run (safe non-interactive): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh`
 4. Validatie: `sh scripts/restart_bunq_service.sh`
 
 No code changes needed! ✨
@@ -797,7 +832,7 @@ No code changes needed! ✨
 - Redeploy na .env wijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
 - Alleen herstart (zonder config/secrets wijzigingen): `sudo docker service update --force bunq_bunq-dashboard`
 - Herstart + startup-validatie (aanbevolen): `sh scripts/restart_bunq_service.sh`
-- Bunq IP/device opnieuw registreren: `sh scripts/register_bunq_ip.sh`
+- Bunq IP/device opnieuw registreren (safe): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh`
 
 Voor uitgebreide oplossingen, zie [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 

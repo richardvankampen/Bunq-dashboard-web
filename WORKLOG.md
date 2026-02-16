@@ -186,3 +186,22 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 ### Relevante commit
 
 - `94e5b9d` Refine P1 action plan scoring and data-quality diagnostics
+
+### Aanvullende P1/P2 batch (4-stappenreeks)
+
+- P1 real-data/actionability uitgebreid:
+  - nieuwe categorie `Abonnementen` (MCC + merchant keyword mapping),
+  - verbeterde merchant/category signalen voor NL data.
+- P1 actionable recommendations verdiept:
+  - concrete cost-levers per categorie/merchant,
+  - action-plan regels tonen nu ook praktisch `Actie`/playbook in de detailmodal.
+- P1/P2 operations hardening:
+  - `scripts/register_bunq_ip.sh` ondersteunt nu standaard veilige 2-staps whitelist-flow (`SAFE_TWO_STEP=true`),
+  - extra egress-vs-whitelist verificatie met duidelijke mismatch-remediatie,
+  - install/restart scripts gebruiken dezelfde veilige flow-parameters.
+- P2 runtime hardening:
+  - container draait nu op Gunicorn i.p.v. Flask dev server,
+  - `scripts/run_server.sh` toegevoegd als production launcher,
+  - backend kreeg lazy/throttled Bunq init guard voor WSGI workers.
+- Documentatie bijgewerkt:
+  - `README.md`, `SYNOLOGY_INSTALL.md`, `SECURITY.md`, `TROUBLESHOOTING.md`.

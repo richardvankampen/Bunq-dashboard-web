@@ -965,6 +965,7 @@ function getCategoryColor(category) {
         'Vervoer': '#ec4899',
         'Wonen': '#ef4444',
         'Utilities': '#f59e0b',
+        'Abonnementen': '#eab308',
         'Verzekering': '#a855f7',
         'Belastingen': '#f97316',
         'Shopping': '#10b981',
@@ -2277,7 +2278,7 @@ function showTransactionDetail(detailType) {
                 : 'Geen acties beschikbaar.',
             rows: actions.map((action) => ({
                 label: `P${action.priority} · ${action.title}`,
-                value: `${action.summary}${(Number(action.impact) || 0) > 0.01 ? ` · Impact ${formatCurrency(action.impact)}` : ''} · Confidence ${Math.round((Number(action.confidence) || 0.75) * 100)}%`
+                value: `${action.summary}${(Number(action.impact) || 0) > 0.01 ? ` · Impact ${formatCurrency(action.impact)}` : ''} · Confidence ${Math.round((Number(action.confidence) || 0.75) * 100)}%${action.playbook ? ` · Actie: ${action.playbook}` : ''}`
             })),
             chart
         });
@@ -3244,6 +3245,70 @@ function buildExpenseByCategory(transactions) {
     return totals;
 }
 
+function buildConcreteCostLevers(transactions, options = {}) {
+    const windowDays = Number(options.windowDays) || 30;
+    const maxCategories = Number(options.maxCategories) || 2;
+    const maxMerchants = Number(options.maxMerchants) || 2;
+    const minMonthly = Number(options.minMonthly) || 40;
+
+    const windows = splitRollingWindows(transactions || [], windowDays);
+    const source = (windows.recent && windows.recent.length) ? windows.recent : (transactions || []);
+    const expenses = source.filter((transaction) => (transaction.amount || 0) < 0);
+    if (!expenses.length) return [];
+
+    const activeDays = Math.max(
+        new Set(expenses.map((transaction) => toDateKey(transaction.date))).size,
+        1
+    );
+    const monthlyScale = 30 / activeDays;
+
+    const categoryTotals = new Map();
+    const merchantTotals = new Map();
+    let totalWindowExpenses = 0;
+
+    expenses.forEach((transaction) => {
+        const amountAbs = Math.abs(Number(transaction.amount) || 0);
+        if (!Number.isFinite(amountAbs) || amountAbs <= 0) return;
+        totalWindowExpenses += amountAbs;
+        const category = transaction.category || 'Overig';
+        const merchant = resolveMerchantLabel(transaction);
+        categoryTotals.set(category, (categoryTotals.get(category) || 0) + amountAbs);
+        merchantTotals.set(merchant, (merchantTotals.get(merchant) || 0) + amountAbs);
+    });
+
+    if (totalWindowExpenses <= 0.01) return [];
+
+    const buildLever = (type, label, windowValue) => {
+        const share = windowValue / totalWindowExpenses;
+        const baselineMonthly = windowValue * monthlyScale;
+        const targetCutPct = Math.min(0.22, Math.max(0.08, 0.08 + (share * 0.14)));
+        const expectedMonthly = baselineMonthly * targetCutPct;
+        return {
+            type,
+            label,
+            share,
+            baselineMonthly,
+            targetCutPct,
+            expectedMonthly
+        };
+    };
+
+    const categoryLevers = Array.from(categoryTotals.entries())
+        .map(([label, value]) => buildLever('category', label, value))
+        .filter((lever) => lever.baselineMonthly >= minMonthly)
+        .sort((a, b) => b.expectedMonthly - a.expectedMonthly)
+        .slice(0, maxCategories);
+
+    const merchantLevers = Array.from(merchantTotals.entries())
+        .map(([label, value]) => buildLever('merchant', label, value))
+        .filter((lever) => lever.baselineMonthly >= minMonthly)
+        .sort((a, b) => b.expectedMonthly - a.expectedMonthly)
+        .slice(0, maxMerchants);
+
+    return [...categoryLevers, ...merchantLevers]
+        .sort((a, b) => b.expectedMonthly - a.expectedMonthly);
+}
+
 function splitRollingWindows(transactions, windowDays = 30) {
     const normalized = (transactions || [])
         .filter((transaction) => transaction.date instanceof Date && !Number.isNaN(transaction.date.getTime()))
@@ -3409,7 +3474,8 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         summary,
         impact = 0,
         confidence = 0.75,
-        reason = 'general'
+        reason = 'general',
+        playbook = ''
     }) => {
         actions.push({
             priority: Math.max(1, Math.min(3, Number(priority) || 3)),
@@ -3417,7 +3483,8 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             summary,
             impact: Math.max(0, Number(impact) || 0),
             confidence: Math.max(0.4, Math.min(0.98, (Number(confidence) || 0.75) * coverageFactor)),
-            reason
+            reason,
+            playbook: String(playbook || '').trim()
         });
     };
 
@@ -3590,6 +3657,37 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             });
         }
     }
+
+    const concreteLevers = buildConcreteCostLevers(transactions, {
+        windowDays: 30,
+        maxCategories: 2,
+        maxMerchants: 2,
+        minMonthly: Math.max(35, baseImpactFloor * 0.9)
+    });
+    concreteLevers.slice(0, 3).forEach((lever) => {
+        if (lever.expectedMonthly < baseImpactFloor * 0.6) return;
+        if (lever.type === 'category') {
+            pushAction({
+                priority: lever.share > 0.22 ? 2 : 3,
+                title: `Verlaag ${lever.label} uitgaven`,
+                summary: `${lever.label} is ${((lever.share || 0) * 100).toFixed(1)}% van recente uitgaven. Richt op ~${(lever.targetCutPct * 100).toFixed(0)}% reductie.`,
+                impact: lever.expectedMonthly,
+                confidence: 0.82,
+                reason: 'lever-category',
+                playbook: `Stel budget in op ${formatCurrency(Math.max(0, lever.baselineMonthly - lever.expectedMonthly))}/mnd en monitor weeklimiet op deze categorie.`
+            });
+            return;
+        }
+        pushAction({
+            priority: lever.share > 0.12 ? 2 : 3,
+            title: `Optimaliseer uitgaven bij ${lever.label}`,
+            summary: `${lever.label} vertegenwoordigt ${(lever.share * 100).toFixed(1)}% van recente uitgaven. Doel: ~${(lever.targetCutPct * 100).toFixed(0)}% lager.`,
+            impact: lever.expectedMonthly,
+            confidence: 0.76,
+            reason: 'lever-merchant',
+            playbook: `Vergelijk alternatief/abonnement en stuur op minstens ${formatCurrency(lever.expectedMonthly)} lagere maandlast.`
+        });
+    });
 
     const volatility = computeDailyExpenseVolatility(transactions);
     if (volatility.cv > 0.9 && volatility.mean > 20) {

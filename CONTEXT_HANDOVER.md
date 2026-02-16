@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-02-16 (P1 finetuning update)
+Laatste update: 2026-02-16 (P1/P2 4-stappenreeks afgerond, docs bijgewerkt)
 
 ## Waar we staan
 
@@ -122,3 +122,25 @@ curl -s http://127.0.0.1:5000/api/health
   - actieve transactiedagen, dataspan,
   - dekkingsratio’s op zowel aantallen als uitgavenvolume.
 - Relevante commit: `94e5b9d`.
+
+## Update 2026-02-16 (P1/P2 4-stappenreeks)
+
+- P1 real-data categorisatie verbeterd:
+  - nieuwe `Abonnementen` signalen via MCC + merchant keywords.
+- P1 actionable insights verfijnd:
+  - nieuwe concrete cost-levers (categorie/merchant),
+  - action-plan detailweergave bevat nu ook concrete `Actie`/playbook.
+- P1/P2 ops-hardening scripts:
+  - `scripts/register_bunq_ip.sh` gebruikt veilige 2-staps flow als `DEACTIVATE_OTHERS=true`,
+  - post-run verificatie van container-egress IP tegen actieve Bunq whitelist,
+  - duidelijke auto-remediatiehint bij mismatch.
+  - `scripts/install_or_update_synology.sh` en `scripts/restart_bunq_service.sh` verwijzen naar dezelfde veilige flow.
+- P2 production runtime:
+  - Docker runtime switched naar Gunicorn (`scripts/run_server.sh` + `gunicorn` dependency),
+  - backend lazy/throttled Bunq context init voor WSGI workers (`BUNQ_INIT_AUTO_ATTEMPT`, `BUNQ_INIT_RETRY_SECONDS`),
+  - `/api/health` en `/api/admin/status` tonen nu expliciete Bunq-contextstatus en laatste init-fout.
+- Documentatie is bijgewerkt op bovenstaande flow in:
+  - `README.md`
+  - `SYNOLOGY_INSTALL.md`
+  - `SECURITY.md`
+  - `TROUBLESHOOTING.md`

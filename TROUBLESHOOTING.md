@@ -32,6 +32,9 @@ docker logs vaultwarden
 # Check API health
 curl http://localhost:5000/api/health
 
+# Check runtime server in container (should show gunicorn worker process)
+docker exec "$BUNQ_CONTAINER" ps -ef | grep -E "gunicorn|api_proxy" | grep -v grep
+
 # Check environment variables
 cat .env | grep -v SECRET | grep -v PASSWORD
 docker secret ls | grep bunq_
@@ -458,6 +461,21 @@ BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
 sudo docker exec "$BUNQ_CONTAINER" sh -c "grep -n 'get_api_key_from_vaultwarden_cli' /app/api_proxy.py"
 ```
 
+#### B4. Je ziet nog `This is a development server` in logs
+```bash
+# Verwacht in productie: gunicorn logs (geen Flask dev server warning)
+# Als warning terugkomt, draai je waarschijnlijk nog een oude image/service.
+
+TAG=$(git rev-parse --short HEAD)
+sudo docker build --no-cache -t bunq-dashboard:$TAG .
+sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
+sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
+
+# Controleer gunicorn proces:
+BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
+sudo docker exec "$BUNQ_CONTAINER" ps -ef | grep gunicorn
+```
+
 #### C. Bunq API Key / IP Whitelist Mismatch
 ```bash
 # Detect the exact Bunq auth error:
@@ -467,9 +485,9 @@ docker service logs bunq_bunq-dashboard | grep -E "Incorrect API key or IP addre
 cd /volume1/docker/bunq-dashboard
 sh scripts/register_bunq_ip.sh
 # Optional non-interactive target:
-# TARGET_IP=<PUBLIEK_IPV4> DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+# TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 # Example:
-# TARGET_IP=178.228.65.1 DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 
 # Script output shows the container egress public IP.
 # In Bunq app: Profile -> Security -> API Keys

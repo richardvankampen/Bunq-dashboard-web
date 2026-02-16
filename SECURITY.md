@@ -28,6 +28,7 @@ Het Bunq Dashboard is ontworpen met **security-first** principes:
 | **Rate Limiting** | 30 req/min + 5 login/min | ✅ Active |
 | **Session Expiry** | 24 hours | ✅ Automatic |
 | **Password Verification** | Constant-time comparison | ✅ Implemented |
+| **Runtime Server** | Gunicorn (WSGI) | ✅ Production default |
 
 ---
 
@@ -228,6 +229,18 @@ AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS=false
 # Application
 FLASK_DEBUG=false            # NEVER true in production!
 LOG_LEVEL=INFO              # Or WARNING for production
+BUNQ_INIT_AUTO_ATTEMPT=true
+BUNQ_INIT_RETRY_SECONDS=120
+
+# Runtime (Gunicorn)
+GUNICORN_WORKERS=2
+GUNICORN_THREADS=4
+GUNICORN_TIMEOUT=120
+GUNICORN_KEEPALIVE=5
+GUNICORN_MAX_REQUESTS=1200
+GUNICORN_MAX_REQUESTS_JITTER=120
+GUNICORN_LOG_LEVEL=info
+BUNQ_PREBOOT_INIT=true
 
 # Docker Swarm secrets (create separately)
 # - bunq_basic_auth_password
@@ -253,7 +266,7 @@ toegestaan zijn, anders krijg je:
 **Aanbevolen procedure na API key rotatie of netwerk/VPN wijziging:**
 ```bash
 cd /volume1/docker/bunq-dashboard
-sh scripts/register_bunq_ip.sh
+TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 ```
 
 **Alternatief via UI (P1):**
@@ -267,10 +280,11 @@ sh scripts/register_bunq_ip.sh
 
 Dit script:
 - toont het actuele publieke egress-IP van de container
-- zet Bunq allowlist IP bij via API calls
+- gebruikt veilige 2-staps Bunq allowlist update (eerst activeren, daarna overige IPs deactiveren)
 - bij directe key-flow valideert het `bunq_api_key` secret formaat
 - maakt een nieuwe Bunq `ApiContext` (installation + device registration)
 - herstart de service en toont relevante logs
+- valideert egress-IP tegen actieve whitelist en stopt met herstelcommando bij mismatch
 
 ---
 

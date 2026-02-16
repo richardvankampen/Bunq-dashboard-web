@@ -8,6 +8,8 @@ SERVICE_NAME="${1:-bunq_bunq-dashboard}"
 LOG_MINUTES="${LOG_MINUTES:-5}"
 DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS:-true}"
 NO_PROMPT="${NO_PROMPT:-false}"
+SAFE_TWO_STEP="${SAFE_TWO_STEP:-true}"
+VERIFY_EGRESS_MATCH="${VERIFY_EGRESS_MATCH:-true}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker command not found"
@@ -92,11 +94,13 @@ PY
 USE_VAULTWARDEN="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -c 'echo "${USE_VAULTWARDEN:-true}"' | tr '[:upper:]' '[:lower:]')"
 VAULTWARDEN_ACCESS_METHOD="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -c 'echo "${VAULTWARDEN_ACCESS_METHOD:-cli}"' | tr '[:upper:]' '[:lower:]')"
 echo "[3/8] Auth mode: USE_VAULTWARDEN=${USE_VAULTWARDEN}"
+echo "      Safe two-step flow: ${SAFE_TWO_STEP} (deactivate_others=${DEACTIVATE_OTHERS})"
 
 echo "[4/8] Set Bunq API allowlist IP via API calls"
 WHITELIST_RESULT="$($DOCKER_CMD exec \
   -e TARGET_IP="${TARGET_IP}" \
   -e DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS}" \
+  -e SAFE_TWO_STEP="${SAFE_TWO_STEP}" \
   -e AUTO_SET_BUNQ_WHITELIST_IP=false \
   "${CONTAINER_ID}" python3 - <<'PY'
 import json
@@ -106,15 +110,67 @@ from api_proxy import init_bunq, set_bunq_api_whitelist_ip
 
 target_ip = (os.getenv("TARGET_IP", "") or "").strip() or None
 deactivate_others = (os.getenv("DEACTIVATE_OTHERS", "true") or "").strip().lower() in ("1", "true", "yes", "on")
+safe_two_step = (os.getenv("SAFE_TWO_STEP", "true") or "").strip().lower() in ("1", "true", "yes", "on")
 
 if not init_bunq(force_recreate=False, refresh_key=True, run_auto_whitelist=False):
     print("ERROR: Bunq init failed before whitelist update")
     sys.exit(1)
 
-result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=deactivate_others)
-print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-if not result.get("success"):
-    sys.exit(1)
+if safe_two_step and deactivate_others:
+    stage1 = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=False)
+    if not stage1.get("success"):
+        print(json.dumps({
+            "mode": "safe-two-step",
+            "stage": "activate-target-ip",
+            "success": False,
+            "error": stage1.get("error", "failed to activate target ip")
+        }, ensure_ascii=False, sort_keys=True))
+        sys.exit(1)
+
+    entries_stage1 = stage1.get("entries") or []
+    active_ips_stage1 = sorted({
+        str(item.get("ip"))
+        for item in entries_stage1
+        if str(item.get("status", "")).upper() == "ACTIVE" and item.get("ip")
+    })
+    if target_ip and target_ip not in active_ips_stage1:
+        print(json.dumps({
+            "mode": "safe-two-step",
+            "stage": "activate-target-ip",
+            "success": False,
+            "error": f"target ip {target_ip} not ACTIVE after stage1",
+            "active_ips": active_ips_stage1
+        }, ensure_ascii=False, sort_keys=True))
+        sys.exit(1)
+
+    # Re-validate Bunq context before deactivating others.
+    if not init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=False):
+        print(json.dumps({
+            "mode": "safe-two-step",
+            "stage": "pre-deactivate-validation",
+            "success": False,
+            "error": "Bunq init failed after activating target ip; skip deactivation"
+        }, ensure_ascii=False, sort_keys=True))
+        sys.exit(1)
+
+    stage2 = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=True)
+    print(json.dumps({
+        "mode": "safe-two-step",
+        "target_ip": target_ip,
+        "stage1": {
+            "success": stage1.get("success", False),
+            "actions": stage1.get("actions", {}),
+            "active_ips": active_ips_stage1
+        },
+        "stage2": stage2
+    }, ensure_ascii=False, sort_keys=True))
+    if not stage2.get("success"):
+        sys.exit(1)
+else:
+    result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=deactivate_others)
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    if not result.get("success"):
+        sys.exit(1)
 PY
   2>&1)" || {
   echo "ERROR: whitelist update failed"
@@ -203,6 +259,70 @@ if ! printf '%s\n' "$LOG_OUTPUT" | grep -Eq "API key retrieved from vault|API ke
   echo "WARN: expected API key startup lines were not detected."
   echo "Tip: run 'sh scripts/restart_bunq_service.sh' for a focused restart check."
   echo "Tip: if you rebuilt with a git-tagged image, run 'IMAGE_TAG=\$(git rev-parse --short HEAD) sh scripts/restart_bunq_service.sh'."
+fi
+
+if [ "${VERIFY_EGRESS_MATCH}" = "true" ]; then
+  CHECK_RAW="$($DOCKER_CMD exec "${CONTAINER_ID}" python3 - <<'PY'
+from api_proxy import (
+    get_public_egress_ip,
+    init_bunq,
+    get_bunq_user_id,
+    list_credential_password_profiles,
+    pick_credential_password_profile,
+    extract_credential_profile_id,
+    list_credential_password_ip_entries,
+    extract_whitelist_ip_entry,
+)
+
+status = "UNAVAILABLE"
+egress = get_public_egress_ip() or ""
+active_ips = []
+
+try:
+    if init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=False):
+        user_id = get_bunq_user_id()
+        if user_id:
+            profiles = list_credential_password_profiles(user_id)
+            selected = pick_credential_password_profile(profiles) if profiles else None
+            profile_id = extract_credential_profile_id(selected) if selected else None
+            if profile_id:
+                entries = list_credential_password_ip_entries(user_id, profile_id)
+                active_ips = sorted({
+                    item.get("ip")
+                    for item in (extract_whitelist_ip_entry(entry) for entry in entries)
+                    if item.get("status") == "ACTIVE" and item.get("ip")
+                })
+                if egress and egress in active_ips:
+                    status = "MATCH"
+                elif egress and active_ips:
+                    status = "MISMATCH"
+except Exception:
+    status = "UNAVAILABLE"
+
+print(f"{status}|{egress}|{','.join(active_ips)}")
+PY
+  2>/dev/null || true)"
+  CHECK_LINE="$(printf '%s\n' "${CHECK_RAW}" | tail -n1)"
+  CHECK_STATUS="$(printf '%s' "${CHECK_LINE}" | cut -d'|' -f1)"
+  CHECK_EGRESS="$(printf '%s' "${CHECK_LINE}" | cut -d'|' -f2)"
+  CHECK_ACTIVE="$(printf '%s' "${CHECK_LINE}" | cut -d'|' -f3)"
+
+  case "${CHECK_STATUS}" in
+    MATCH)
+      echo "OK: egress IP matches active Bunq whitelist (${CHECK_EGRESS})."
+      ;;
+    MISMATCH)
+      echo "ERROR: egress IP (${CHECK_EGRESS}) is NOT in active Bunq whitelist (${CHECK_ACTIVE})."
+      echo "Tip: rerun with explicit target:"
+      echo "  TARGET_IP=${CHECK_EGRESS} SAFE_TWO_STEP=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh ${SERVICE_NAME}"
+      exit 1
+      ;;
+    *)
+      echo "WARN: could not verify egress-vs-whitelist match automatically."
+      [ -n "${CHECK_EGRESS}" ] && echo "Current egress IP: ${CHECK_EGRESS}"
+      [ -n "${CHECK_ACTIVE}" ] && echo "Active whitelist IPs: ${CHECK_ACTIVE}"
+      ;;
+  esac
 fi
 
 echo "Done."

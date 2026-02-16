@@ -15,6 +15,7 @@ Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseer
 - Vaultwarden decrypt via `bw` CLI (master-password secret) voor betrouwbare key retrieval
   - Intel/amd64: native pinned `bw` binary (met automatische npm fallback als release-asset tijdelijk ontbreekt)
   - ARM64: pinned `@bitwarden/cli` npm fallback (officially recommended for ARM)
+- Productie-runtime via Gunicorn (geen Flask development server in container)
 - Lokale history-opslag (SQLite) voor langere-termijn inzichten
 - EUR-totalen voor niet-EUR rekeningen (met FX conversie en caching)
 - 11+ visualisaties (cashflow, trends, categorieën)
@@ -55,9 +56,9 @@ Meer details: [SECURITY.md](SECURITY.md)
 5. Gebruik `VAULTWARDEN_ACCESS_METHOD=cli` + secret `bunq_vaultwarden_master_password`
 6. Gebruik directe `bunq_api_key` alleen als nood-fallback (`USE_VAULTWARDEN=false`)
 7. Voor install/update op Synology: run `sh scripts/install_or_update_synology.sh` (guided, veilig; geen automatische secret-rotatie)
-8. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh` (non-interactive: `TARGET_IP=<PUBLIEK_IPV4> DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh`)
+8. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh` (safe 2-staps non-interactive: `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh`)
 9. Na deploy/herstart kun je startup-validatie doen met `scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
-10. Build/deploy probeert whitelisting ook automatisch (best effort) via Bunq API calls
+10. Build/deploy controleert ook egress-IP vs actieve Bunq whitelist en geeft direct herstelcommando bij mismatch
 
 Snelle check na deploy:
 ```bash

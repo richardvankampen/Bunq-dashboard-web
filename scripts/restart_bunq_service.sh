@@ -11,6 +11,7 @@ KEEP_IMAGE_COUNT="${KEEP_IMAGE_COUNT:-2}"
 RUN_WHITELIST_UPDATE="${RUN_WHITELIST_UPDATE:-true}"
 TARGET_IP="${TARGET_IP:-}"
 DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS:-false}"
+SAFE_TWO_STEP="${SAFE_TWO_STEP:-true}"
 MAX_UPDATE_RETRIES="${MAX_UPDATE_RETRIES:-6}"
 UPDATE_RETRY_DELAY="${UPDATE_RETRY_DELAY:-3}"
 
@@ -124,6 +125,7 @@ if [ "${RUN_WHITELIST_UPDATE}" = "true" ] && [ -n "${CONTAINER_ID}" ]; then
   if ! $DOCKER_CMD exec \
     -e TARGET_IP="${TARGET_IP}" \
     -e DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS}" \
+    -e SAFE_TWO_STEP="${SAFE_TWO_STEP}" \
     -e AUTO_SET_BUNQ_WHITELIST_IP=false \
     "${CONTAINER_ID}" python3 - <<'PY'
 import json
@@ -133,15 +135,26 @@ from api_proxy import init_bunq, set_bunq_api_whitelist_ip
 
 target_ip = (os.getenv("TARGET_IP", "") or "").strip() or None
 deactivate_others = (os.getenv("DEACTIVATE_OTHERS", "false") or "").strip().lower() in ("1", "true", "yes", "on")
+safe_two_step = (os.getenv("SAFE_TWO_STEP", "true") or "").strip().lower() in ("1", "true", "yes", "on")
 
 if not init_bunq(force_recreate=False, refresh_key=True):
     print("WARN: Bunq init failed before whitelist update")
     sys.exit(1)
 
-result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=deactivate_others)
-print(json.dumps(result, ensure_ascii=False))
-if not result.get("success"):
-    sys.exit(1)
+if safe_two_step and deactivate_others:
+    stage1 = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=False)
+    if not stage1.get("success"):
+        print(json.dumps({"mode": "safe-two-step", "stage": "activate-target-ip", "stage1": stage1}, ensure_ascii=False))
+        sys.exit(1)
+    stage2 = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=True)
+    print(json.dumps({"mode": "safe-two-step", "stage1": stage1, "stage2": stage2}, ensure_ascii=False))
+    if not stage2.get("success"):
+        sys.exit(1)
+else:
+    result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=deactivate_others)
+    print(json.dumps(result, ensure_ascii=False))
+    if not result.get("success"):
+        sys.exit(1)
 PY
   then
     echo "WARN: whitelist update failed (continuing)."

@@ -79,6 +79,10 @@ _CREDENTIAL_PASSWORD_IP_CREATE_MODE = None
 _CREDENTIAL_PASSWORD_IP_UPDATE_MODE = None
 _FX_RUNTIME_CACHE = {}
 _VAULTWARDEN_CLI_LOCK = threading.Lock()
+_BUNQ_INIT_LOCK = threading.Lock()
+_BUNQ_CONTEXT_INITIALIZED = False
+_BUNQ_INIT_LAST_ATTEMPT_TS = 0.0
+_BUNQ_INIT_LAST_ERROR = None
 
 def get_obj_field(obj, *field_names, default=None):
     """Read first non-empty field from objects or dictionaries."""
@@ -2683,6 +2687,8 @@ if ENVIRONMENT_LABEL not in ('PRODUCTION', 'SANDBOX'):
     ENVIRONMENT_LABEL = 'PRODUCTION'
 
 ENVIRONMENT_TYPE = ApiEnvironmentType.SANDBOX if ENVIRONMENT_LABEL == 'SANDBOX' else ApiEnvironmentType.PRODUCTION
+BUNQ_INIT_AUTO_ATTEMPT = get_bool_env('BUNQ_INIT_AUTO_ATTEMPT', True)
+BUNQ_INIT_RETRY_SECONDS = max(get_int_env('BUNQ_INIT_RETRY_SECONDS', 120), 15)
 
 # Validate configuration
 if not API_KEY:
@@ -2702,13 +2708,17 @@ if not has_config('FLASK_SECRET_KEY', 'flask_secret_key'):
 
 def init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=True):
     """Initialize Bunq API context with READ-ONLY access."""
-    global API_KEY
+    global API_KEY, _BUNQ_CONTEXT_INITIALIZED, _BUNQ_INIT_LAST_ATTEMPT_TS, _BUNQ_INIT_LAST_ERROR
+
+    _BUNQ_INIT_LAST_ATTEMPT_TS = time.time()
 
     if refresh_key:
         API_KEY = get_api_key_from_vaultwarden()
 
     if not API_KEY:
         logger.warning("⚠️ No API key available, running in demo mode only")
+        _BUNQ_CONTEXT_INITIALIZED = False
+        _BUNQ_INIT_LAST_ERROR = "No valid API key found"
         return False
     
     try:
@@ -2738,6 +2748,8 @@ def init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=True):
         logger.info("✅ Bunq API initialized successfully")
         logger.info(f"   Environment: {ENVIRONMENT_LABEL}")
         logger.info(f"   Access Level: READ-ONLY")
+        _BUNQ_CONTEXT_INITIALIZED = True
+        _BUNQ_INIT_LAST_ERROR = None
 
         if run_auto_whitelist and AUTO_SET_BUNQ_WHITELIST_IP:
             try:
@@ -2767,7 +2779,52 @@ def init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=True):
         
     except Exception as e:
         logger.error(f"❌ Failed to initialize Bunq API: {e}")
+        _BUNQ_CONTEXT_INITIALIZED = False
+        _BUNQ_INIT_LAST_ERROR = str(e)
         return False
+
+def ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=False):
+    """
+    Throttled Bunq init guard for WSGI workers.
+    Avoids repeated expensive init attempts on every request when Bunq is unavailable.
+    """
+    global _BUNQ_CONTEXT_INITIALIZED, _BUNQ_INIT_LAST_ATTEMPT_TS
+
+    if not force and _BUNQ_CONTEXT_INITIALIZED:
+        return True
+
+    now = time.time()
+    if not force and _BUNQ_INIT_LAST_ATTEMPT_TS > 0:
+        if (now - _BUNQ_INIT_LAST_ATTEMPT_TS) < BUNQ_INIT_RETRY_SECONDS:
+            return _BUNQ_CONTEXT_INITIALIZED
+
+    with _BUNQ_INIT_LOCK:
+        if not force and _BUNQ_CONTEXT_INITIALIZED:
+            return True
+        now = time.time()
+        if not force and _BUNQ_INIT_LAST_ATTEMPT_TS > 0:
+            if (now - _BUNQ_INIT_LAST_ATTEMPT_TS) < BUNQ_INIT_RETRY_SECONDS:
+                return _BUNQ_CONTEXT_INITIALIZED
+        return init_bunq(
+            force_recreate=False,
+            refresh_key=refresh_key,
+            run_auto_whitelist=run_auto_whitelist
+        )
+
+@app.before_request
+def ensure_bunq_context_for_api_requests():
+    """
+    In WSGI mode (gunicorn), __main__ is not executed.
+    Ensure BunqContext is initialized lazily for API calls.
+    """
+    if not BUNQ_INIT_AUTO_ATTEMPT:
+        return
+    path = request.path or ''
+    if not path.startswith('/api/'):
+        return
+    if path in ('/api/health', '/api/demo-data'):
+        return
+    ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=False)
 
 # ============================================
 # API ENDPOINTS (PROTECTED)
@@ -2788,11 +2845,15 @@ def serve_static(filename):
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint - NO AUTH REQUIRED"""
+    bunq_state = 'initialized' if _BUNQ_CONTEXT_INITIALIZED else ('api_key_only' if API_KEY else 'demo_mode')
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'version': '3.0.0-session-auth',
-        'api_status': 'initialized' if API_KEY else 'demo_mode',
+        'api_status': bunq_state,
+        'api_key_available': bool(API_KEY),
+        'bunq_context_initialized': bool(_BUNQ_CONTEXT_INITIALIZED),
+        'bunq_last_error': _BUNQ_INIT_LAST_ERROR,
         'security': {
             'type': 'session-based',
             'rate_limiting': True,
@@ -2817,7 +2878,9 @@ def get_admin_status():
         'success': True,
         'data': {
             'environment': ENVIRONMENT_LABEL,
-            'api_initialized': bool(API_KEY),
+            'api_initialized': bool(_BUNQ_CONTEXT_INITIALIZED),
+            'api_key_available': bool(API_KEY),
+            'bunq_last_error': _BUNQ_INIT_LAST_ERROR,
             'use_vaultwarden': use_vaultwarden,
             'api_key_source': 'vaultwarden' if use_vaultwarden else 'direct-secret',
             'vaultwarden': vault_status,
@@ -3080,6 +3143,12 @@ def get_accounts():
             'success': False,
             'error': 'Demo mode - configure API key'
         }), 503
+    if not _BUNQ_CONTEXT_INITIALIZED:
+        if not ensure_bunq_initialized(force=True, refresh_key=True, run_auto_whitelist=False):
+            return jsonify({
+                'success': False,
+                'error': _BUNQ_INIT_LAST_ERROR or 'Bunq API context not initialized'
+            }), 503
     
     try:
         cache_key = make_cache_key('accounts')
@@ -3170,6 +3239,12 @@ def get_transactions():
             'success': False,
             'error': 'Demo mode - configure API key'
         }), 503
+    if not _BUNQ_CONTEXT_INITIALIZED:
+        if not ensure_bunq_initialized(force=True, refresh_key=True, run_auto_whitelist=False):
+            return jsonify({
+                'success': False,
+                'error': _BUNQ_INIT_LAST_ERROR or 'Bunq API context not initialized'
+            }), 503
     
     try:
         account_id = request.args.get('account_id')
@@ -3358,6 +3433,8 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
             return 'Zorg'
         if mcc in {'7832', '7922', '7997', '7999'}:
             return 'Entertainment'
+        if mcc in {'4899', '5815', '5968', '5734'}:
+            return 'Abonnementen'
         if mcc in {'5311', '5331', '5399', '5651', '5732'}:
             return 'Shopping'
 
@@ -3372,7 +3449,8 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
     if any(word in combined for word in [
         'albert heijn', ' ah ', 'jumbo', 'lidl', 'aldi', 'plus', 'dirk',
         'picnic', 'ekoplaza', 'spar ', 'coop', 'supermarkt', 'carrefour',
-        'dekamarkt', 'hoogvliet', 'vomar', 'poiesz', 'jan linders', 'appie'
+        'dekamarkt', 'hoogvliet', 'vomar', 'poiesz', 'jan linders', 'appie',
+        'flink', 'gorillas', 'getir', 'hellofresh'
     ]):
         return 'Boodschappen'
     elif any(word in combined for word in [
@@ -3383,20 +3461,34 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
     elif any(word in combined for word in [
         'ns ', 'train', 'bus', 'taxi', 'uber', 'ov ', 'parking',
         'q-park', 'shell', 'texaco', 'esso', 'total', 'benzine',
+        'bp ', 'tinq', 'avia', 'ok tank', 'yellowbrick', 'anwb',
         'ov-chip', 'ovchip', 'arriva', 'connexxion', 'ret ', 'gvb', 'qbuzz'
     ]):
         return 'Vervoer'
     elif any(word in combined for word in ['huur', 'rent', 'hypotheek', 'mortgage', 'vve']):
         return 'Wonen'
-    elif any(word in combined for word in ['verzekering', 'insur', 'aegon', 'allianz', 'ohra', 'unive', 'zilveren kruis']):
+    elif any(word in combined for word in [
+        'verzekering', 'insur', 'aegon', 'allianz', 'ohra', 'unive',
+        'zilveren kruis', 'interpolis', 'vgz', 'cz ', 'menzis', 'fbto', 'asr '
+    ]):
         return 'Verzekering'
-    elif any(word in combined for word in ['belasting', 'belastingdienst', 'tax', 'gemeente', 'waterschap']):
+    elif any(word in combined for word in [
+        'belasting', 'belastingdienst', 'tax', 'gemeente', 'waterschap',
+        'cjib', 'rdw', 'duo '
+    ]):
         return 'Belastingen'
     elif any(word in combined for word in [
         'eneco', 'essent', 'energie', 'gas', 'water', 'ziggo', 'kpn', 'telecom',
-        'odido', 'vodafone', 't-mobile', 'tele2', 'youfone', 'hollandsnieuwe'
+        'odido', 'vodafone', 't-mobile', 'tele2', 'youfone', 'hollandsnieuwe',
+        'delta fiber', 'caiway', 'budget energie', 'greenchoice', 'enexis', 'liander',
+        'stedin', 'waternet', 'vitens'
     ]):
         return 'Utilities'
+    elif any(word in combined for word in [
+        'netflix', 'spotify', 'disney+', 'videoland', 'amazon prime', 'youtube premium',
+        'adobe', 'microsoft 365', 'office 365', 'icloud', 'google one'
+    ]):
+        return 'Abonnementen'
     elif any(word in combined for word in [
         'bol.com', 'coolblue', 'mediamarkt', 'amazon', 'zara', 'h&m', 'shop',
         'hema', 'action', 'ikea', 'primark', 'kruidvat', 'etos', 'zalando'
@@ -3427,6 +3519,12 @@ def get_statistics():
             'success': False,
             'error': 'Demo mode - configure API key'
         }), 503
+    if not _BUNQ_CONTEXT_INITIALIZED:
+        if not ensure_bunq_initialized(force=True, refresh_key=True, run_auto_whitelist=False):
+            return jsonify({
+                'success': False,
+                'error': _BUNQ_INIT_LAST_ERROR or 'Bunq API context not initialized'
+            }), 503
         
     try:
         days = clamp_days(request.args.get('days', 90))
@@ -3680,7 +3778,9 @@ def get_demo_data():
     })
 
 if __name__ == '__main__':
-    print("🚀 Starting Bunq Dashboard API (SESSION-BASED AUTH)...")
+    debug_mode = get_bool_env('FLASK_DEBUG', False)
+    print("🚀 Starting Bunq Dashboard API (SESSION-BASED AUTH, development server)...")
+    print("⚠️ Production deployment uses Gunicorn (see Dockerfile/run_server.sh).")
     print(f"📡 Environment: {ENVIRONMENT_LABEL}")
     print(f"🔒 CORS Origins: {ALLOWED_ORIGINS}")
     print(f"🔐 Authentication: {'ENABLED ✅' if has_config('BASIC_AUTH_PASSWORD', 'basic_auth_password') else 'DISABLED ⚠️'}")
@@ -3688,14 +3788,15 @@ if __name__ == '__main__':
     print(f"⏱️  Rate Limiting: 30 req/min (general), 5 req/min (login)")
     print(f"🔑 Secret key: {'Set ✅' if has_config('FLASK_SECRET_KEY', 'flask_secret_key') else 'Auto-generated ⚠️'}")
     
-    if init_bunq():
+    if init_bunq(force_recreate=False, refresh_key=True, run_auto_whitelist=True):
         print("✅ Bunq API initialized")
     else:
         print("⚠️ Running in demo mode only")
     
-    # Production mode
+    # Local development server (not for production)
     app.run(
         host='0.0.0.0',
         port=5000,
-        debug=False
+        debug=debug_mode,
+        use_reloader=debug_mode
     )

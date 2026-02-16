@@ -12,7 +12,13 @@ WORKDIR /app
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    GUNICORN_WORKERS=2 \
+    GUNICORN_THREADS=4 \
+    GUNICORN_TIMEOUT=120 \
+    GUNICORN_KEEPALIVE=5 \
+    GUNICORN_LOG_LEVEL=info \
+    BUNQ_PREBOOT_INIT=true
 
 # Pin Bitwarden CLI release (native binary)
 ARG BW_VERSION=2026.1.0
@@ -67,6 +73,7 @@ RUN pip install --no-cache-dir -r requirements_web.txt
 # Copy backend and frontend
 COPY api_proxy.py .
 COPY app.js .
+COPY scripts/run_server.sh ./scripts/run_server.sh
 
 # Copy static files
 COPY index.html .
@@ -74,6 +81,7 @@ COPY styles.css .
 
 # Create directories
 RUN mkdir -p /app/config /app/logs
+RUN chmod 755 /app/scripts/run_server.sh
 
 # Volumes for persistent data
 VOLUME ["/app/config", "/app/logs"]
@@ -92,5 +100,5 @@ RUN echo "================================================" && \
     echo "Python: $(python --version)" && \
     echo "================================================"
 
-# Run application
-CMD ["python", "api_proxy.py"]
+# Run application (production WSGI server)
+CMD ["/bin/sh", "/app/scripts/run_server.sh"]
