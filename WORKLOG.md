@@ -205,3 +205,24 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - backend kreeg lazy/throttled Bunq init guard voor WSGI workers.
 - Documentatie bijgewerkt:
   - `README.md`, `SYNOLOGY_INSTALL.md`, `SECURITY.md`, `TROUBLESHOOTING.md`.
+
+### Opslagstatus
+
+- Alle bovenstaande wijzigingen zijn vastgelegd op `main`.
+- Laatste commit: `6b67696` (`Finalize P1/P2 hardening and sync installation docs`).
+
+### Vervolgacties (volgende run op NAS)
+
+1. Update en deploy op NAS:
+   - `cd /volume1/docker/bunq-dashboard`
+   - `sudo git pull --rebase`
+   - `sh scripts/install_or_update_synology.sh`
+2. Runtime valideren:
+   - `curl -s http://127.0.0.1:5000/api/health`
+   - `sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "API key retrieved from vault|Bunq API initialized|Incorrect API key or IP address|No valid API key|ERROR"`
+3. Alleen bij Bunq IP mismatch:
+   - `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard`
+4. Daarna P1 functionele validatie in UI:
+   - Data Quality kaart + detailmodal
+   - Action Plan concrete levers
+   - Accounts/Transactions flow op live data

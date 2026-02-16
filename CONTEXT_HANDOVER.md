@@ -144,3 +144,24 @@ curl -s http://127.0.0.1:5000/api/health
   - `SYNOLOGY_INSTALL.md`
   - `SECURITY.md`
   - `TROUBLESHOOTING.md`
+
+## Opslagstatus
+
+- Wijzigingen van de 4-stappenreeks en docs staan op `main`.
+- Laatste commit: `6b67696` (`Finalize P1/P2 hardening and sync installation docs`).
+
+## Directe vervolgacties
+
+1. NAS update/deploy:
+   - `cd /volume1/docker/bunq-dashboard`
+   - `sudo git pull --rebase`
+   - `sh scripts/install_or_update_synology.sh`
+2. Basisvalidatie:
+   - `curl -s http://127.0.0.1:5000/api/health`
+   - `sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "API key retrieved from vault|Bunq API initialized|Incorrect API key or IP address|No valid API key|ERROR"`
+3. Alleen bij IP-whitelist mismatch:
+   - `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard`
+4. Functionele check (P1):
+   - Action Plan met concrete levers
+   - Data Quality detail
+   - Accounts + Transactions endpoints op live data
