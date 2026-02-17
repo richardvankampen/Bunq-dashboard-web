@@ -81,16 +81,24 @@ Nuttige script-opties:
 Geautomatiseerde install/update (na Vaultwarden setup):
 ```bash
 cd /volume1/docker/bunq-dashboard
-sh scripts/install_or_update_synology.sh
+sudo git pull
+sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
 
 Het script vraagt standaard:
 - `Use clean Docker build (--no-cache)? [Y/n]`
 
 Handige overrides:
-- `NO_CACHE=false sh scripts/install_or_update_synology.sh` (sneller, cached build)
-- `NO_CACHE=true sh scripts/install_or_update_synology.sh` (volledig schone build)
+- `NO_CACHE=false sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh` (sneller, cached build)
+- `NO_CACHE=true sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh` (volledig schone build)
 - In non-interactive runs blijft veilige default `NO_CACHE=true` actief.
+
+Wanneer `NO_CACHE=false` gebruiken:
+- Alleen code/documentatie wijzigingen (bijv. `app.js`, `api_proxy.py`, `index.html`, `.md`) en geen dependency/base-image wijzigingen.
+- Je wilt sneller deployen en Docker-cache hergebruiken.
+
+Wanneer `NO_CACHE=true` gebruiken:
+- Wijzigingen in `Dockerfile`, dependencies, base image, of build issues met mogelijk stale layers.
 
 ---
 
