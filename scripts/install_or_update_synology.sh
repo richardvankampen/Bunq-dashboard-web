@@ -42,6 +42,29 @@ say() {
   printf '%s\n' "$*"
 }
 
+wait_for_service_update_settle() {
+  SERVICE_TO_WAIT="$1"
+  MAX_WAIT_SECONDS="${2:-90}"
+  WAIT_INTERVAL=3
+  WAITED=0
+
+  while [ "${WAITED}" -lt "${MAX_WAIT_SECONDS}" ]; do
+    UPDATE_STATE="$($DOCKER_CMD service inspect --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}none{{end}}' "${SERVICE_TO_WAIT}" 2>/dev/null || echo missing)"
+    case "${UPDATE_STATE}" in
+      updating)
+        sleep "${WAIT_INTERVAL}"
+        WAITED=$((WAITED + WAIT_INTERVAL))
+        ;;
+      *)
+        return 0
+        ;;
+    esac
+  done
+
+  say "WARN: service ${SERVICE_TO_WAIT} is still updating after ${MAX_WAIT_SECONDS}s; continuing anyway."
+  return 0
+}
+
 check_swarm() {
   SWARM_STATE="$($DOCKER_CMD info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
   if [ "${SWARM_STATE}" = "active" ]; then
@@ -210,6 +233,8 @@ build_and_deploy() {
   $DOCKER_CMD stack deploy -c "${COMPOSE_FILE}" "${STACK_NAME}" >/dev/null
 
   if [ "${RUN_RESTART_CHECK}" = "true" ] && [ -x "scripts/restart_bunq_service.sh" ]; then
+    say "Waiting for stack update to settle before restart validation ..."
+    wait_for_service_update_settle "${SERVICE_NAME}" 90
     say "Running startup validation script ..."
     IMAGE_TAG="${TAG}" sh "scripts/restart_bunq_service.sh" "${SERVICE_NAME}"
   else
