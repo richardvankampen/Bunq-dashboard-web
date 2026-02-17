@@ -3441,6 +3441,7 @@ def run_admin_maintenance():
 @rate_limit('general')
 def get_accounts():
     """Get all Bunq accounts (READ-ONLY) - SESSION AUTH REQUIRED"""
+    global _BUNQ_CONTEXT_INITIALIZED
     if not API_KEY:
         return jsonify({
             'success': False,
@@ -3548,6 +3549,7 @@ def get_accounts():
 @rate_limit('general')
 def get_transactions():
     """Get transactions - SESSION AUTH REQUIRED"""
+    global _BUNQ_CONTEXT_INITIALIZED
     if not API_KEY:
         return jsonify({
             'success': False,
