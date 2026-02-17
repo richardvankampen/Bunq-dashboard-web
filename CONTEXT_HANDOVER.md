@@ -216,6 +216,16 @@ curl -s http://127.0.0.1:5000/api/health
   - MCC extractie uit nested alias-structuren;
   - transaction-categorisatie gebruikt verbeterde MCC-extractie.
 
+### SDK referentie (naslag)
+
+- Officiële SDK repo: `https://github.com/bunq/sdk_python.git`
+- Lokale inspectiepad gebruikt tijdens analyse: `/tmp/sdk_python` (tijdelijk pad)
+- Opnieuw lokaal klaarzetten:
+  - `git clone --depth 1 https://github.com/bunq/sdk_python.git /tmp/sdk_python`
+- Belangrijkste bronbestanden voor dit onderwerp:
+  - `/tmp/sdk_python/bunq/sdk/model/generated/endpoint.py`
+  - `/tmp/sdk_python/bunq/sdk/model/generated/object_.py`
+
 ### Commitstatus
 
 - Commit gepusht op `main`:
