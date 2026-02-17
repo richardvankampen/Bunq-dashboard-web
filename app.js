@@ -1047,11 +1047,6 @@ function classifyAccountType(account) {
         || explicitTypeText.includes('current')
     ) return 'checking';
 
-    // Guardrail: plain MonetaryAccountBank is checking unless explicit type fields say otherwise.
-    if (className.includes('monetaryaccountbank')) {
-        return 'checking';
-    }
-
     const fingerprint = `${description} ${className} ${explicitTypeText}`;
     if (
         fingerprint.includes('savings')
