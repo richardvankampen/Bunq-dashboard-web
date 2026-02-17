@@ -4483,7 +4483,11 @@ async function reinitializeBunqContext() {
     }
 
     const confirmed = window.confirm(
-        'Dit verwijdert de lokale Bunq context en maakt een nieuwe context (installation + device registration). Doorgaan?'
+        'Reinit context only (advanced):\n' +
+        '- Recreates Bunq context (installation + device registration)\n' +
+        '- Refreshes API key from Vaultwarden/direct secret\n' +
+        '- Does NOT update Bunq whitelist IP\n\n' +
+        'Continue?'
     );
     if (!confirmed) {
         return;
@@ -4511,7 +4515,7 @@ async function reinitializeBunqContext() {
         await loadAdminStatus();
         renderAdminStatusPanel(
             adminStatusData,
-            'Bunq context opnieuw geïnitialiseerd. Controleer Bunq whitelist met het getoonde egress IP of gebruik "Run maintenance now".',
+            'Bunq context reinitialized (no whitelist change). If API key or egress IP changed, run "Run full maintenance (recommended)".',
             false,
             egressIp
         );
@@ -4547,11 +4551,12 @@ async function runBundledAdminMaintenance() {
     const targetLabel = options.auto_target_ip ? 'current egress IP (auto)' : targetIp;
 
     const confirmed = window.confirm(
-        'Run admin maintenance now?\n' +
+        'Run full maintenance now?\n' +
+        '- This is the recommended runtime recovery flow.\n' +
         `- Recreate context: ${options.force_recreate ? 'yes' : 'no'}\n` +
         `- Refresh API key: ${options.refresh_key ? 'yes' : 'no'}\n` +
-        `- Set whitelist IP: ${targetLabel}\n` +
-        `- Deactivate other IPs: ${options.deactivate_others ? 'yes' : 'no'}`
+        `- Update whitelist target IP: ${targetLabel}\n` +
+        `- Deactivate other whitelist IPs: ${options.deactivate_others ? 'yes' : 'no'}`
     );
     if (!confirmed) return;
 
@@ -4575,7 +4580,7 @@ async function runBundledAdminMaintenance() {
 
         const data = response.data || {};
         const steps = Array.isArray(data.steps) ? data.steps.join(', ') : '';
-        const message = `Maintenance voltooid${steps ? ` (${steps})` : ''}.`;
+        const message = `Full maintenance completed${steps ? ` (${steps})` : ''}.`;
         const egressIp = data.egress_ip || data.resolved_target_ip || '';
 
         if (options.load_status_after) {

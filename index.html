@@ -571,13 +571,22 @@
                     </div>
                 </div>
                 <div class="setting-group admin-tools-group">
-                    <label>Admin Maintenance (P1)</label>
+                    <label>Admin Maintenance</label>
                     <p class="setting-help">
-                        Vaultwarden-first onderhoudsacties: status check, egress IP detectie en Bunq context/IP herregistratie.
+                        Runtime maintenance for Bunq/Vaultwarden (no code deploy from the web UI).
                     </p>
                     <p class="setting-help">
-                        Voor host-level deploy/image cleanup gebruik je nog SSH scripts; Bunq/Vaultwarden onderhoud kan hieronder volledig via het panel.
+                        For code updates (git pull + build + deploy), use <strong>Show install/update commands</strong> and run those on your NAS shell.
                     </p>
+                    <div class="admin-guidance-card">
+                        <div class="admin-guidance-title">When to use what</div>
+                        <ul class="admin-guidance-list">
+                            <li><strong>Run full maintenance (recommended):</strong> refresh runtime state, (optionally) refresh API key, recreate Bunq context, and update whitelist IP.</li>
+                            <li><strong>Reinit context only (advanced):</strong> recreate Bunq context without whitelist changes.</li>
+                            <li><strong>Set Bunq API whitelist IP:</strong> safe 2-step whitelist update only.</li>
+                            <li><strong>Show install/update commands:</strong> host-level deploy for new code versions.</li>
+                        </ul>
+                    </div>
                     <div class="admin-tools-actions">
                         <button type="button" class="admin-tool-btn" id="adminLoadStatus">
                             <i class="fas fa-heartbeat"></i> Check status
@@ -589,10 +598,10 @@
                             <i class="fas fa-network-wired"></i> Set Bunq API whitelist IP
                         </button>
                         <button type="button" class="admin-tool-btn admin-tool-btn-warn" id="adminReinitBunq">
-                            <i class="fas fa-sync-alt"></i> Reinit Bunq context
+                            <i class="fas fa-sync-alt"></i> Reinit context only (advanced)
                         </button>
                         <button type="button" class="admin-tool-btn admin-tool-btn-primary" id="adminRunMaintenance">
-                            <i class="fas fa-play"></i> Run maintenance now
+                            <i class="fas fa-play"></i> Run full maintenance (recommended)
                         </button>
                         <button type="button" class="admin-tool-btn" id="adminShowInstallUpdateCmd">
                             <i class="fas fa-terminal"></i> Show install/update commands
@@ -601,8 +610,12 @@
                             <i class="fas fa-terminal"></i> Show restart/validate commands
                         </button>
                     </div>
+                    <p class="setting-help admin-options-scope">
+                        <strong>Scope:</strong> The IP field and checkboxes below are used by <strong>Run full maintenance</strong>.
+                        The whitelist button uses IP + deactivate option only. The reinit-only button ignores these options.
+                    </p>
                     <div class="admin-tools-inline">
-                        <label for="adminWhitelistIp">IP to set on Bunq API whitelist (public IPv4)</label>
+                        <label for="adminWhitelistIp">Target IP for Bunq API whitelist (public IPv4)</label>
                         <input type="text" id="adminWhitelistIp" inputmode="numeric" placeholder="Public IPv4 (bijv. 8.8.8.8)">
                         <label>
                             <input type="checkbox" id="adminOptionAutoTargetIp">
@@ -614,6 +627,9 @@
                         </label>
                     </div>
                     <div class="admin-tools-options">
+                        <p class="setting-help admin-options-heading">
+                            Options for <strong>Run full maintenance</strong>
+                        </p>
                         <label>
                             <input type="checkbox" id="adminOptionRefreshKey">
                             Vernieuw API key uit Vaultwarden/direct secret (alleen nodig na key-rotatie)

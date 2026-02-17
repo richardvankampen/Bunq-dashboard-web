@@ -1133,6 +1133,34 @@ body.reduce-animations .play-btn:hover {
     gap: var(--spacing-xs);
 }
 
+.admin-guidance-card {
+    margin-top: var(--spacing-xs);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: rgba(15, 23, 42, 0.28);
+    padding: 0.55rem 0.7rem;
+}
+
+.admin-guidance-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.3rem;
+}
+
+.admin-guidance-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: grid;
+    gap: 0.25rem;
+}
+
+.admin-guidance-list li {
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--text-secondary);
+}
+
 .admin-tool-btn {
     border: 1px solid var(--glass-border);
     background: rgba(148, 163, 184, 0.12);
@@ -1174,6 +1202,10 @@ body.reduce-animations .play-btn:hover {
     gap: var(--spacing-xs);
 }
 
+.admin-options-scope {
+    margin-top: var(--spacing-sm);
+}
+
 .admin-tools-inline input[type="text"] {
     width: 100%;
     border: 1px solid var(--glass-border);
@@ -1201,6 +1233,11 @@ body.reduce-animations .play-btn:hover {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 0.35rem var(--spacing-sm);
+}
+
+.admin-options-heading {
+    grid-column: 1 / -1;
+    margin: 0 0 0.2rem 0;
 }
 
 .admin-tools-options label {
