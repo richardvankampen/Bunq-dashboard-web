@@ -226,3 +226,37 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
    - Data Quality kaart + detailmodal
    - Action Plan concrete levers
    - Accounts/Transactions flow op live data
+
+## 2026-02-17
+
+### Incidentfixes (startup en Vaultwarden-CLI stabiliteit)
+
+- Root cause crashloop gefixt:
+  - app faalde op `ValueError: Unknown level: 'info'` tijdens import in `api_proxy.py`.
+  - fix: `LOG_LEVEL` normaliseren via `os.getenv('LOG_LEVEL', 'INFO').upper()`.
+- Vaultwarden CLI race-condition onder Gunicorn workers gefixt:
+  - Bitwarden CLI appdata nu per worker-proces (`.../bwcli-dashboard-<pid>`), zodat sessiestate niet gedeeld wordt tussen workers.
+- Commit en push:
+  - `0d9f5ae` — `Harden startup log level and isolate bw CLI state per worker`.
+
+### NAS runtime status (na deploy)
+
+- Service convergeert en blijft draaien op Gunicorn.
+- `/api/health` geeft stabiel `200`.
+- `BUNQ_PREBOOT_INIT=false` en `GUNICORN_WORKERS=1` gebruikt op NAS om startup stabiel te houden.
+
+### Openstaand operationeel issue
+
+- Bunq-context init faalt nog op live environment met:
+  - `HTTP Response Code: 400`
+  - `Error message: User credentials are incorrect. Incorrect API key or IP address.`
+- Gevolg: app is gezond, maar Bunq-data endpoints kunnen `503` geven zolang key/IP-whitelist niet matcht.
+
+### Volgende concrete stappen op NAS
+
+1. Bepaal actuele container-egress IP.
+2. Run veilige 2-staps whitelist-flow met die IP:
+   - eerst `DEACTIVATE_OTHERS=false`,
+   - daarna `DEACTIVATE_OTHERS=true`.
+3. Verwijder Bunq context files en force service restart.
+4. Valideer logs op `Bunq API initialized successfully` (zonder `Incorrect API key or IP address`).

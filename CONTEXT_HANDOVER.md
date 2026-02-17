@@ -165,3 +165,38 @@ curl -s http://127.0.0.1:5000/api/health
    - Action Plan met concrete levers
    - Data Quality detail
    - Accounts + Transactions endpoints op live data
+
+## Update 2026-02-17 (startup + Vaultwarden stabiliteit)
+
+### Wat is gefixt
+
+- Startup crash opgelost door log-level normalisatie in backend:
+  - in `api_proxy.py` gebruikt logging nu `os.getenv('LOG_LEVEL', 'INFO').upper()`.
+- Vaultwarden CLI race onder Gunicorn workers opgelost:
+  - `BITWARDENCLI_APPDATA_DIR` wordt nu per process opgebouwd (`<base>-<pid>`).
+- Wijzigingen staan op `main`:
+  - commit `0d9f5ae` (`Harden startup log level and isolate bw CLI state per worker`).
+
+### Huidige operationele status (NAS)
+
+- `bunq_bunq-dashboard` service is running en healthcheck blijft groen (`/api/health` = 200).
+- Runtime knobs op NAS:
+  - `BUNQ_PREBOOT_INIT=false`
+  - `GUNICORN_WORKERS=1`
+- Geen crashloop meer (`Unknown level: 'info'` verdwenen).
+
+### Nog open
+
+- Bunq API context initialisatie faalt nog met:
+  - `HTTP Response Code: 400`
+  - `Incorrect API key or IP address`
+- Gevolg: app/auth werkt, maar Bunq data endpoints kunnen `503` teruggeven tot whitelist/key matcht.
+
+### Aanbevolen vervolgstappen (direct uitvoerbaar op NAS)
+
+1. Container egress IP bepalen.
+2. `scripts/register_bunq_ip.sh` in veilige 2-staps modus draaien op die IP:
+   - stap 1: `DEACTIVATE_OTHERS=false`
+   - stap 2: `DEACTIVATE_OTHERS=true`
+3. Contextbestanden verwijderen (`/app/config/bunq_production.conf`, `/app/config/bunq_sandbox.conf`) en service forceren.
+4. Logs valideren op `Bunq API initialized successfully` zonder `Incorrect API key or IP address`.
