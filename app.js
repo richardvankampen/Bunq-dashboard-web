@@ -1022,19 +1022,48 @@ function classifyAccountType(account) {
         return declaredType;
     }
 
-    const fingerprint = `${account?.description || ''} ${account?.account_class || ''} ${account?.account_type || ''} ${account?.monetary_account_type || ''}`.toLowerCase();
+    const className = String(account?.account_class || '').toLowerCase();
+    const explicitTypeText = `${account?.account_type || ''} ${account?.monetary_account_type || ''}`.toLowerCase();
+    const description = String(account?.description || '').toLowerCase();
+
+    if (className.includes('monetaryaccountsavings') || className.includes('externalsavings')) {
+        return 'savings';
+    }
+    if (className.includes('monetaryaccountinvestment')) {
+        return 'investment';
+    }
+
+    if (
+        explicitTypeText.includes('saving')
+        || explicitTypeText.includes('savings')
+        || explicitTypeText.includes('spaar')
+    ) return 'savings';
+    if (
+        explicitTypeText.includes('investment')
+        || explicitTypeText.includes('stock')
+        || explicitTypeText.includes('share')
+        || explicitTypeText.includes('crypto')
+        || explicitTypeText.includes('belegging')
+    ) return 'investment';
+    if (
+        explicitTypeText.includes('checking')
+        || explicitTypeText.includes('payment')
+        || explicitTypeText.includes('bank')
+        || explicitTypeText.includes('card')
+        || explicitTypeText.includes('current')
+    ) return 'checking';
+
+    // Guardrail: plain MonetaryAccountBank is checking unless explicit type fields say otherwise.
+    if (className.includes('monetaryaccountbank')) {
+        return 'checking';
+    }
+
+    const fingerprint = `${description} ${className} ${explicitTypeText}`;
     if (
         fingerprint.includes('savings')
         || fingerprint.includes('spaar')
-        || fingerprint.includes('reserve')
-        || fingerprint.includes('buffer')
-        || fingerprint.includes('potje')
-        || fingerprint.includes('onvoorzien')
-        || fingerprint.includes('emergency')
-        || fingerprint.includes('vakantie')
-        || fingerprint.includes('doel')
-        || fingerprint.includes('goal')
-        || fingerprint.includes('stash')
+        || fingerprint.includes('spaarrekening')
+        || fingerprint.includes('sparen')
     ) return 'savings';
     if (
         fingerprint.includes('investment')
