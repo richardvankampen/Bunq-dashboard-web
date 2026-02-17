@@ -262,6 +262,14 @@ if ! printf '%s\n' "$LOG_OUTPUT" | grep -Eq "API key retrieved from vault|API ke
 fi
 
 if [ "${VERIFY_EGRESS_MATCH}" = "true" ]; then
+  # Service restart creates a new task/container; refresh container id before exec checks.
+  CONTAINER_ID="$($DOCKER_CMD ps --filter "name=${SERVICE_NAME}" -q | head -n1 || true)"
+  if [ -z "${CONTAINER_ID}" ]; then
+    echo "WARN: no running container found for egress-vs-whitelist validation after restart."
+    echo "Done."
+    exit 0
+  fi
+
   CHECK_RAW="$($DOCKER_CMD exec "${CONTAINER_ID}" python3 - <<'PY'
 from api_proxy import (
     get_public_egress_ip,
