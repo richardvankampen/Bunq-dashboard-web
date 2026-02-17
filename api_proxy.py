@@ -43,7 +43,7 @@ LOG_DIR = os.path.join(APP_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
-    level=os.getenv('LOG_LEVEL', 'INFO'),
+    level=os.getenv('LOG_LEVEL', 'INFO').upper(),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(os.path.join(LOG_DIR, 'bunq_api.log')),
@@ -2085,7 +2085,9 @@ def get_api_key_from_vaultwarden_cli(return_status=False):
         logger.error(f"❌ Vaultwarden CLI error: {status['error']}")
         return None
 
-    appdata_dir = os.getenv('VAULTWARDEN_CLI_APPDATA_DIR', '/tmp/bwcli-dashboard').strip() or '/tmp/bwcli-dashboard'
+    appdata_base = os.getenv('VAULTWARDEN_CLI_APPDATA_DIR', '/tmp/bwcli-dashboard').strip() or '/tmp/bwcli-dashboard'
+    # Separate Bitwarden CLI state per Gunicorn worker process to avoid race conditions.
+    appdata_dir = f"{appdata_base}-{os.getpid()}"
     os.makedirs(appdata_dir, exist_ok=True)
 
     bw_env = os.environ.copy()
