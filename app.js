@@ -622,30 +622,45 @@ function showError(message) {
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Bunq Dashboard Initializing (Session Auth)...');
+    const startupWatchdog = setTimeout(() => {
+        if (isLoading) {
+            console.error('❌ Startup watchdog triggered: loading screen still active');
+            hideLoading();
+            showError('Dashboard startup duurde te lang. Ververs de pagina of controleer backend logs.');
+        }
+    }, 45000);
 
-    applyVisualPreferences();
+    try {
+        applyVisualPreferences();
 
-    // Initialize particles
-    if (CONFIG.enableParticles) {
-        initializeParticles();
-    }
-    
-    // Setup event listeners
-    setupEventListeners();
-    
-    // Check authentication status
-    const authenticated = await checkAuthStatus();
-    
-    // Load initial data
-    if (CONFIG.useRealData && authenticated) {
-        await loadRealData();
-    } else {
-        loadDemoData();
-    }
-    
-    // Auto-refresh if enabled
-    if (CONFIG.refreshInterval > 0) {
-        startAutoRefresh();
+        // Initialize particles
+        if (CONFIG.enableParticles) {
+            initializeParticles();
+        }
+        
+        // Setup event listeners
+        setupEventListeners();
+        
+        // Check authentication status
+        const authenticated = await checkAuthStatus();
+        
+        // Load initial data
+        if (CONFIG.useRealData && authenticated) {
+            await loadRealData();
+        } else {
+            loadDemoData();
+        }
+        
+        // Auto-refresh if enabled
+        if (CONFIG.refreshInterval > 0) {
+            startAutoRefresh();
+        }
+    } catch (error) {
+        console.error('❌ Fatal startup error:', error);
+        hideLoading();
+        showError(`Dashboard startup error: ${error.message || error}`);
+    } finally {
+        clearTimeout(startupWatchdog);
     }
 });
 
@@ -1027,12 +1042,18 @@ function loadDemoData() {
     console.log('📊 Generating demo data...');
     
     setTimeout(() => {
-        dataQualitySummary = null;
-        latestDataQualitySummary = null;
-        transactionsData = generateDemoTransactions(CONFIG.timeRange);
-        processAndRenderData(transactionsData);
-        hideLoading();
-        updateLastUpdateTime();
+        try {
+            dataQualitySummary = null;
+            latestDataQualitySummary = null;
+            transactionsData = generateDemoTransactions(CONFIG.timeRange);
+            processAndRenderData(transactionsData);
+        } catch (error) {
+            console.error('❌ Error loading demo data:', error);
+            showError(`Demo data error: ${error.message || error}`);
+        } finally {
+            hideLoading();
+            updateLastUpdateTime();
+        }
     }, 1500);
 }
 
@@ -4068,12 +4089,14 @@ function renderInsights(data, kpis, qualitySummary = null) {
 // ============================================
 
 function showLoading() {
+    isLoading = true;
     document.getElementById('loading-screen')?.classList.remove('hidden');
     const mainContent = document.getElementById('main-content');
     if (mainContent) mainContent.style.display = 'none';
 }
 
 function hideLoading() {
+    isLoading = false;
     document.getElementById('loading-screen')?.classList.add('hidden');
     const mainContent = document.getElementById('main-content');
     if (mainContent) mainContent.style.display = 'block';
