@@ -31,6 +31,7 @@ const CONFIG = {
 // Global State
 let transactionsData = null;
 let refreshIntervalId = null;
+const DEFAULT_FETCH_TIMEOUT_MS = 30000;
 let isLoading = false;
 let isAuthenticated = false;
 let accountsList = [];
@@ -125,14 +126,28 @@ function handleAdminMaintenanceOptionChange() {
 // SESSION-BASED AUTHENTICATION
 // ============================================
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        return await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 /**
  * Check if user is authenticated (has valid session)
  */
 async function checkAuthStatus() {
     try {
-        const response = await fetch(`${CONFIG.apiEndpoint}/auth/status`, {
+        const response = await fetchWithTimeout(`${CONFIG.apiEndpoint}/auth/status`, {
             credentials: 'include'  // CRITICAL: Include session cookie
-        });
+        }, 12000);
         
         if (response.ok) {
             const data = await response.json();
@@ -181,14 +196,14 @@ document.addEventListener('visibilitychange', () => {
  */
 async function login(username, password) {
     try {
-        const response = await fetch(`${CONFIG.apiEndpoint}/auth/login`, {
+        const response = await fetchWithTimeout(`${CONFIG.apiEndpoint}/auth/login`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             credentials: 'include',  // CRITICAL: Allow setting cookies
             body: JSON.stringify({ username, password })
-        });
+        }, 15000);
         
         const data = await response.json();
         
@@ -226,10 +241,10 @@ async function login(username, password) {
  */
 async function logout() {
     try {
-        await fetch(`${CONFIG.apiEndpoint}/auth/logout`, {
+        await fetchWithTimeout(`${CONFIG.apiEndpoint}/auth/logout`, {
             method: 'POST',
             credentials: 'include'
-        });
+        }, 12000);
         
         isAuthenticated = false;
         updateAuthUI(false);
@@ -267,7 +282,7 @@ async function authenticatedFetch(url, options = {}) {
     };
     
     try {
-        const response = await fetch(url, mergedOptions);
+        const response = await fetchWithTimeout(url, mergedOptions);
         
         // Read the response body once so we can inspect it for both auth errors
         // and general HTTP errors without double-consuming the stream.
