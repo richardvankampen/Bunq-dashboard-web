@@ -1813,10 +1813,13 @@ def classify_account_type(account):
     if any(token in explicit_type_text for token in ('checking', 'payment', 'bank', 'card', 'current')):
         return 'checking'
 
+    # Guardrail: plain MonetaryAccountBank objects are checking unless the SDK
+    # gives explicit savings/investment indicators above.
+    if 'monetaryaccountbank' in class_name:
+        return 'checking'
+
     if any(token in fingerprint for token in (
-        'savings', 'spaar', 'spaarrekening', 'sparen',
-        'reserve', 'buffer', 'onvoorzien', 'emergency',
-        'vakantie', 'doel', 'goal', 'potje', 'stash'
+        'savings', 'saving', 'spaar', 'spaarrekening', 'sparen'
     )):
         return 'savings'
     if any(token in fingerprint for token in ('investment', 'stock', 'share', 'crypto', 'belegging', 'etf', 'equity')):
