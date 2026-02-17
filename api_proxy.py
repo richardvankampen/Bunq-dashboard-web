@@ -84,6 +84,28 @@ _BUNQ_CONTEXT_INITIALIZED = False
 _BUNQ_INIT_LAST_ATTEMPT_TS = 0.0
 _BUNQ_INIT_LAST_ERROR = None
 
+_MONETARY_ACCOUNT_VARIANT_FIELDS = (
+    ('MonetaryAccountSavings', 'savings'),
+    ('MonetaryAccountExternalSavings', 'savings'),
+    ('MonetaryAccountInvestment', 'investment'),
+    ('MonetaryAccountBank', 'checking'),
+    ('MonetaryAccountJoint', 'checking'),
+    ('MonetaryAccountCard', 'checking'),
+    ('MonetaryAccountLight', 'checking'),
+    ('MonetaryAccountExternal', 'checking'),
+    ('MonetaryAccountSwitchService', 'checking'),
+)
+
+_ALIAS_NESTED_FIELDS = (
+    'pointer',
+    'alias',
+    'label_monetary_account',
+    'label_user',
+    'user_alias',
+    'counterparty_alias',
+    'bunq_me',
+)
+
 def get_obj_field(obj, *field_names, default=None):
     """Read first non-empty field from objects or dictionaries."""
     if obj is None:
@@ -98,6 +120,39 @@ def get_obj_field(obj, *field_names, default=None):
         if value is not None:
             return value
     return default
+
+def _is_bunq_object_populated(obj):
+    if obj is None:
+        return False
+
+    has_data_method = getattr(obj, 'is_all_field_none', None)
+    if callable(has_data_method):
+        try:
+            if has_data_method():
+                return False
+        except Exception:
+            pass
+
+    if get_obj_field(obj, 'id_', 'id') is not None:
+        return True
+
+    return not isinstance(obj, (str, bytes))
+
+def unwrap_monetary_account(account):
+    """
+    Unwrap MonetaryAccountApiObject variants into the concrete account object.
+    Returns tuple: (resolved_account, embedded_type_hint).
+    """
+    if account is None:
+        return None, None
+
+    for variant_field, type_hint in _MONETARY_ACCOUNT_VARIANT_FIELDS:
+        nested = get_obj_field(account, variant_field)
+        if not _is_bunq_object_populated(nested):
+            continue
+        return nested, type_hint
+
+    return account, None
 
 def _has_zero_required_positional_args(callable_obj):
     try:
@@ -212,12 +267,15 @@ def list_monetary_accounts():
 
             accounts_added = 0
             for account in accounts:
-                account_id = get_obj_field(account, 'id_', 'id')
-                dedupe_key = account_id if account_id is not None else f"obj:{id(account)}"
+                resolved_account, _ = unwrap_monetary_account(account)
+                if resolved_account is None:
+                    continue
+                account_id = get_obj_field(resolved_account, 'id_', 'id')
+                dedupe_key = str(account_id) if account_id is not None else f"obj:{id(resolved_account)}"
                 if dedupe_key in seen_account_ids:
                     continue
                 seen_account_ids.add(dedupe_key)
-                merged_accounts.append(account)
+                merged_accounts.append(resolved_account)
                 accounts_added += 1
 
             if _MONETARY_ACCOUNT_ENDPOINT is None:
@@ -246,22 +304,25 @@ def discover_account_type_hints():
         elif any(token in normalized for token in ('investment', 'stock', 'crypto')):
             hinted_type = 'investment'
 
-        if hinted_type is None:
-            continue
-
         try:
             result = account_endpoint.list()
             accounts = getattr(result, 'value', result)
             if accounts is None:
                 continue
             for account in accounts:
-                account_id = get_obj_field(account, 'id_', 'id')
+                resolved_account, embedded_hint = unwrap_monetary_account(account)
+                if resolved_account is None:
+                    continue
+                account_id = get_obj_field(resolved_account, 'id_', 'id')
                 if account_id is None:
                     continue
                 key = str(account_id)
+                effective_hint = hinted_type or embedded_hint
+                if effective_hint not in ('savings', 'investment'):
+                    continue
                 if hints.get(key) == 'savings':
                     continue
-                hints[key] = hinted_type
+                hints[key] = effective_hint
         except Exception as exc:
             logger.warning(f"⚠️ Account type hint endpoint {name} failed: {exc}")
 
@@ -1485,27 +1546,59 @@ def normalize_iban(value):
         return None
     return normalized
 
+def iter_alias_nodes(alias, max_depth=3):
+    """
+    Iterate through alias-like objects and their common nested representations.
+    Supports bunq SDK variants where data can be nested in pointer/label objects.
+    """
+    if alias is None:
+        return
+
+    queue = [(alias, 0)]
+    seen = set()
+    while queue:
+        current, depth = queue.pop(0)
+        if current is None:
+            continue
+        identity = id(current)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        yield current
+
+        if depth >= max_depth:
+            continue
+
+        for nested_field in _ALIAS_NESTED_FIELDS:
+            nested_value = get_obj_field(current, nested_field)
+            if nested_value is None:
+                continue
+            if isinstance(nested_value, list):
+                for item in nested_value:
+                    queue.append((item, depth + 1))
+            else:
+                queue.append((nested_value, depth + 1))
+
 def extract_alias_iban(alias):
     """Extract IBAN from bunq alias-like objects across SDK variants."""
     if alias is None:
         return None
 
-    alias_type = (get_obj_field(alias, 'type', 'type_', default='') or '').upper()
-    alias_value = get_obj_field(alias, 'value', 'iban')
-    if alias_type == 'IBAN':
-        normalized = normalize_iban(alias_value)
-        if normalized:
-            return normalized
+    for candidate in iter_alias_nodes(alias):
+        alias_type = (get_obj_field(candidate, 'type', 'type_', default='') or '').upper()
+        alias_value = get_obj_field(candidate, 'value', 'iban')
+        if alias_type == 'IBAN':
+            normalized = normalize_iban(alias_value)
+            if normalized:
+                return normalized
 
-    # Some SDK variants expose raw IBAN or embed pointer-like objects.
-    for candidate in (
-        get_obj_field(alias, 'iban', 'value'),
-        get_obj_field(get_obj_field(alias, 'pointer'), 'value', 'iban'),
-        get_obj_field(get_obj_field(alias, 'alias'), 'value', 'iban'),
-    ):
-        normalized = normalize_iban(candidate)
-        if normalized:
-            return normalized
+        for raw_value in (
+            get_obj_field(candidate, 'iban', 'value'),
+            get_obj_field(candidate, 'swift_account_number', 'transferwise_account_number'),
+        ):
+            normalized = normalize_iban(raw_value)
+            if normalized:
+                return normalized
 
     return None
 
@@ -1514,20 +1607,58 @@ def extract_counterparty_name(counterparty_alias):
     if counterparty_alias is None:
         return 'Unknown'
 
-    for attr_name in ('display_name', 'name', 'description', 'label'):
-        value = get_obj_field(counterparty_alias, attr_name)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    fallback_candidate = None
+    for alias_node in iter_alias_nodes(counterparty_alias):
+        for attr_name in (
+            'display_name',
+            'name',
+            'merchant_name',
+            'company_name',
+            'description',
+            'label',
+            'nickname',
+        ):
+            value = get_obj_field(alias_node, attr_name)
+            if not isinstance(value, str):
+                continue
+            cleaned = value.strip()
+            if not cleaned:
+                continue
+            if fallback_candidate is None:
+                fallback_candidate = cleaned
+            if not is_opaque_reference_value(cleaned):
+                return cleaned
 
     iban = extract_alias_iban(counterparty_alias)
     if iban:
         return iban
 
-    alias_value = get_obj_field(counterparty_alias, 'value', 'iban')
+    alias_value = get_obj_field(counterparty_alias, 'value', 'iban', 'display_name', 'name')
     if isinstance(alias_value, str) and alias_value.strip():
         return alias_value.strip()
 
+    if fallback_candidate:
+        return fallback_candidate
+
     return 'Unknown'
+
+def extract_alias_merchant_category_code(alias):
+    """Extract MCC from alias-like structures (including nested label objects)."""
+    if alias is None:
+        return None
+
+    for alias_node in iter_alias_nodes(alias):
+        mcc = get_obj_field(alias_node, 'merchant_category_code', 'mcc')
+        if mcc is None:
+            continue
+        mcc_text = str(mcc).strip()
+        if not mcc_text:
+            continue
+        if re.fullmatch(r'\d{3,4}', mcc_text):
+            return mcc_text
+        return mcc_text
+
+    return None
 
 def is_opaque_reference_value(value):
     """
@@ -1596,6 +1727,20 @@ def classify_account_type(account):
     Coarse account classification for dashboard grouping.
     Returns one of: checking, savings, investment.
     """
+    if account is None:
+        return 'checking'
+
+    resolved_account, embedded_hint = unwrap_monetary_account(account)
+    if resolved_account is not None:
+        account = resolved_account
+    if embedded_hint in ('savings', 'investment'):
+        return embedded_hint
+
+    if _is_bunq_object_populated(get_obj_field(account, 'MonetaryAccountSavings', 'MonetaryAccountExternalSavings')):
+        return 'savings'
+    if _is_bunq_object_populated(get_obj_field(account, 'MonetaryAccountInvestment')):
+        return 'investment'
+
     class_name = _normalize_account_type_text(account.__class__.__name__)
     description = _normalize_account_type_text(get_obj_field(account, 'description', 'display_name', default=''))
     profile = get_obj_field(account, 'monetary_account_profile')
@@ -1633,16 +1778,32 @@ def classify_account_type(account):
             default=''
         ) or ''
     )
+    sub_status = get_obj_field(account, 'sub_status', 'substatus', default='') or ''
 
     explicit_type_fields = [
         subtype,
         profile_type,
         setting_type,
+        sub_status,
         get_obj_field(account, 'monetary_account_type', default=''),
         get_obj_field(account, 'account_type', default=''),
     ]
     explicit_type_text = " ".join(_normalize_account_type_text(field) for field in explicit_type_fields if field)
     fingerprint = f"{class_name} {description} {explicit_type_text}"
+
+    # Hard signals from SDK model fields.
+    if get_obj_field(account, 'savings_goal', 'savings_goal_progress') is not None:
+        return 'savings'
+    if get_obj_field(account, 'number_of_payment_remaining') is not None:
+        return 'savings'
+    if get_obj_field(account, 'birdee_investment_portfolio') is not None:
+        return 'investment'
+
+    # Hard signals from SDK class names.
+    if any(token in class_name for token in ('monetaryaccountsavings', 'externalsavings')):
+        return 'savings'
+    if 'monetaryaccountinvestment' in class_name:
+        return 'investment'
 
     # Hard signals based on official type-like fields
     if any(token in explicit_type_text for token in ('investment', 'stock', 'share', 'crypto', 'belegging')):
@@ -3421,7 +3582,10 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             context=f"payment {payment_id} amount"
         )
         merchant_reference = get_obj_field(payment, 'merchant_reference', 'merchant_reference_')
-        merchant_category_code = get_obj_field(counterparty_alias, 'merchant_category_code')
+        merchant_category_code = (
+            extract_alias_merchant_category_code(counterparty_alias)
+            or get_obj_field(payment, 'merchant_category_code', 'mcc')
+        )
         category = categorize_transaction(
             description,
             counterparty_name,
