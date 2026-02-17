@@ -267,9 +267,35 @@ async function authenticatedFetch(url, options = {}) {
         }
         
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            let errorPayload = null;
+            let errorMessage = `HTTP ${response.status}`;
+            try {
+                errorPayload = await response.json();
+                if (errorPayload && typeof errorPayload === 'object') {
+                    const backendError = (errorPayload.error || errorPayload.message || '').toString().trim();
+                    if (backendError) {
+                        errorMessage = backendError;
+                    }
+                }
+            } catch (_) {
+                try {
+                    const text = (await response.text() || '').trim();
+                    if (text) {
+                        errorMessage = text;
+                    }
+                } catch (__ignored) {
+                    // keep default HTTP status message
+                }
+            }
+
+            return {
+                success: false,
+                error: errorMessage,
+                http_status: response.status,
+                data: errorPayload?.data || null
+            };
         }
-        
+
         return await response.json();
         
     } catch (error) {

@@ -2127,13 +2127,40 @@ def get_api_key_from_vaultwarden_cli(return_status=False):
 
             login_items = [item for item in items if item.get('type') == 1]
             exact = [item for item in login_items if str(item.get('name', '')).strip() == item_name]
-            candidates = exact if exact else login_items
 
-            if not candidates:
+            if len(exact) > 1:
+                duplicate_ids = [str(item.get('id') or '?') for item in exact[:10]]
+                status['item_found'] = True
+                status['error'] = (
+                    f"Multiple Vault items found with exact name '{item_name}' "
+                    f"(count={len(exact)}, ids={', '.join(duplicate_ids)}). "
+                    "Use a unique VAULTWARDEN_ITEM_NAME."
+                )
+                if return_status:
+                    return None, status
+                logger.error(f"❌ Vaultwarden CLI error: {status['error']}")
+                return None
+
+            if len(exact) == 0:
                 status['item_found'] = False
-                return (None, status) if return_status else None
+                similar_names = sorted({
+                    str(item.get('name', '')).strip()
+                    for item in login_items
+                    if str(item.get('name', '')).strip()
+                })
+                if similar_names:
+                    status['error'] = (
+                        f"Vault item '{item_name}' not found as exact login item name. "
+                        f"Available (first 5): {', '.join(similar_names[:5])}"
+                    )
+                else:
+                    status['error'] = f"Vault item '{item_name}' not found in vault"
+                if return_status:
+                    return None, status
+                logger.error(f"❌ Vaultwarden CLI error: {status['error']}")
+                return None
 
-            chosen = candidates[0]
+            chosen = exact[0]
             status['item_found'] = True
             password = ((chosen.get('login') or {}).get('password') or '').strip()
             status['item_has_password'] = bool(password)
@@ -2213,20 +2240,36 @@ def get_api_key_from_vaultwarden_api(return_status=False):
         items_response.raise_for_status()
         items = items_response.json().get('data', [])
 
-        for item in items:
-            if item.get('name') == item_name and item.get('type') == 1:
-                status['item_found'] = True
-                password = ((item.get('login') or {}).get('password') or '').strip()
-                status['item_has_password'] = bool(password)
-                if password:
-                    if return_status:
-                        return password, status
-                    logger.info("✅ API key retrieved from vault (API path)")
-                    return password
+        login_items = [item for item in items if item.get('type') == 1]
+        exact = [item for item in login_items if str(item.get('name', '')).strip() == str(item_name).strip()]
+
+        if len(exact) > 1:
+            duplicate_ids = [str(item.get('id') or '?') for item in exact[:10]]
+            status['item_found'] = True
+            status['error'] = (
+                f"Multiple Vault items found with exact name '{item_name}' "
+                f"(count={len(exact)}, ids={', '.join(duplicate_ids)}). "
+                "Use a unique VAULTWARDEN_ITEM_NAME."
+            )
+            if return_status:
+                return None, status
+            logger.error(f"❌ {status['error']}")
+            return None
+
+        if len(exact) == 1:
+            chosen = exact[0]
+            status['item_found'] = True
+            password = ((chosen.get('login') or {}).get('password') or '').strip()
+            status['item_has_password'] = bool(password)
+            if password:
                 if return_status:
-                    return None, status
-                logger.error(f"❌ Item '{item_name}' found but password field is empty!")
-                return None
+                    return password, status
+                logger.info("✅ API key retrieved from vault (API path)")
+                return password
+            if return_status:
+                return None, status
+            logger.error(f"❌ Item '{item_name}' found but password field is empty!")
+            return None
 
         if items:
             first_item_name = str(items[0].get('name', ''))
@@ -2236,7 +2279,18 @@ def get_api_key_from_vaultwarden_api(return_status=False):
                     "Use VAULTWARDEN_ACCESS_METHOD=cli and provide vaultwarden_master_password secret."
                 )
             else:
-                status['error'] = f"Item '{item_name}' not found in vault"
+                similar_names = sorted({
+                    str(item.get('name', '')).strip()
+                    for item in login_items
+                    if str(item.get('name', '')).strip()
+                })
+                if similar_names:
+                    status['error'] = (
+                        f"Vault item '{item_name}' not found as exact login item name. "
+                        f"Available (first 5): {', '.join(similar_names[:5])}"
+                    )
+                else:
+                    status['error'] = f"Item '{item_name}' not found in vault"
         else:
             status['error'] = f"Item '{item_name}' not found in vault"
 
@@ -3020,7 +3074,10 @@ def set_bunq_whitelist_ip():
     ):
         return jsonify({
             'success': False,
-            'error': 'Bunq API is not initialized'
+            'error': _BUNQ_INIT_LAST_ERROR or 'Bunq API is not initialized',
+            'data': {
+                'bunq_last_error': _BUNQ_INIT_LAST_ERROR
+            }
         }), 500
 
     result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=deactivate_others)
