@@ -25,6 +25,24 @@ if [ "$(id -u)" -ne 0 ]; then
   DOCKER_CMD="sudo docker"
 fi
 
+wait_for_service_update_idle() {
+  SERVICE_TO_WAIT="$1"
+  MAX_WAIT_SECONDS="${2:-60}"
+  WAIT_INTERVAL=2
+  WAITED=0
+
+  while [ "${WAITED}" -lt "${MAX_WAIT_SECONDS}" ]; do
+    UPDATE_STATE="$($DOCKER_CMD service inspect --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{else}}none{{end}}' "${SERVICE_TO_WAIT}" 2>/dev/null || echo missing)"
+    [ "${UPDATE_STATE}" != "updating" ] && break
+    sleep "${WAIT_INTERVAL}"
+    WAITED=$((WAITED + WAIT_INTERVAL))
+  done
+
+  if [ "${WAITED}" -gt 0 ]; then
+    echo "Info: waited ${WAITED}s for previous service update to settle."
+  fi
+}
+
 if [ -z "${IMAGE_TAG}" ] && [ "${AUTO_TAG_FROM_GIT}" = "true" ] && command -v git >/dev/null 2>&1; then
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     IMAGE_TAG="$(git rev-parse --short HEAD 2>/dev/null || true)"
@@ -50,6 +68,7 @@ esac
 
 echo "Service: ${SERVICE_NAME}"
 echo "[1/5] Force restart service"
+wait_for_service_update_idle "${SERVICE_NAME}" 60
 if [ -n "${IMAGE_TAG}" ]; then
   echo "Using image override: ${TARGET_IMAGE}"
   if ! $DOCKER_CMD image inspect "${TARGET_IMAGE}" >/dev/null 2>&1; then
@@ -69,7 +88,7 @@ if [ -n "${IMAGE_TAG}" ]; then
     [ "${UPDATE_EXIT}" -eq 0 ] && break
     if printf '%s\n' "${UPDATE_ERR}" | grep -qi "update out of sequence"; then
       if [ "${UPDATE_ATTEMPT}" -lt "${MAX_UPDATE_RETRIES}" ]; then
-        echo "WARN: update out of sequence (attempt ${UPDATE_ATTEMPT}/${MAX_UPDATE_RETRIES}), retrying in ${UPDATE_RETRY_DELAY}s ..."
+        echo "WARN: Swarm update lock busy (attempt ${UPDATE_ATTEMPT}/${MAX_UPDATE_RETRIES}); retrying in ${UPDATE_RETRY_DELAY}s ..."
         sleep "${UPDATE_RETRY_DELAY}"
         UPDATE_ATTEMPT=$((UPDATE_ATTEMPT + 1))
         continue
@@ -89,7 +108,7 @@ else
     [ "${UPDATE_EXIT}" -eq 0 ] && break
     if printf '%s\n' "${UPDATE_ERR}" | grep -qi "update out of sequence"; then
       if [ "${UPDATE_ATTEMPT}" -lt "${MAX_UPDATE_RETRIES}" ]; then
-        echo "WARN: update out of sequence (attempt ${UPDATE_ATTEMPT}/${MAX_UPDATE_RETRIES}), retrying in ${UPDATE_RETRY_DELAY}s ..."
+        echo "WARN: Swarm update lock busy (attempt ${UPDATE_ATTEMPT}/${MAX_UPDATE_RETRIES}); retrying in ${UPDATE_RETRY_DELAY}s ..."
         sleep "${UPDATE_RETRY_DELAY}"
         UPDATE_ATTEMPT=$((UPDATE_ATTEMPT + 1))
         continue
