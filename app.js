@@ -368,18 +368,13 @@ async function loadBalanceHistory(days = CONFIG.timeRange) {
     }
 
     try {
-        const response = await fetch(`${CONFIG.apiEndpoint}/history/balances?days=${days}`, {
-            credentials: 'include'
-        });
-        if (!response.ok) {
+        const payload = await authenticatedFetch(`${CONFIG.apiEndpoint}/history/balances?days=${days}`);
+        if (!payload || !payload.success || !payload.data) {
             balanceHistoryData = null;
             return null;
         }
-        const payload = await response.json();
-        if (payload && payload.success && payload.data) {
-            balanceHistoryData = payload.data;
-            return balanceHistoryData;
-        }
+        balanceHistoryData = payload.data;
+        return balanceHistoryData;
     } catch (error) {
         console.warn('Unable to load balance history:', error);
     }
@@ -395,18 +390,13 @@ async function loadDataQuality(days = CONFIG.timeRange) {
     }
 
     try {
-        const response = await fetch(`${CONFIG.apiEndpoint}/admin/data-quality?days=${days}`, {
-            credentials: 'include'
-        });
-        if (!response.ok) {
+        const payload = await authenticatedFetch(`${CONFIG.apiEndpoint}/admin/data-quality?days=${days}`);
+        if (!payload || !payload.success || !payload.data) {
             dataQualitySummary = null;
             return null;
         }
-        const payload = await response.json();
-        if (payload && payload.success && payload.data) {
-            dataQualitySummary = payload.data;
-            return dataQualitySummary;
-        }
+        dataQualitySummary = payload.data;
+        return dataQualitySummary;
     } catch (error) {
         console.warn('Unable to load data quality summary:', error);
     }
@@ -916,6 +906,7 @@ async function loadRealData() {
         let all = [];
         let total = null;
         let lastResponse = null;
+        let loadError = '';
         
         const accountParam = buildAccountFilterParam();
         const excludeParam = `&exclude_internal=${CONFIG.excludeInternalTransfers}`;
@@ -927,6 +918,7 @@ async function loadRealData() {
             
             if (!response || !response.success) {
                 console.error('❌ Failed to load real data');
+                loadError = response?.error || 'Unable to load transactions.';
                 break;
             }
             
@@ -958,6 +950,8 @@ async function loadRealData() {
         } else if (lastResponse === null) {
             // Session expired - modal already shown
             loadDemoData();
+        } else if (loadError) {
+            showError(`Kon data niet laden: ${loadError}`);
         }
         
     } catch (error) {
@@ -1318,8 +1312,8 @@ function resolveMerchantLabel(transaction) {
     };
 
     const preferred = [
-        transaction?.counterparty,
         transaction?.merchant,
+        transaction?.counterparty,
         transaction?.description
     ];
 
@@ -1348,7 +1342,25 @@ function normalizeTransactions(data) {
         ...t,
         date: t.date instanceof Date ? t.date : new Date(t.date),
         merchant: resolveMerchantLabel(t),
-        amount: Number(t.amount) || 0,
+        amount: (() => {
+            const nativeAmount = Number(t.amount);
+            const amountEur = Number(t.amount_eur);
+            const currency = String(t.currency || 'EUR').toUpperCase();
+            if (Number.isFinite(amountEur)) {
+                return amountEur;
+            }
+            // Avoid mixing raw non-EUR values into EUR-based charts/KPIs.
+            if (currency !== 'EUR') {
+                return 0;
+            }
+            return Number.isFinite(nativeAmount) ? nativeAmount : 0;
+        })(),
+        amount_native: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0,
+        amount_eur: Number.isFinite(Number(t.amount_eur))
+            ? Number(t.amount_eur)
+            : (String(t.currency || 'EUR').toUpperCase() === 'EUR' ? Number(t.amount) || 0 : null),
+        amount_conversion_missing: String(t.currency || 'EUR').toUpperCase() !== 'EUR'
+            && !Number.isFinite(Number(t.amount_eur)),
         category: resolveCategoryLabel(t)
     }));
 }
@@ -4309,7 +4321,7 @@ async function loadAdminStatus() {
         const response = await authenticatedFetch(`${CONFIG.apiEndpoint}/admin/status`);
         if (!response || !response.success) {
             adminStatusData = null;
-            renderAdminStatusPanel(null, 'Admin status ophalen mislukt.', true);
+            renderAdminStatusPanel(null, response?.error || 'Admin status ophalen mislukt.', true);
             return;
         }
         adminStatusData = response.data;
@@ -4487,7 +4499,11 @@ async function reinitializeBunqContext() {
             })
         });
         if (!response || !response.success) {
-            renderAdminStatusPanel(adminStatusData, 'Bunq context herinitialisatie mislukt.', true);
+            renderAdminStatusPanel(
+                adminStatusData,
+                response?.error || 'Bunq context herinitialisatie mislukt.',
+                true
+            );
             return;
         }
 

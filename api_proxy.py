@@ -2032,9 +2032,13 @@ def persist_transactions(transactions):
                 tx_key = build_transaction_cache_key(transaction)
                 amount = safe_float(transaction.get('amount'), default=0.0, context='transaction amount')
                 currency = (transaction.get('currency') or 'EUR').upper()
-                tx_date = parse_bunq_datetime(transaction.get('date'), context='transaction date')
-                rate_date = tx_date.date().isoformat() if tx_date else None
-                amount_eur, _, _ = convert_amount_to_eur(amount, currency, rate_date=rate_date)
+                amount_eur = transaction.get('amount_eur')
+                if amount_eur is None:
+                    tx_date = parse_bunq_datetime(transaction.get('date'), context='transaction date')
+                    rate_date = tx_date.date().isoformat() if tx_date else None
+                    amount_eur, _, _ = convert_amount_to_eur(amount, currency, rate_date=rate_date)
+                else:
+                    amount_eur = safe_float(amount_eur, default=None, context='transaction amount_eur')
                 connection.execute(
                     """
                     INSERT INTO transaction_cache (
@@ -3584,6 +3588,12 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             get_obj_field(payment, 'amount', 'monetary_value'),
             context=f"payment {payment_id} amount"
         )
+        rate_date = created.date().isoformat()
+        amount_eur_value, fx_rate_to_eur, fx_converted = convert_amount_to_eur(
+            amount_value,
+            amount_currency,
+            rate_date=rate_date,
+        )
         merchant_reference = get_obj_field(payment, 'merchant_reference', 'merchant_reference_')
         merchant_category_code = (
             extract_alias_merchant_category_code(counterparty_alias)
@@ -3616,6 +3626,9 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             'date': created.isoformat(),
             'amount': amount_value,
             'currency': amount_currency,
+            'amount_eur': amount_eur_value,
+            'fx_rate_to_eur': fx_rate_to_eur,
+            'fx_converted': fx_converted,
             'description': description,
             'counterparty': counterparty_name,
             'merchant': merchant_label,
@@ -3780,17 +3793,33 @@ def get_statistics():
         
         if exclude_internal:
             all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]
-        
-        income = sum(t['amount'] for t in all_transactions if t['amount'] > 0)
-        expenses = abs(sum(t['amount'] for t in all_transactions if t['amount'] < 0))
+
+        def tx_amount_for_stats(tx):
+            """
+            Prefer EUR-normalized amount for aggregate stats.
+            Fall back to native amount only when currency is EUR.
+            """
+            amount_eur = tx.get('amount_eur')
+            if amount_eur is not None:
+                return safe_float(amount_eur, default=0.0, context='statistics amount_eur')
+
+            native_amount = safe_float(tx.get('amount'), default=0.0, context='statistics amount')
+            currency = (tx.get('currency') or 'EUR').upper()
+            if currency != 'EUR':
+                return 0.0
+            return native_amount
+
+        amounts = [(t, tx_amount_for_stats(t)) for t in all_transactions]
+        income = sum(amount for _, amount in amounts if amount > 0)
+        expenses = abs(sum(amount for _, amount in amounts if amount < 0))
         net_savings = income - expenses
         savings_rate = (net_savings / income * 100) if income > 0 else 0
         
         category_totals = {}
-        for t in all_transactions:
-            if t['amount'] < 0:
+        for t, tx_amount in amounts:
+            if tx_amount < 0:
                 cat = t['category']
-                category_totals[cat] = category_totals.get(cat, 0) + abs(t['amount'])
+                category_totals[cat] = category_totals.get(cat, 0) + abs(tx_amount)
         
         response = {
             'success': True,
