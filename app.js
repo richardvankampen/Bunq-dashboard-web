@@ -18,6 +18,8 @@ const DEFAULT_ADMIN_MAINTENANCE_OPTIONS = {
 };
 const CONFIG = {
     apiEndpoint: localStorage.getItem('apiEndpoint') || DEFAULT_API_ENDPOINT,
+    // Minimum 60 seconds to stay well within Bunq API rate limits (30 req/min).
+    // Values below 60 will be silently raised to 60 at runtime.
     refreshInterval: parseInt(localStorage.getItem('refreshInterval')) || 0,
     enableAnimations: localStorage.getItem('enableAnimations') !== 'false',
     enableParticles: localStorage.getItem('enableParticles') !== 'false',
@@ -158,6 +160,23 @@ async function checkAuthStatus() {
 }
 
 /**
+ * Re-check auth whenever the user returns to this tab.
+ * The server-side session may have expired while the tab was in the background.
+ */
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isAuthenticated) {
+        checkAuthStatus().then((stillAuthenticated) => {
+            if (!stillAuthenticated && isAuthenticated) {
+                // Session expired while away - show login modal.
+                isAuthenticated = false;
+                updateAuthUI(false);
+                showLoginModal();
+            }
+        }).catch(() => {});
+    }
+});
+
+/**
  * Login user with username and password
  */
 async function login(username, password) {
@@ -180,10 +199,13 @@ async function login(username, password) {
             hideLoginModal();
             await loadAccounts();
             
-            // Load data after successful login
-            if (CONFIG.useRealData) {
-                await loadRealData();
-            }
+            // After a successful login always switch to real data and load it.
+            // The user just authenticated — showing demo data at this point would be confusing.
+            CONFIG.useRealData = true;
+            localStorage.setItem('useRealData', 'true');
+            const useRealDataCheckbox = document.getElementById('useRealData');
+            if (useRealDataCheckbox) useRealDataCheckbox.checked = true;
+            await loadRealData();
             
             return true;
         } else {
@@ -247,16 +269,37 @@ async function authenticatedFetch(url, options = {}) {
     try {
         const response = await fetch(url, mergedOptions);
         
+        // Read the response body once so we can inspect it for both auth errors
+        // and general HTTP errors without double-consuming the stream.
+        let responseBody = null;
+        let parseError = false;
+        if (response.status !== 204) {
+            try {
+                responseBody = await response.json();
+            } catch (_) {
+                parseError = true;
+            }
+        }
+
         // Check for authentication errors
         if (response.status === 401) {
-            const data = await response.json();
-            
-            if (data.login_required) {
+            if (responseBody && responseBody.login_required) {
                 console.error('🔒 Session expired or not authenticated');
                 isAuthenticated = false;
                 updateAuthUI(false);
                 showLoginModal();
                 return null;
+            }
+            // Bunq-specific session expiry (not a user session issue): surface as a
+            // retriable error so the dashboard can show a message and auto-retry.
+            if (responseBody && responseBody.bunq_unauthorized) {
+                console.warn('⚠️ Bunq API session token rejected — context will auto-recover on retry');
+                return {
+                    success: false,
+                    error: responseBody.error || 'Bunq API session expired. Please refresh.',
+                    bunq_unauthorized: true,
+                    http_status: 401
+                };
             }
         }
         
@@ -267,36 +310,27 @@ async function authenticatedFetch(url, options = {}) {
         }
         
         if (!response.ok) {
-            let errorPayload = null;
             let errorMessage = `HTTP ${response.status}`;
-            try {
-                errorPayload = await response.json();
-                if (errorPayload && typeof errorPayload === 'object') {
-                    const backendError = (errorPayload.error || errorPayload.message || '').toString().trim();
-                    if (backendError) {
-                        errorMessage = backendError;
-                    }
-                }
-            } catch (_) {
-                try {
-                    const text = (await response.text() || '').trim();
-                    if (text) {
-                        errorMessage = text;
-                    }
-                } catch (__ignored) {
-                    // keep default HTTP status message
-                }
+            if (responseBody && typeof responseBody === 'object') {
+                const backendError = (responseBody.error || responseBody.message || '').toString().trim();
+                if (backendError) errorMessage = backendError;
+            } else if (parseError) {
+                // Body wasn't JSON — try to get raw text if we haven't already consumed it.
+                // (In this branch the body parse already failed so responseBody is null.)
+                errorMessage = `HTTP ${response.status}`;
             }
 
+            // Always return an explicit failure object with success=false so
+            // callers can uniformly test `!response || !response.success`.
             return {
                 success: false,
                 error: errorMessage,
                 http_status: response.status,
-                data: errorPayload?.data || null
+                data: responseBody?.data || null
             };
         }
 
-        return await response.json();
+        return responseBody;
         
     } catch (error) {
         console.error('API request failed:', error);
@@ -662,7 +696,8 @@ function setupEventListeners() {
     
     // Time range
     document.getElementById('timeRange')?.addEventListener('change', (e) => {
-        CONFIG.timeRange = e.target.value === 'all' ? 9999 : parseInt(e.target.value);
+        // Backend MAX_DAYS is 3650; use that as the upper bound for 'all'.
+        CONFIG.timeRange = e.target.value === 'all' ? 3650 : parseInt(e.target.value);
         refreshData();
     });
     
@@ -900,6 +935,10 @@ async function loadRealData() {
         console.log('📡 Fetching real data from Bunq API...');
         await loadAccounts();
         
+        // The backend fetches transactions from the Bunq SDK using cursor-based
+        // pagination (older_id) internally — one backend call can cover many SDK
+        // pages. We use offset-based page params here to page through the
+        // backend's aggregated result set efficiently.
         const pageSize = 500;
         const maxPages = 20;
         let page = 1;
@@ -919,6 +958,10 @@ async function loadRealData() {
             if (!response || !response.success) {
                 console.error('❌ Failed to load real data');
                 loadError = response?.error || 'Unable to load transactions.';
+                // If the Bunq API session was rejected, surface a clear retry hint.
+                if (response?.bunq_unauthorized) {
+                    loadError = 'Bunq API session token expired. The server will auto-recover — please try refreshing in a moment.';
+                }
                 break;
             }
             
@@ -1046,6 +1089,11 @@ function classifyAccountType(account) {
         || explicitTypeText.includes('card')
         || explicitTypeText.includes('current')
     ) return 'checking';
+
+    // Guardrail: plain MonetaryAccountBank is checking unless explicit type fields say otherwise.
+    if (className.includes('monetaryaccountbank')) {
+        return 'checking';
+    }
 
     const fingerprint = `${description} ${className} ${explicitTypeText}`;
     if (
@@ -4042,9 +4090,12 @@ function updateLastUpdateTime() {
 function startAutoRefresh() {
     if (refreshIntervalId) clearInterval(refreshIntervalId);
     if (CONFIG.refreshInterval > 0) {
+        // Enforce a minimum of 1 minute to stay within Bunq's API rate limit (30 req/min).
+        // A full data refresh issues several API calls, so anything below 60s is unsafe.
+        const intervalMinutes = Math.max(CONFIG.refreshInterval, 1);
         refreshIntervalId = setInterval(() => {
             refreshData();
-        }, CONFIG.refreshInterval * 60 * 1000);
+        }, intervalMinutes * 60 * 1000);
     }
 }
 

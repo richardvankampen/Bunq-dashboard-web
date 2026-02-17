@@ -14,6 +14,7 @@ from bunq.sdk.context.api_context import ApiContext
 from bunq.sdk.context.api_environment_type import ApiEnvironmentType
 from bunq.sdk.context.bunq_context import BunqContext
 from bunq.sdk.model.generated import endpoint
+from bunq.sdk.exception.unauthorized_exception import UnauthorizedException
 from datetime import datetime, timedelta, timezone
 import os
 import json
@@ -85,15 +86,25 @@ _BUNQ_INIT_LAST_ATTEMPT_TS = 0.0
 _BUNQ_INIT_LAST_ERROR = None
 
 _MONETARY_ACCOUNT_VARIANT_FIELDS = (
+    # SDK generates classes with ApiObject suffix; include both for forward/backward compat.
     ('MonetaryAccountSavings', 'savings'),
+    ('MonetaryAccountSavingsApiObject', 'savings'),
     ('MonetaryAccountExternalSavings', 'savings'),
+    ('MonetaryAccountExternalSavingsApiObject', 'savings'),
     ('MonetaryAccountInvestment', 'investment'),
+    ('MonetaryAccountInvestmentApiObject', 'investment'),
     ('MonetaryAccountBank', 'checking'),
+    ('MonetaryAccountBankApiObject', 'checking'),
     ('MonetaryAccountJoint', 'checking'),
+    ('MonetaryAccountJointApiObject', 'checking'),
     ('MonetaryAccountCard', 'checking'),
+    ('MonetaryAccountCardApiObject', 'checking'),
     ('MonetaryAccountLight', 'checking'),
+    ('MonetaryAccountLightApiObject', 'checking'),
     ('MonetaryAccountExternal', 'checking'),
+    ('MonetaryAccountExternalApiObject', 'checking'),
     ('MonetaryAccountSwitchService', 'checking'),
+    ('MonetaryAccountSwitchServiceApiObject', 'checking'),
 )
 
 _ALIAS_NESTED_FIELDS = (
@@ -178,12 +189,23 @@ def _is_monetary_list_endpoint(name, candidate):
     return _has_zero_required_positional_args(candidate.list)
 
 def discover_monetary_account_endpoints():
-    """Discover monetary-account endpoints ordered by preference."""
+    """Discover monetary-account endpoints ordered by preference.
+    
+    The canonical SDK class is MonetaryAccountApiObject with signature:
+        MonetaryAccountApiObject.list(params=None, custom_headers=None)
+    It returns all account subtypes as a polymorphic list; each item has
+    sub-object fields like .MonetaryAccountBank, .MonetaryAccountSavings etc.
+    Prefer this unified endpoint first, then fall back to subtype-specific ones.
+    """
     direct_candidates = (
+        'MonetaryAccountApiObject',   # SDK canonical unified endpoint
+        'MonetaryAccount',            # Legacy alias
+        'MonetaryAccountBankApiObject',
         'MonetaryAccountBank',
+        'MonetaryAccountSavingsApiObject',
         'MonetaryAccountSavings',
+        'MonetaryAccountInvestmentApiObject',
         'MonetaryAccountInvestment',
-        'MonetaryAccount',
     )
     discovered = []
     seen = set()
@@ -243,6 +265,9 @@ def list_monetary_accounts():
     """Return monetary accounts with bunq-sdk compatibility across versions."""
     global _MONETARY_ACCOUNT_ENDPOINT
 
+    # Ensure the Bunq session token is still valid before any SDK call.
+    ensure_bunq_session_active()
+
     candidates = []
     if _MONETARY_ACCOUNT_ENDPOINT is not None:
         candidates.append(("cached", _MONETARY_ACCOUNT_ENDPOINT))
@@ -290,42 +315,27 @@ def list_monetary_accounts():
 
     raise RuntimeError(f"bunq-sdk monetary account list failed: {last_exc}")
 
-def discover_account_type_hints():
+def derive_account_type_hints_from_accounts(accounts):
     """
-    Build account-type hints from endpoint names when available.
-    Useful for SDK variants where savings products are represented as bank accounts.
+    Build account-type hints from an already-fetched list of resolved accounts.
+    This avoids making extra Bunq API calls just to determine account types —
+    the type information is already embedded in the account objects returned by
+    list_monetary_accounts() via unwrap_monetary_account().
+
+    Returns a dict of {str(account_id): 'savings'|'investment'}.
+    Only savings and investment overrides are stored; checking is the default.
     """
     hints = {}
-    for name, account_endpoint in discover_monetary_account_endpoints():
-        normalized = str(name or '').lower().replace('_', '').replace('-', '').replace('.', '')
-        hinted_type = None
-        if 'savings' in normalized:
-            hinted_type = 'savings'
-        elif any(token in normalized for token in ('investment', 'stock', 'crypto')):
-            hinted_type = 'investment'
-
-        try:
-            result = account_endpoint.list()
-            accounts = getattr(result, 'value', result)
-            if accounts is None:
-                continue
-            for account in accounts:
-                resolved_account, embedded_hint = unwrap_monetary_account(account)
-                if resolved_account is None:
-                    continue
-                account_id = get_obj_field(resolved_account, 'id_', 'id')
-                if account_id is None:
-                    continue
-                key = str(account_id)
-                effective_hint = hinted_type or embedded_hint
-                if effective_hint not in ('savings', 'investment'):
-                    continue
-                if hints.get(key) == 'savings':
-                    continue
-                hints[key] = effective_hint
-        except Exception as exc:
-            logger.warning(f"⚠️ Account type hint endpoint {name} failed: {exc}")
-
+    for account in accounts:
+        account_id = get_obj_field(account, 'id_', 'id')
+        if account_id is None:
+            continue
+        key = str(account_id)
+        # classify_account_type already inspects class names and SDK fields;
+        # we only store non-default (non-checking) classifications as hints.
+        account_type = classify_account_type(account)
+        if account_type in ('savings', 'investment'):
+            hints[key] = account_type
     return hints
 
 def _is_payment_list_endpoint(name, candidate):
@@ -345,10 +355,16 @@ def _is_payment_list_endpoint(name, candidate):
     return True
 
 def discover_payment_endpoints():
-    """Discover payment endpoints ordered by preference."""
+    """Discover payment endpoints ordered by preference.
+    
+    The canonical SDK class is PaymentApiObject. We list it first so it is
+    always tried before any fallback variant. The list() signature is:
+        PaymentApiObject.list(monetary_account_id=None, params=None, custom_headers=None)
+    """
     direct_candidates = (
-        'Payment',
-        'PaymentApiObject',
+        'PaymentApiObject',   # SDK canonical name (endpoint.py)
+        'Payment',            # Legacy / aliased name
+        'PaymentApiObjectApiObject',  # Guard against double-suffix in future SDK versions
         'MonetaryAccountPayment',
         'MonetaryAccountPaymentApiObject',
         'MonetaryAccountBankPayment',
@@ -446,6 +462,9 @@ def list_payments_for_account(account_id, cutoff_date=None):
     """List payments for one monetary account across bunq-sdk variants."""
     global _PAYMENT_ENDPOINT, _PAYMENT_LIST_MODE
 
+    # Ensure the Bunq session token is still valid before any SDK call.
+    ensure_bunq_session_active()
+
     page_size = get_int_env('BUNQ_PAYMENT_PAGE_SIZE', 200)
     if page_size < 1:
         page_size = 200
@@ -455,9 +474,12 @@ def list_payments_for_account(account_id, cutoff_date=None):
     if max_pages < 1:
         max_pages = 50
 
+    # SDK canonical call signature (from endpoint.py):
+    # PaymentApiObject.list(monetary_account_id=None, params=None, custom_headers=None)
+    # Priority order: named kwargs with params first (most specific), then fallbacks.
     modes = (
-        'kw_monetary_account_id_params',
-        'kw_monetary_account_id',
+        'kw_monetary_account_id_params',   # canonical SDK call
+        'kw_monetary_account_id',          # canonical SDK call, no extra params
         'kw_account_id_params',
         'kw_account_id',
         'kw_monetary_account_bank_id_params',
@@ -1004,6 +1026,9 @@ def set_bunq_api_whitelist_ip(target_ip=None, deactivate_others=False):
     """
     Ensure target IPv4 is ACTIVE in Bunq API allowlist via SDK endpoints.
     """
+    # Ensure session is valid before any SDK calls.
+    ensure_bunq_session_active()
+
     try:
         resolved_target_ip = validate_ipv4_or_none(target_ip, require_public=True)
         if not resolved_target_ip:
@@ -1382,12 +1407,25 @@ def requires_auth(f):
         
         # Optional: Check session expiry
         if session.get('expires_at'):
-            if datetime.fromisoformat(session['expires_at']) < datetime.now():
+            try:
+                expires_dt = datetime.fromisoformat(session['expires_at'])
+                # Normalise: if expires_at is naive, compare naively; if aware, compare aware.
+                now_dt = datetime.now(timezone.utc) if expires_dt.tzinfo is not None else datetime.now()
+                if expires_dt < now_dt:
+                    session.clear()
+                    logger.info(f"⏱️  Session expired for {request.remote_addr}")
+                    return jsonify({
+                        'success': False,
+                        'error': 'Session expired. Please login again.',
+                        'login_required': True
+                    }), 401
+            except (ValueError, TypeError) as dt_exc:
+                # Malformed expires_at — clear the session for safety.
+                logger.warning(f"⚠️ Could not parse session expires_at: {dt_exc}; clearing session")
                 session.clear()
-                logger.info(f"⏱️  Session expired for {request.remote_addr}")
                 return jsonify({
                     'success': False,
-                    'error': 'Session expired. Please login again.',
+                    'error': 'Session invalid. Please login again.',
                     'login_required': True
                 }), 401
         
@@ -1813,6 +1851,11 @@ def classify_account_type(account):
     if any(token in explicit_type_text for token in ('checking', 'payment', 'bank', 'card', 'current')):
         return 'checking'
 
+    # Guardrail: plain MonetaryAccountBank objects are checking unless the SDK
+    # gives explicit savings/investment indicators above.
+    if 'monetaryaccountbank' in class_name:
+        return 'checking'
+
     if any(token in fingerprint for token in (
         'savings', 'saving', 'spaar', 'spaarrekening', 'sparen'
     )):
@@ -2119,8 +2162,8 @@ def login():
             session.clear()  # Clear any existing session
             session['authenticated'] = True
             session['username'] = username
-            session['login_time'] = datetime.now().isoformat()
-            session['expires_at'] = (datetime.now() + timedelta(hours=24)).isoformat()
+            session['login_time'] = datetime.now(timezone.utc).isoformat()
+            session['expires_at'] = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
             session.permanent = True  # Use PERMANENT_SESSION_LIFETIME
             
             logger.info(f"✅ Successful login: {username} from {request.remote_addr}")
@@ -2948,6 +2991,11 @@ def init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=True):
             except Exception as remove_exc:
                 logger.warning(f"⚠️ Failed removing Bunq context '{CONFIG_FILE}': {remove_exc}")
 
+        # Ensure the config directory exists before trying to save.
+        config_dir = os.path.dirname(CONFIG_FILE)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
+
         if not os.path.exists(CONFIG_FILE):
             logger.info("🔄 Creating new Bunq API context...")
             # Use positional args for compatibility across bunq-sdk versions
@@ -2962,6 +3010,11 @@ def init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=True):
             logger.info("🔄 Restoring existing Bunq API context...")
             api_context = ApiContext.restore(CONFIG_FILE)
             logger.info("✅ Bunq API context restored")
+            # Ensure session is still valid after restoring; refresh + persist if needed.
+            session_was_reset = api_context.ensure_session_active()
+            if session_was_reset:
+                api_context.save(CONFIG_FILE)
+                logger.info("🔄 Bunq session refreshed and re-saved after restore")
         
         BunqContext.load_api_context(api_context)
         logger.info("✅ Bunq API initialized successfully")
@@ -3030,6 +3083,34 @@ def ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=F
             run_auto_whitelist=run_auto_whitelist
         )
 
+
+def ensure_bunq_session_active():
+    """
+    Ensure the Bunq API session token is still valid according to the SDK.
+    The SDK's ApiContext tracks session expiry and will transparently reset
+    the session (re-authenticate) when it has expired. We persist the refreshed
+    context so the new session token survives a container restart.
+
+    This must be called before every Bunq SDK endpoint call.
+    Returns True if the context is usable, False otherwise.
+    """
+    try:
+        api_context = BunqContext.api_context()
+        if api_context is None:
+            return False
+        session_was_reset = api_context.ensure_session_active()
+        if session_was_reset:
+            # Persist the newly obtained session token.
+            try:
+                api_context.save(CONFIG_FILE)
+                logger.info("🔄 Bunq session refreshed and persisted")
+            except Exception as save_exc:
+                logger.warning(f"⚠️ Could not persist refreshed Bunq session: {save_exc}")
+        return True
+    except Exception as exc:
+        logger.warning(f"⚠️ Bunq session check failed: {exc}")
+        return False
+
 @app.before_request
 def ensure_bunq_context_for_api_requests():
     """
@@ -3067,7 +3148,7 @@ def health_check():
     bunq_state = 'initialized' if _BUNQ_CONTEXT_INITIALIZED else ('api_key_only' if API_KEY else 'demo_mode')
     return jsonify({
         'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'version': '3.0.0-session-auth',
         'api_status': bunq_state,
         'api_key_available': bool(API_KEY),
@@ -3381,7 +3462,8 @@ def get_accounts():
         
         logger.info(f"📊 Fetching accounts for {session.get('username')}")
         accounts = list_monetary_accounts()
-        account_type_hints = discover_account_type_hints()
+        # Derive type hints from the accounts we just fetched — no extra API calls needed.
+        account_type_hints = derive_account_type_hints_from_accounts(accounts)
         
         accounts_data = []
         for account in accounts:
@@ -3444,6 +3526,16 @@ def get_accounts():
         
         return jsonify(response)
         
+    except UnauthorizedException as e:
+        # The Bunq session token has been rejected by the API.
+        # Reset the initialized flag so the next request re-creates the context.
+        logger.warning(f"⚠️ Bunq UnauthorizedException fetching accounts — resetting context: {e}")
+        _BUNQ_CONTEXT_INITIALIZED = False
+        return jsonify({
+            'success': False,
+            'error': 'Bunq API session expired. Please retry — context will be re-initialized automatically.',
+            'bunq_unauthorized': True
+        }), 401
     except Exception as e:
         logger.exception(f"❌ Error fetching accounts: {e}")
         return jsonify({
@@ -3539,6 +3631,14 @@ def get_transactions():
         
         return jsonify(response)
             
+    except UnauthorizedException as e:
+        logger.warning(f"⚠️ Bunq UnauthorizedException fetching transactions — resetting context: {e}")
+        _BUNQ_CONTEXT_INITIALIZED = False
+        return jsonify({
+            'success': False,
+            'error': 'Bunq API session expired. Please retry — context will be re-initialized automatically.',
+            'bunq_unauthorized': True
+        }), 401
     except Exception as e:
         logger.exception(f"❌ Error fetching transactions: {e}")
         return jsonify({
@@ -3567,6 +3667,9 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             continue
 
         if cutoff_date and created < cutoff_date:
+            # bunq returns payments newest-first. Once we find a payment older
+            # than the cutoff, all subsequent ones will also be older, so we
+            # can break early only when iterating in descending order.
             if sort_desc:
                 break
             continue
@@ -3979,12 +4082,20 @@ def get_balance_history():
         connection.close()
 
 @app.route('/api/demo-data', methods=['GET'])
+@requires_auth
+@rate_limit('general')
 def get_demo_data():
-    """Get demo data - NO AUTH for testing"""
+    """
+    Get demo/synthetic transaction data for UI testing.
+    AUTH REQUIRED — do not expose financial-shaped data unauthenticated.
+
+    Response shape mirrors the real /api/transactions response so the frontend
+    can use either endpoint interchangeably for testing.
+    """
     import random
     from datetime import timedelta
     
-    days = int(request.args.get('days', 90))
+    days = clamp_days(request.args.get('days', 90))
     categories = ['Boodschappen', 'Horeca', 'Vervoer', 'Wonen', 'Shopping', 'Entertainment']
     merchants = {
         'Boodschappen': ['Albert Heijn', 'Jumbo', 'Lidl'],
@@ -3994,37 +4105,65 @@ def get_demo_data():
         'Shopping': ['Bol.com', 'Coolblue'],
         'Entertainment': ['Netflix', 'Spotify']
     }
-    
+    # Synthetic account IDs so the frontend account-filter logic works correctly.
+    demo_account_ids = ['demo-1', 'demo-2']
+
     transactions = []
     for i in range(days * 3):
         category = random.choice(categories)
         merchant = random.choice(merchants[category])
-        amount = -random.randint(10, 100) if category != 'Wonen' else -850
-        
+        # Use floats matching the real payment amount shape (Bunq returns string-based
+        # decimals; the backend converts these to float before JSON serialisation).
+        amount = float(-random.randint(10, 100)) if category != 'Wonen' else -850.0
+        account_id = random.choice(demo_account_ids)
+        tx_date = (datetime.now(timezone.utc) - timedelta(days=random.randint(0, days)))
+
         transactions.append({
             'id': i,
-            'date': (datetime.now() - timedelta(days=random.randint(0, days))).isoformat(),
+            'date': tx_date.isoformat(),
+            # Amounts are floats — consistent with real transaction objects from
+            # get_account_transactions() which calls float(parse_monetary_value(...)).
             'amount': amount,
+            'currency': 'EUR',
+            'amount_eur': amount,
+            'fx_rate_to_eur': None,
+            'fx_converted': False,
             'category': category,
             'merchant': merchant,
-            'description': f'{category} - {merchant}'
+            'description': f'{category} - {merchant}',
+            'counterparty': merchant,
+            'type': 'EBA_SCT',
+            'account_id': account_id,
+            'account_name': f'Demo Account ({account_id})',
+            'is_internal_transfer': False,
         })
     
     for i in range(days // 30):
+        account_id = demo_account_ids[0]
+        salary_date = (datetime.now(timezone.utc) - timedelta(days=i * 30))
         transactions.append({
             'id': len(transactions),
-            'date': (datetime.now() - timedelta(days=i * 30)).isoformat(),
-            'amount': 2800,
+            'date': salary_date.isoformat(),
+            'amount': 2800.0,
+            'currency': 'EUR',
+            'amount_eur': 2800.0,
+            'fx_rate_to_eur': None,
+            'fx_converted': False,
             'category': 'Salaris',
             'merchant': 'Werkgever B.V.',
-            'description': 'Salary'
+            'description': 'Salary',
+            'counterparty': 'Werkgever B.V.',
+            'type': 'EBA_SCT',
+            'account_id': account_id,
+            'account_name': f'Demo Account ({account_id})',
+            'is_internal_transfer': False,
         })
     
     return jsonify({
         'success': True,
         'data': transactions,
         'count': len(transactions),
-        'note': 'Demo data - no authentication required'
+        'note': 'Synthetic demo data — shape mirrors real /api/transactions response'
     })
 
 if __name__ == '__main__':
