@@ -260,3 +260,37 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
    - daarna `DEACTIVATE_OTHERS=true`.
 3. Verwijder Bunq context files en force service restart.
 4. Valideer logs op `Bunq API initialized successfully` (zonder `Incorrect API key or IP address`).
+
+### SDK-validatie en datakwaliteit fixes (savings + merchant/category)
+
+- `api_proxy.py` gevalideerd tegen officiële Bunq Python SDK broncode (`bunq/sdk_python`):
+  - `MonetaryAccountApiObject` kan concrete varianten wrappen (`MonetaryAccountSavings`, `MonetaryAccountInvestment`, etc.).
+  - `PaymentApiObject` gebruikt `counterparty_alias` via `MonetaryAccountReference`, vaak met nested label/pointer structuur.
+  - `LabelMonetaryAccountObject` en `MasterCardActionApiObject` bevatten MCC-signalen (`merchant_category_code`) die voor categorisatie gebruikt moeten worden.
+- Backend verbeteringen doorgevoerd:
+  - account-unwrapping voor wrapped `MonetaryAccount` varianten;
+  - robuustere savings/investment classificatie via embedded type hints + modelvelden;
+  - diepere alias traversal voor counterparty/IBAN/merchant-data;
+  - MCC extractie uit nested alias-structuur.
+- Resultaat:
+  - savings-accounts worden consistenter als `savings` herkend;
+  - merchant labels en categorieën krijgen betere dekking door correctere alias/MCC parsing.
+- Commit en push:
+  - `acadc97` — `Fix savings classification and merchant/MCC extraction`.
+
+### Verificatie op NAS (na deploy)
+
+1. Bouw/deploy:
+   - `cd /volume1/docker/bunq-dashboard`
+   - `sudo git pull --rebase origin main`
+   - `TAG=$(date +%Y%m%d%H%M%S)`
+   - `sudo docker build --build-arg BW_VERSION=2026.1.0 --build-arg BW_NPM_VERSION=2026.1.0 -t bunq-dashboard:$TAG -t bunq-dashboard:local .`
+   - `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
+   - `sudo docker service update --image bunq-dashboard:$TAG --force bunq_bunq-dashboard`
+2. Savings-account classificatie checken:
+   - `curl -sS -m 10 http://127.0.0.1:5000/api/accounts | jq -r '.data[] | [.id, .description, .account_type, .account_class] | @tsv'`
+3. Merchant/category output checken:
+   - `curl -sS -m 20 'http://127.0.0.1:5000/api/transactions?days=90&page=1&page_size=200&exclude_internal=true' | jq -r '.data[] | [.date, .merchant, .category, .description] | @tsv' | head -n 40`
+4. Datadekking direct uit lokale history DB:
+   - `BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)`
+   - `sudo docker exec "$BUNQ_CONTAINER" python3 -c "import sqlite3; c=sqlite3.connect('/app/config/dashboard_data.db'); c.row_factory=sqlite3.Row; r=c.execute(\"SELECT COUNT(*) total, SUM(CASE WHEN merchant IS NOT NULL AND TRIM(merchant)!='' AND LOWER(TRIM(merchant)) NOT IN ('unknown','onbekend') THEN 1 ELSE 0 END) merchant_named, SUM(CASE WHEN category IS NOT NULL AND TRIM(category)!='' AND LOWER(TRIM(category)) NOT IN ('overig','unknown','onbekend') THEN 1 ELSE 0 END) categorized FROM transaction_cache\").fetchone(); print(dict(r)); c.close()"`
