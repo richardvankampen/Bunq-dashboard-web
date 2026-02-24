@@ -63,6 +63,10 @@ Meer details: [SECURITY.md](SECURITY.md)
 9. Na deploy/herstart kun je startup-validatie doen met `scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
 10. Build/deploy controleert ook egress-IP vs actieve Bunq whitelist en geeft direct herstelcommando bij mismatch
 
+Health endpoints:
+- Liveness: `GET /api/live` (container/app process up)
+- Readiness: `GET /api/health` (Bunq context state; kan `503` geven bij key/IP mismatch)
+
 Snelle check na deploy:
 ```bash
 TAG=$(sudo git rev-parse --short HEAD)
@@ -74,6 +78,8 @@ sh scripts/restart_bunq_service.sh
 # Handmatige fallback:
 sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key"
+curl -s http://127.0.0.1:5000/api/live
+curl -s http://127.0.0.1:5000/api/health
 ```
 
 Nuttige script-opties:

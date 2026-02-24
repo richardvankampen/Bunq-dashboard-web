@@ -247,3 +247,34 @@ curl -s http://127.0.0.1:5000/api/health
 4. Dekkingsratio in lokale transaction cache:
    - `BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)`
    - `sudo docker exec "$BUNQ_CONTAINER" python3 -c "import sqlite3; c=sqlite3.connect('/app/config/dashboard_data.db'); c.row_factory=sqlite3.Row; r=c.execute(\"SELECT COUNT(*) total, SUM(CASE WHEN merchant IS NOT NULL AND TRIM(merchant)!='' AND LOWER(TRIM(merchant)) NOT IN ('unknown','onbekend') THEN 1 ELSE 0 END) merchant_named, SUM(CASE WHEN category IS NOT NULL AND TRIM(category)!='' AND LOWER(TRIM(category)) NOT IN ('overig','unknown','onbekend') THEN 1 ELSE 0 END) categorized FROM transaction_cache\").fetchone(); print(dict(r)); c.close()"`
+
+## Update 2026-02-24 (Repo-wide review fixes)
+
+### Commit
+
+- `9e15ee2` — `Harden Vaultwarden URL defaults and Bunq readiness/whitelist recovery`
+
+### Wat is aangepast
+
+- Vaultwarden CLI hardening:
+  - runtime vereist nu expliciete `VAULTWARDEN_URL`.
+  - bij `VAULTWARDEN_ACCESS_METHOD=cli` wordt alleen HTTPS geaccepteerd.
+- Bunq init recovery:
+  - bij init/restore-fout met bestaand contextbestand wordt dat bestand automatisch verwijderd en volgt één retry met fresh context.
+- Health endpoints opgesplitst:
+  - `/api/live` = liveness (200 als process leeft),
+  - `/api/health` = readiness (kan 503 zijn als Bunq context niet initialized is),
+  - `/api/ready` = alias naar readiness.
+- Container healthchecks gebruiken nu `/api/live`:
+  - `Dockerfile`, `docker-compose.yml`, `SYNOLOGY_INSTALL.md`.
+- Whitelist script veiligere default:
+  - `scripts/register_bunq_ip.sh` default `DEACTIVATE_OTHERS=false`.
+  - docs en recovery hints aangepast naar veilige eerste pass + optionele cleanup-pass (`DEACTIVATE_OTHERS=true`).
+- Markdown docs bijgewerkt:
+  - `README.md`, `SYNOLOGY_INSTALL.md`, `SECURITY.md`, `TROUBLESHOOTING.md`, `.env.example`.
+
+### Operationele impact op NAS
+
+- `docker` healthcheck blijft groen op liveness, ook als Bunq tijdelijk niet init.
+- Gebruik `/api/health` voor Bunq readiness-diagnose.
+- Bij dynamisch egress-IP eerst whitelisten met `DEACTIVATE_OTHERS=false`; pas daarna (optioneel) cleanup-pass.

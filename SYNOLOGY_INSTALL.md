@@ -618,6 +618,10 @@ sh scripts/restart_bunq_service.sh
 
 # Check logs
 sudo docker service logs -f bunq_bunq-dashboard
+
+# Liveness/readiness check
+curl -s http://127.0.0.1:5000/api/live
+curl -s http://127.0.0.1:5000/api/health
 ```
 
 Je zou moeten zien:
@@ -631,9 +635,15 @@ Listening at: http://0.0.0.0:5000
 
 ### Stap 3.7: Open Dashboard
 
-Browser: `http://192.168.1.100:5000`
+Browser (gebruik exact je `ALLOWED_ORIGINS` URL):
+- aanbevolen: `https://bunq.jouwdomein.nl` (reverse proxy + `SESSION_COOKIE_SECURE=true`)
+- alleen lokale HTTP fallback: `http://192.168.1.100:5000` met `SESSION_COOKIE_SECURE=false`
 
 🎉 **SUCCESS!** Je dashboard draait nu!
+
+**Health semantics:**
+- `/api/live` = liveness (service draait)
+- `/api/health` = readiness (Bunq context status, kan `503` zijn bij key/IP mismatch)
 
 ### Stap 3.8: Bunq IP Whitelisting & Re-registratie (verplicht bij key/IP wijziging)
 

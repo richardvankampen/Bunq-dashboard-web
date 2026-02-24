@@ -294,3 +294,24 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 4. Datadekking direct uit lokale history DB:
    - `BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)`
    - `sudo docker exec "$BUNQ_CONTAINER" python3 -c "import sqlite3; c=sqlite3.connect('/app/config/dashboard_data.db'); c.row_factory=sqlite3.Row; r=c.execute(\"SELECT COUNT(*) total, SUM(CASE WHEN merchant IS NOT NULL AND TRIM(merchant)!='' AND LOWER(TRIM(merchant)) NOT IN ('unknown','onbekend') THEN 1 ELSE 0 END) merchant_named, SUM(CASE WHEN category IS NOT NULL AND TRIM(category)!='' AND LOWER(TRIM(category)) NOT IN ('overig','unknown','onbekend') THEN 1 ELSE 0 END) categorized FROM transaction_cache\").fetchone(); print(dict(r)); c.close()"`
+
+## 2026-02-24
+
+### Repo review + hardening pass
+
+- Commit `9e15ee2` gepusht op `main`.
+- Vaultwarden CLI flow aangescherpt:
+  - `VAULTWARDEN_URL` moet expliciet gezet zijn.
+  - Bij `VAULTWARDEN_ACCESS_METHOD=cli` wordt alleen HTTPS geaccepteerd (duidelijke runtime foutmelding bij HTTP).
+- Bunq context herstel verbeterd:
+  - als restore/init faalt met bestaand contextbestand, verwijdert backend stale context en probeert één keer opnieuw.
+- Liveness/readiness gesplitst:
+  - `/api/live` toegevoegd (altijd 200 als process leeft).
+  - `/api/health` is readiness en retourneert 503 als API key aanwezig is maar Bunq context niet initialized is.
+  - `/api/ready` toegevoegd als alias naar readiness.
+  - Docker healthchecks gebruiken nu `/api/live` (compose + Dockerfile + Synology docs).
+- Whitelist safety-default aangescherpt:
+  - `scripts/register_bunq_ip.sh` default `DEACTIVATE_OTHERS=false`.
+  - documentatie en recovery hints bijgewerkt naar veilige default + optionele cleanup-pass (`DEACTIVATE_OTHERS=true`) na validatie.
+- Markdown docs geactualiseerd:
+  - `README.md`, `SYNOLOGY_INSTALL.md`, `SECURITY.md`, `TROUBLESHOOTING.md`, `.env.example`.

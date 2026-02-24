@@ -33,6 +33,7 @@ docker logs vaultwarden
 curl http://localhost:5000/api/live
 # Readiness (Bunq init state)
 curl http://localhost:5000/api/health
+# Let op: /api/health kan 503 geven als Bunq key/IP mismatcht
 
 # Check runtime server in container (should show gunicorn worker process)
 docker exec "$BUNQ_CONTAINER" ps -ef | grep -E "gunicorn|api_proxy" | grep -v grep
@@ -239,7 +240,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
   http://192.168.1.100:5000/api/auth/login
 
 # Use session cookie for authenticated requests:
-curl -b cookies.txt http://192.168.1.100:5000/api/health
+curl -b cookies.txt http://192.168.1.100:5000/api/auth/status
 ```
 
 ---
@@ -776,6 +777,7 @@ curl http://localhost:5000/api/live
 
 # Readiness (Bunq context state):
 curl http://localhost:5000/api/health
+# 200 = ready, 503 = Bunq not initialized (meestal key/IP mismatch)
 
 # Login to get session cookie:
 curl -c cookies.txt -H "Content-Type: application/json" \
