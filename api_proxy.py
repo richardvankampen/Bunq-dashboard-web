@@ -2249,7 +2249,7 @@ def get_api_key_from_vaultwarden_cli(return_status=False):
     Retrieve Bunq API key from Vaultwarden using Bitwarden CLI.
     This path can decrypt item values (server API returns encrypted ciphers).
     """
-    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80').strip()
+    vault_url = os.getenv('VAULTWARDEN_URL', '').strip()
     item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key').strip()
     client_id = get_config('VAULTWARDEN_CLIENT_ID', None, 'vaultwarden_client_id')
     client_secret = get_config('VAULTWARDEN_CLIENT_SECRET', None, 'vaultwarden_client_secret')
@@ -2269,6 +2269,23 @@ def get_api_key_from_vaultwarden_cli(return_status=False):
         'item_has_password': False,
         'error': None,
     }
+
+    if not vault_url:
+        status['error'] = 'VAULTWARDEN_URL is required for Vaultwarden access'
+        if return_status:
+            return None, status
+        logger.error(f"❌ Vaultwarden CLI error: {status['error']}")
+        return None
+
+    if vault_url.startswith('http://'):
+        status['error'] = (
+            'VAULTWARDEN_URL must use HTTPS for VAULTWARDEN_ACCESS_METHOD=cli '
+            '(Bitwarden CLI blocks insecure HTTP server URLs)'
+        )
+        if return_status:
+            return None, status
+        logger.error(f"❌ Vaultwarden CLI error: {status['error']}")
+        return None
 
     if not status['bw_cli_installed']:
         status['error'] = 'Bitwarden CLI (bw) is not installed in the container'
@@ -2393,7 +2410,7 @@ def get_api_key_from_vaultwarden_cli(return_status=False):
 
 def get_api_key_from_vaultwarden_api(return_status=False):
     """Retrieve Bunq API key from Vaultwarden API (works only if ciphers are not encrypted for this token)."""
-    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80')
+    vault_url = os.getenv('VAULTWARDEN_URL', '').strip()
     client_id = get_config('VAULTWARDEN_CLIENT_ID', None, 'vaultwarden_client_id')
     client_secret = get_config('VAULTWARDEN_CLIENT_SECRET', None, 'vaultwarden_client_secret')
     item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key')
@@ -2411,6 +2428,13 @@ def get_api_key_from_vaultwarden_api(return_status=False):
         'item_has_password': False,
         'error': None,
     }
+
+    if not vault_url:
+        status['error'] = 'VAULTWARDEN_URL is required for Vaultwarden access'
+        if return_status:
+            return None, status
+        logger.error(f"❌ Vaultwarden error: {status['error']}")
+        return None
 
     if not status['client_configured']:
         status['error'] = 'Vaultwarden credentials missing (client_id/client_secret)'
@@ -2564,7 +2588,7 @@ def get_vaultwarden_status_snapshot():
     use_vaultwarden = os.getenv('USE_VAULTWARDEN', 'true').strip().lower() == 'true'
     method = get_vaultwarden_access_method()
     item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key').strip()
-    vault_url = os.getenv('VAULTWARDEN_URL', 'http://vaultwarden:80').strip()
+    vault_url = os.getenv('VAULTWARDEN_URL', '').strip()
     status = {
         'enabled': use_vaultwarden,
         'access_method': method,
@@ -3050,6 +3074,22 @@ def init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=True):
         return True
         
     except Exception as e:
+        if (not force_recreate) and os.path.exists(CONFIG_FILE):
+            logger.warning(
+                "⚠️ Bunq context restore/init failed; retrying once with fresh context: %s",
+                e
+            )
+            try:
+                os.remove(CONFIG_FILE)
+                logger.info(f"🧹 Removed stale Bunq context: {CONFIG_FILE}")
+            except Exception as remove_exc:
+                logger.warning(f"⚠️ Could not remove stale Bunq context '{CONFIG_FILE}': {remove_exc}")
+            return init_bunq(
+                force_recreate=True,
+                refresh_key=False,
+                run_auto_whitelist=run_auto_whitelist
+            )
+
         logger.error(f"❌ Failed to initialize Bunq API: {e}")
         _BUNQ_CONTEXT_INITIALIZED = False
         _BUNQ_INIT_LAST_ERROR = str(e)
@@ -3122,7 +3162,7 @@ def ensure_bunq_context_for_api_requests():
     path = request.path or ''
     if not path.startswith('/api/'):
         return
-    if path in ('/api/health', '/api/demo-data'):
+    if path in ('/api/health', '/api/live', '/api/ready', '/api/demo-data'):
         return
     ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=False)
 
@@ -3142,17 +3182,29 @@ def serve_static(filename):
         return send_from_directory(STATIC_DIR, filename)
     return abort(404)
 
+@app.route('/api/live', methods=['GET'])
+def liveness_check():
+    """Liveness probe endpoint - process is up."""
+    return jsonify({
+        'status': 'alive',
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'version': '3.0.0-session-auth'
+    }), 200
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint - NO AUTH REQUIRED"""
+    """Readiness health endpoint - NO AUTH REQUIRED."""
     bunq_state = 'initialized' if _BUNQ_CONTEXT_INITIALIZED else ('api_key_only' if API_KEY else 'demo_mode')
-    return jsonify({
-        'status': 'healthy',
+    bunq_ready = bool(_BUNQ_CONTEXT_INITIALIZED)
+    ready = (not bool(API_KEY)) or bunq_ready
+    response = {
+        'status': 'healthy' if ready else 'degraded',
+        'ready': ready,
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'version': '3.0.0-session-auth',
         'api_status': bunq_state,
         'api_key_available': bool(API_KEY),
-        'bunq_context_initialized': bool(_BUNQ_CONTEXT_INITIALIZED),
+        'bunq_context_initialized': bunq_ready,
         'bunq_last_error': _BUNQ_INIT_LAST_ERROR,
         'security': {
             'type': 'session-based',
@@ -3162,7 +3214,13 @@ def health_check():
         'auth_configured': has_config('BASIC_AUTH_PASSWORD', 'basic_auth_password'),
         'history_store_enabled': DATA_DB_ENABLED,
         'fx_enabled': FX_ENABLED
-    })
+    }
+    return jsonify(response), (200 if ready else 503)
+
+@app.route('/api/ready', methods=['GET'])
+def readiness_check():
+    """Alias for readiness checks."""
+    return health_check()
 
 @app.route('/api/admin/status', methods=['GET'])
 @requires_auth

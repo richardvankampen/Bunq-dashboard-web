@@ -220,6 +220,7 @@ ALLOWED_ORIGINS=https://bunq.yourdomain.com  # YOUR domain only!
 # Vaultwarden
 USE_VAULTWARDEN=true         # Preferred/default
 VAULTWARDEN_ACCESS_METHOD=cli  # Recommended: decrypts Vault item values via bw CLI
+VAULTWARDEN_URL=https://vault.jouwdomein.nl  # CLI path requires HTTPS URL
 
 # Bunq
 BUNQ_ENVIRONMENT=PRODUCTION  # For real banking data
@@ -266,7 +267,9 @@ toegestaan zijn, anders krijg je:
 **Aanbevolen procedure na API key rotatie of netwerk/VPN wijziging:**
 ```bash
 cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+# Optioneel tweede pass (pas na validatie):
+# TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 ```
 
 **Alternatief via UI (P1):**

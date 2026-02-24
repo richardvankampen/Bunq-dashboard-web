@@ -288,7 +288,7 @@ Maak `/volume1/docker/bunq-dashboard/.env` met **niet‑gevoelige** settings.
 | Variabele | Betekenis | Aanbevolen/default waarde |
 |---|---|---|
 | `BASIC_AUTH_USERNAME` | Inlog gebruikersnaam voor het dashboard | `admin` (of eigen keuze) |
-| `VAULTWARDEN_URL` | Interne URL van Vaultwarden container | `http://vaultwarden:80` (zelfde network) |
+| `VAULTWARDEN_URL` | Vaultwarden URL voor key retrieval | `https://vault.jouwdomein.nl` (aanbevolen bij `VAULTWARDEN_ACCESS_METHOD=cli`) |
 | `VAULTWARDEN_ACCESS_METHOD` | Methode om Vaultwarden item te lezen | `cli` (aanbevolen/default) |
 | `VAULTWARDEN_ITEM_NAME` | Naam van het Vault item met je Bunq API key | `Bunq API Key` |
 | `USE_VAULTWARDEN` | Gebruik Vaultwarden i.p.v. directe API key | `true` |
@@ -339,7 +339,7 @@ Gebruik daarom **altijd dezelfde URL** (HTTP of HTTPS), anders werkt je sessie n
 
 ```bash
 BASIC_AUTH_USERNAME=admin
-VAULTWARDEN_URL=http://vaultwarden:80
+VAULTWARDEN_URL=https://vault.jouwdomein.nl
 VAULTWARDEN_ACCESS_METHOD=cli
 VAULTWARDEN_ITEM_NAME="Bunq API Key"
 USE_VAULTWARDEN=true
@@ -369,8 +369,9 @@ FX_ENABLED=true
 # BUNQ_PREBOOT_INIT=true
 ```
 
-**Tip:** Gebruik `http://vaultwarden:80` als Vaultwarden op hetzelfde `bunq-net` netwerk draait.
-Gebruik `http://<NAS-IP>:9000` als je Vaultwarden via host/IP benadert.
+**Tip:** Bij `VAULTWARDEN_ACCESS_METHOD=cli` is een HTTPS URL vereist.
+Gebruik daarom je reverse-proxy domein met geldig certificaat, bijvoorbeeld `https://vault.jouwdomein.nl`.
+Alleen als je bewust `VAULTWARDEN_ACCESS_METHOD=api` gebruikt kun je een interne HTTP URL gebruiken (bijv. `http://vaultwarden:80`).
 
 #### B) Docker secrets (verplicht)
 
@@ -465,7 +466,7 @@ services:
 
     environment:
       BASIC_AUTH_USERNAME: "${BASIC_AUTH_USERNAME:-admin}"
-      VAULTWARDEN_URL: "${VAULTWARDEN_URL:-http://vaultwarden:80}"
+      VAULTWARDEN_URL: "${VAULTWARDEN_URL:-https://vault.jouwdomein.nl}"
       VAULTWARDEN_ACCESS_METHOD: "${VAULTWARDEN_ACCESS_METHOD:-cli}"
       VAULTWARDEN_ITEM_NAME: "${VAULTWARDEN_ITEM_NAME:-Bunq API Key}"
       USE_VAULTWARDEN: "${USE_VAULTWARDEN:-true}"
@@ -528,7 +529,7 @@ services:
         window: 60s
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -650,8 +651,10 @@ sh scripts/register_bunq_ip.sh
 **Snelle non-interactieve variant (expliciet target IP):**
 ```bash
 cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
 # Voorbeeld:
+# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+# Optionele cleanup-pass (na validatie):
 # TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 ```
 
@@ -818,7 +821,8 @@ Gebruik `Reinit Bunq context` na:
 2. Update secret:
    - bij Vaultwarden-flow: update key in Vaultwarden item
    - bij directe key-flow (`USE_VAULTWARDEN=false`): update Docker secret `bunq_api_key`
-3. Run (safe non-interactive): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh`
+3. Run (safe non-interactive): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
+   - Optionele cleanup-pass na validatie: `... DEACTIVATE_OTHERS=true ...`
 4. Validatie: `sh scripts/restart_bunq_service.sh`
 
 No code changes needed! ✨
@@ -832,7 +836,7 @@ No code changes needed! ✨
 - Redeploy na .env wijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
 - Alleen herstart (zonder config/secrets wijzigingen): `sudo docker service update --force bunq_bunq-dashboard`
 - Herstart + startup-validatie (aanbevolen): `sh scripts/restart_bunq_service.sh`
-- Bunq IP/device opnieuw registreren (safe): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh`
+- Bunq IP/device opnieuw registreren (safe): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
 
 Voor uitgebreide oplossingen, zie [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 

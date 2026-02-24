@@ -12,7 +12,7 @@ services:
     environment:
       # Non-secret configuration (from .env or defaults)
       BASIC_AUTH_USERNAME: "${BASIC_AUTH_USERNAME:-admin}"
-      VAULTWARDEN_URL: "${VAULTWARDEN_URL:-http://vaultwarden:80}"
+      VAULTWARDEN_URL: "${VAULTWARDEN_URL:-https://vault.jouwdomein.nl}"
       VAULTWARDEN_ACCESS_METHOD: "${VAULTWARDEN_ACCESS_METHOD:-cli}"
       VAULTWARDEN_ITEM_NAME: "${VAULTWARDEN_ITEM_NAME:-Bunq API Key}"
       USE_VAULTWARDEN: "${USE_VAULTWARDEN:-true}"
@@ -76,7 +76,7 @@ services:
         window: 60s
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/live"]
       interval: 30s
       timeout: 10s
       retries: 3

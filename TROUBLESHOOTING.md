@@ -29,7 +29,9 @@ BUNQ_CONTAINER=$(docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
 docker service logs bunq_bunq-dashboard
 docker logs vaultwarden
 
-# Check API health
+# Liveness (process/container up)
+curl http://localhost:5000/api/live
+# Readiness (Bunq init state)
 curl http://localhost:5000/api/health
 
 # Check runtime server in container (should show gunicorn worker process)
@@ -485,9 +487,11 @@ docker service logs bunq_bunq-dashboard | grep -E "Incorrect API key or IP addre
 cd /volume1/docker/bunq-dashboard
 sh scripts/register_bunq_ip.sh
 # Optional non-interactive target:
+# TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+# Optional cleanup pass (after validation):
 # TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
 # Example:
-# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
 
 # Script output shows the container egress public IP.
 # In Bunq app: Profile -> Security -> API Keys
@@ -767,7 +771,10 @@ docker service logs -f bunq_bunq-dashboard
 ### Test API Endpoints Manually
 
 ```bash
-# Health check:
+# Liveness check:
+curl http://localhost:5000/api/live
+
+# Readiness (Bunq context state):
 curl http://localhost:5000/api/health
 
 # Login to get session cookie:
@@ -819,6 +826,7 @@ echo "
 docker network inspect bunq-net >> diagnostic.txt
 echo "
 === Health ===" >> diagnostic.txt
+curl http://localhost:5000/api/live >> diagnostic.txt 2>&1
 curl http://localhost:5000/api/health >> diagnostic.txt 2>&1
 
 # Review diagnostic.txt before sharing (remove any secrets!)

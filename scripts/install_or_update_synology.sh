@@ -259,6 +259,8 @@ post_deploy_checks() {
     say "  1) Check current egress IP from container"
     say "  2) Ensure Bunq API key is valid for that IP"
     say "  3) Re-register allowlist IP:"
+    say "     TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh ${SERVICE_NAME}"
+    say "     # Optional cleanup pass (after validation):"
     say "     TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh ${SERVICE_NAME}"
     exit 1
   fi
@@ -340,6 +342,8 @@ PY
     MISMATCH)
       say "ERROR: egress IP (${CHECK_EGRESS}) is NOT in active Bunq whitelist (${CHECK_ACTIVE})."
       say "Run:"
+      say "  TARGET_IP=${CHECK_EGRESS} SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh ${SERVICE_NAME}"
+      say "  # Optional cleanup pass (after validation):"
       say "  TARGET_IP=${CHECK_EGRESS} SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh ${SERVICE_NAME}"
       exit 1
       ;;

@@ -6,7 +6,7 @@ set -eu
 
 SERVICE_NAME="${1:-bunq_bunq-dashboard}"
 LOG_MINUTES="${LOG_MINUTES:-5}"
-DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS:-true}"
+DEACTIVATE_OTHERS="${DEACTIVATE_OTHERS:-false}"
 NO_PROMPT="${NO_PROMPT:-false}"
 SAFE_TWO_STEP="${SAFE_TWO_STEP:-true}"
 VERIFY_EGRESS_MATCH="${VERIFY_EGRESS_MATCH:-true}"
@@ -322,6 +322,8 @@ PY
     MISMATCH)
       echo "ERROR: egress IP (${CHECK_EGRESS}) is NOT in active Bunq whitelist (${CHECK_ACTIVE})."
       echo "Tip: rerun with explicit target:"
+      echo "  TARGET_IP=${CHECK_EGRESS} SAFE_TWO_STEP=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh ${SERVICE_NAME}"
+      echo "  # Optional cleanup pass after validation:"
       echo "  TARGET_IP=${CHECK_EGRESS} SAFE_TWO_STEP=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh ${SERVICE_NAME}"
       exit 1
       ;;
