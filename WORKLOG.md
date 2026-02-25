@@ -2,6 +2,23 @@
 
 Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies geen impact heeft.
 
+## 2026-02-25
+
+### Opgeleverd
+
+- Backend transactie-inname verder gehard voor SDK-varianten:
+  - payment endpoint met paging-metadata (`truncated`, `truncated_accounts`);
+  - card-payment endpoint support toegevoegd waar beschikbaar;
+  - gecombineerde transactie-output inclusief expliciete datakwaliteitssignalen.
+- Frontend feedback verbeterd bij onvolledige datasets:
+  - dashboard toont nu waarschuwingen bij truncation en ontbrekende EUR-conversies.
+- Savings transfer deep-dive robuuster gemaakt:
+  - detailweergave gebruikt expliciet een filterpad waarbij interne transfers niet onbedoeld worden weggefilterd.
+- Documentatie bijgewerkt op operationele tuning en diagnostiek:
+  - `README.md`: transaction diagnostics velden beschreven;
+  - `SYNOLOGY_INSTALL.md`: nieuwe Bunq payment/card-payment paging env knobs;
+  - `TROUBLESHOOTING.md`: concrete truncated-check + redeploy flow.
+
 ## 2026-02-13
 
 ### Opgeleverd

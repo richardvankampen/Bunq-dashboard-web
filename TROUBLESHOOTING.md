@@ -658,14 +658,18 @@ sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack 
 
 #### C. Too Many Transactions
 ```bash
-# If loading 1000+ transactions:
-# Add pagination or date filter
+# Check whether backend pagination cap was reached:
+curl -s 'http://127.0.0.1:5000/api/transactions?days=365&page=1&page_size=200&exclude_internal=true' | \
+  jq '{truncated, amount_eur_missing_count, truncated_accounts}'
 
-# Edit api_proxy.py:
-# In get_transactions():
-params = {
-    'count': 100,  # Limit results
-}
+# If truncated=true, increase Bunq paging limits in .env:
+# BUNQ_PAYMENT_MAX_PAGES=80
+# BUNQ_CARD_PAYMENT_MAX_PAGES=80
+# (optional) BUNQ_PAYMENT_PAGE_SIZE=200
+# (optional) BUNQ_CARD_PAYMENT_PAGE_SIZE=200
+
+# Then redeploy:
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
 ```
 
 ---

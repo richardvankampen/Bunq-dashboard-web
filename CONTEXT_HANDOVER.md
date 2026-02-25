@@ -1,6 +1,28 @@
 # Context Handover
 
-Laatste update: 2026-02-17 (SDK-validatie + savings/merchant parsing fixes)
+Laatste update: 2026-02-25 (transaction coverage + diagnostics)
+
+## Update 2026-02-25 (payment/card-payment dekking + diagnostiek)
+
+### Wat is aangepast
+
+- Backend transactieflow is uitgebreid met endpoint-compatibiliteit en pagingdiagnostiek:
+  - payment-paging metadata wordt nu teruggegeven (`truncated`, `truncated_accounts`);
+  - card-payment endpoint wordt meegenomen waar de SDK die endpoint exposeert;
+  - response bevat nu ook `amount_eur_missing_count` om FX-gaten expliciet te maken.
+- Frontend verwerkt deze signalen nu zichtbaar:
+  - duidelijke waarschuwing bij dataset-truncation;
+  - duidelijke waarschuwing bij transacties zonder EUR-omrekening.
+- Savings-transfer detailflow gebruikt nu een dedicated pad zonder impliciete internal-transfer filtering.
+- Docs zijn gesynchroniseerd:
+  - `README.md` (transactie-diagnostiek),
+  - `SYNOLOGY_INSTALL.md` (payment/card-payment paging env vars),
+  - `TROUBLESHOOTING.md` (truncated diagnose + tuning flow).
+
+### Operationele noot
+
+- Voor grote datasets eerst `truncated`/`truncated_accounts` controleren via `/api/transactions`.
+- Alleen bij `truncated=true` paginglimieten verhogen (`BUNQ_PAYMENT_MAX_PAGES`, `BUNQ_CARD_PAYMENT_MAX_PAGES`) en opnieuw deployen.
 
 ## Waar we staan
 

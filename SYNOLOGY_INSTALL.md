@@ -317,6 +317,10 @@ Gebruik daarom **altijd dezelfde URL** (HTTP of HTTPS), anders werkt je sessie n
 | `DEFAULT_PAGE_SIZE` | Default pagination size | `500` |
 | `MAX_PAGE_SIZE` | Max pagination size | `2000` |
 | `MAX_DAYS` | Max dagen voor queries | `3650` |
+| `BUNQ_PAYMENT_PAGE_SIZE` | Bunq Payment page-size per SDK call (max 200) | `200` |
+| `BUNQ_PAYMENT_MAX_PAGES` | Max Bunq Payment pagina's per account/per request | `50` |
+| `BUNQ_CARD_PAYMENT_PAGE_SIZE` | Bunq Card Payment page-size per SDK call (max 200) | Zelfde als `BUNQ_PAYMENT_PAGE_SIZE` |
+| `BUNQ_CARD_PAYMENT_MAX_PAGES` | Max Bunq Card Payment pagina's per account/per request | Zelfde als `BUNQ_PAYMENT_MAX_PAGES` |
 | `DATA_DB_ENABLED` | Lokale SQLite history storage aan/uit | `true` |
 | `DATA_DB_PATH` | Pad naar lokale SQLite DB | `config/dashboard_data.db` |
 | `FX_ENABLED` | Omgerekende EUR totalen voor niet-EUR rekeningen | `true` |
@@ -356,6 +360,11 @@ LOG_LEVEL=INFO
 FLASK_DEBUG=false
 BUNQ_INIT_AUTO_ATTEMPT=true
 BUNQ_INIT_RETRY_SECONDS=120
+# Optional paging tuning (voor zeer grote datasets):
+# BUNQ_PAYMENT_PAGE_SIZE=200
+# BUNQ_PAYMENT_MAX_PAGES=50
+# BUNQ_CARD_PAYMENT_PAGE_SIZE=200
+# BUNQ_CARD_PAYMENT_MAX_PAGES=50
 DATA_DB_ENABLED=true
 FX_ENABLED=true
 # Gunicorn (optioneel, defaults zijn prima):
@@ -484,6 +493,10 @@ services:
       DEFAULT_PAGE_SIZE: "${DEFAULT_PAGE_SIZE:-500}"
       MAX_PAGE_SIZE: "${MAX_PAGE_SIZE:-2000}"
       MAX_DAYS: "${MAX_DAYS:-3650}"
+      BUNQ_PAYMENT_PAGE_SIZE: "${BUNQ_PAYMENT_PAGE_SIZE:-200}"
+      BUNQ_PAYMENT_MAX_PAGES: "${BUNQ_PAYMENT_MAX_PAGES:-50}"
+      BUNQ_CARD_PAYMENT_PAGE_SIZE: "${BUNQ_CARD_PAYMENT_PAGE_SIZE:-200}"
+      BUNQ_CARD_PAYMENT_MAX_PAGES: "${BUNQ_CARD_PAYMENT_MAX_PAGES:-50}"
       DATA_DB_ENABLED: "${DATA_DB_ENABLED:-true}"
       DATA_DB_PATH: "${DATA_DB_PATH:-config/dashboard_data.db}"
       FX_ENABLED: "${FX_ENABLED:-true}"

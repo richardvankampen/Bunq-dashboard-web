@@ -72,6 +72,8 @@ def get_bool_env(name, default=False):
 _MONETARY_ACCOUNT_ENDPOINT = None
 _PAYMENT_ENDPOINT = None
 _PAYMENT_LIST_MODE = None
+_CARD_PAYMENT_ENDPOINT = None
+_CARD_PAYMENT_LIST_MODE = None
 _CREDENTIAL_PASSWORD_ENDPOINT = None
 _CREDENTIAL_PASSWORD_LIST_MODE = None
 _CREDENTIAL_PASSWORD_IP_ENDPOINT = None
@@ -421,6 +423,84 @@ def discover_payment_endpoints():
 
     return discovered
 
+def _is_card_payment_list_endpoint(name, candidate):
+    if candidate is None:
+        return False
+    if not callable(getattr(candidate, 'list', None)):
+        return False
+    normalized = name.lower().replace('_', '')
+    if 'cardpayment' not in normalized:
+        return False
+    if not (
+        normalized.startswith('cardpayment')
+        or normalized.startswith('monetaryaccount')
+    ):
+        return False
+    if any(blocked in normalized for blocked in ('attachment', 'batch', 'draft', 'request', 'schedule')):
+        return False
+    return True
+
+def discover_card_payment_endpoints():
+    """Discover card-payment endpoints ordered by preference."""
+    direct_candidates = (
+        'CardPaymentApiObject',
+        'CardPayment',
+        'MonetaryAccountCardPaymentApiObject',
+        'MonetaryAccountCardPayment',
+        'MonetaryAccountBankCardPaymentApiObject',
+        'MonetaryAccountBankCardPayment',
+    )
+    discovered = []
+    seen = set()
+
+    def add_candidate(display_name, candidate_name, candidate_obj):
+        if not _is_card_payment_list_endpoint(candidate_name, candidate_obj):
+            return
+        candidate_id = id(candidate_obj)
+        if candidate_id in seen:
+            return
+        seen.add(candidate_id)
+        discovered.append((display_name, candidate_obj))
+
+    for name in direct_candidates:
+        add_candidate(name, name, getattr(endpoint, name, None))
+
+    for attr_name in dir(endpoint):
+        if attr_name in direct_candidates:
+            continue
+        add_candidate(attr_name, attr_name, getattr(endpoint, attr_name, None))
+
+    endpoint_path = getattr(endpoint, '__path__', None)
+    if endpoint_path:
+        base_module = endpoint.__name__
+        for module_info in pkgutil.iter_modules(endpoint_path):
+            module_name = module_info.name
+            normalized_module = module_name.lower().replace('_', '')
+            if 'cardpayment' not in normalized_module:
+                continue
+            if any(blocked in normalized_module for blocked in ('attachment', 'batch', 'draft', 'request', 'schedule')):
+                continue
+            try:
+                module = importlib.import_module(f"{base_module}.{module_name}")
+            except Exception:
+                continue
+            for class_name in direct_candidates:
+                add_candidate(
+                    f"{module_name}.{class_name}",
+                    class_name,
+                    getattr(module, class_name, None),
+                )
+            for class_name in dir(module):
+                if class_name in direct_candidates:
+                    continue
+                add_candidate(
+                    f"{module_name}.{class_name}",
+                    class_name,
+                    getattr(module, class_name, None),
+                )
+
+    return discovered
+
 def _call_payment_list(payment_endpoint, account_id, mode, params=None):
     query_params = params or {}
     if mode == 'kw_monetary_account_id':
@@ -458,7 +538,7 @@ def _extract_payment_numeric_id(payment):
     except (TypeError, ValueError):
         return None
 
-def list_payments_for_account(account_id, cutoff_date=None):
+def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
     """List payments for one monetary account across bunq-sdk variants."""
     global _PAYMENT_ENDPOINT, _PAYMENT_LIST_MODE
 
@@ -512,6 +592,8 @@ def list_payments_for_account(account_id, cutoff_date=None):
             older_id = None
             collected = []
             seen_payment_ids = set()
+            pages_fetched = 0
+            stop_reason = 'unknown'
 
             try:
                 for _ in range(max_pages):
@@ -520,12 +602,14 @@ def list_payments_for_account(account_id, cutoff_date=None):
                         query_params['older_id'] = older_id
 
                     result = _call_payment_list(payment_endpoint, account_id, mode, params=query_params)
+                    pages_fetched += 1
                     payments = getattr(result, 'value', result)
                     if payments is None:
                         payments = []
                     if not isinstance(payments, list):
                         payments = list(payments)
                     if not payments:
+                        stop_reason = 'empty_page'
                         break
 
                     oldest_payment_id = None
@@ -550,20 +634,40 @@ def list_payments_for_account(account_id, cutoff_date=None):
                                 oldest_payment_created = created_at
 
                     if cutoff_date and oldest_payment_created and oldest_payment_created < cutoff_date:
+                        stop_reason = 'cutoff_reached'
                         break
 
                     if len(payments) < page_size:
+                        stop_reason = 'short_page'
                         break
                     if oldest_payment_id is None:
+                        stop_reason = 'missing_oldest_id'
                         break
                     if older_id is not None and oldest_payment_id == older_id:
+                        stop_reason = 'no_progress'
                         break
                     older_id = oldest_payment_id
+                else:
+                    stop_reason = 'max_pages_reached'
 
                 if _PAYMENT_ENDPOINT is not payment_endpoint or _PAYMENT_LIST_MODE != mode:
                     logger.info(f"Using bunq payment endpoint: {name} ({mode})")
                 _PAYMENT_ENDPOINT = payment_endpoint
                 _PAYMENT_LIST_MODE = mode
+
+                metadata = {
+                    'source': 'payment',
+                    'endpoint': name,
+                    'mode': mode,
+                    'page_size': page_size,
+                    'max_pages': max_pages,
+                    'pages_fetched': pages_fetched,
+                    'stop_reason': stop_reason,
+                    'truncated': stop_reason == 'max_pages_reached',
+                    'count': len(collected),
+                }
+                if return_meta:
+                    return collected, metadata
                 return collected
             except TypeError as exc:
                 last_exc = exc
@@ -574,6 +678,137 @@ def list_payments_for_account(account_id, cutoff_date=None):
                 break
 
     raise RuntimeError(f"bunq-sdk payment list failed: {last_exc}")
+
+def list_card_payments_for_account(account_id, cutoff_date=None, return_meta=False):
+    """List card payments for one monetary account when endpoint is available."""
+    global _CARD_PAYMENT_ENDPOINT, _CARD_PAYMENT_LIST_MODE
+
+    ensure_bunq_session_active()
+
+    page_size = get_int_env('BUNQ_CARD_PAYMENT_PAGE_SIZE', get_int_env('BUNQ_PAYMENT_PAGE_SIZE', 200))
+    if page_size < 1:
+        page_size = 200
+    if page_size > 200:
+        page_size = 200
+    max_pages = get_int_env('BUNQ_CARD_PAYMENT_MAX_PAGES', get_int_env('BUNQ_PAYMENT_MAX_PAGES', 50))
+    if max_pages < 1:
+        max_pages = 50
+
+    modes = (
+        'kw_monetary_account_id_params',
+        'kw_monetary_account_id',
+        'kw_account_id_params',
+        'kw_account_id',
+        'kw_monetary_account_bank_id_params',
+        'kw_monetary_account_bank_id',
+        'positional_with_count',
+        'positional',
+        'positional_with_params',
+    )
+
+    candidates = []
+    if _CARD_PAYMENT_ENDPOINT is not None and _CARD_PAYMENT_LIST_MODE is not None:
+        candidates.append(('cached', _CARD_PAYMENT_ENDPOINT, (_CARD_PAYMENT_LIST_MODE,)))
+
+    for name, candidate in discover_card_payment_endpoints():
+        if _CARD_PAYMENT_ENDPOINT is not None and candidate is _CARD_PAYMENT_ENDPOINT:
+            continue
+        candidates.append((name, candidate, modes))
+
+    if not candidates:
+        raise RuntimeError('bunq-sdk missing card payment endpoint')
+
+    last_exc = None
+    for name, card_payment_endpoint, candidate_modes in candidates:
+        for mode in candidate_modes:
+            older_id = None
+            collected = []
+            seen_payment_ids = set()
+            pages_fetched = 0
+            stop_reason = 'unknown'
+
+            try:
+                for _ in range(max_pages):
+                    query_params = {'count': page_size}
+                    if older_id is not None:
+                        query_params['older_id'] = older_id
+
+                    result = _call_payment_list(card_payment_endpoint, account_id, mode, params=query_params)
+                    pages_fetched += 1
+                    payments = getattr(result, 'value', result)
+                    if payments is None:
+                        payments = []
+                    if not isinstance(payments, list):
+                        payments = list(payments)
+                    if not payments:
+                        stop_reason = 'empty_page'
+                        break
+
+                    oldest_payment_id = None
+                    oldest_payment_created = None
+                    for payment in payments:
+                        payment_id_raw = get_obj_field(payment, 'id_', 'id')
+                        dedupe_key = str(payment_id_raw) if payment_id_raw is not None else f"obj:{id(payment)}"
+                        if dedupe_key in seen_payment_ids:
+                            continue
+                        seen_payment_ids.add(dedupe_key)
+                        collected.append(payment)
+
+                        payment_id = _extract_payment_numeric_id(payment)
+                        if payment_id is not None:
+                            if oldest_payment_id is None or payment_id < oldest_payment_id:
+                                oldest_payment_id = payment_id
+
+                        created_at = _extract_payment_created_datetime(payment)
+                        if created_at is not None:
+                            if oldest_payment_created is None or created_at < oldest_payment_created:
+                                oldest_payment_created = created_at
+
+                    if cutoff_date and oldest_payment_created and oldest_payment_created < cutoff_date:
+                        stop_reason = 'cutoff_reached'
+                        break
+
+                    if len(payments) < page_size:
+                        stop_reason = 'short_page'
+                        break
+                    if oldest_payment_id is None:
+                        stop_reason = 'missing_oldest_id'
+                        break
+                    if older_id is not None and oldest_payment_id == older_id:
+                        stop_reason = 'no_progress'
+                        break
+                    older_id = oldest_payment_id
+                else:
+                    stop_reason = 'max_pages_reached'
+
+                if _CARD_PAYMENT_ENDPOINT is not card_payment_endpoint or _CARD_PAYMENT_LIST_MODE != mode:
+                    logger.info(f"Using bunq card payment endpoint: {name} ({mode})")
+                _CARD_PAYMENT_ENDPOINT = card_payment_endpoint
+                _CARD_PAYMENT_LIST_MODE = mode
+
+                metadata = {
+                    'source': 'card_payment',
+                    'endpoint': name,
+                    'mode': mode,
+                    'page_size': page_size,
+                    'max_pages': max_pages,
+                    'pages_fetched': pages_fetched,
+                    'stop_reason': stop_reason,
+                    'truncated': stop_reason == 'max_pages_reached',
+                    'count': len(collected),
+                }
+                if return_meta:
+                    return collected, metadata
+                return collected
+            except TypeError as exc:
+                last_exc = exc
+                continue
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Bunq card payment endpoint {name} ({mode}) failed: {exc}")
+                break
+
+    raise RuntimeError(f"bunq-sdk card payment list failed: {last_exc}")
 
 def _unwrap_endpoint_result(result):
     value = getattr(result, 'value', result)
@@ -3657,16 +3892,25 @@ def get_transactions():
             selected_accounts = accounts
         
         all_transactions = []
+        truncated_accounts = []
         for account in selected_accounts:
             account_id_value = get_obj_field(account, 'id_', 'id')
-            transactions = get_account_transactions(
+            transactions, tx_meta = get_account_transactions(
                 account_id_value,
                 cutoff_date,
                 sort_desc,
                 own_ibans,
-                get_obj_field(account, 'description', 'display_name')
+                get_obj_field(account, 'description', 'display_name'),
+                return_meta=True
             )
             all_transactions.extend(transactions)
+            if tx_meta.get('truncated'):
+                truncated_accounts.append({
+                    'account_id': account_id_value,
+                    'account_name': get_obj_field(account, 'description', 'display_name') or f"Account {account_id_value}",
+                    'payment': tx_meta.get('payment'),
+                    'card_payment': tx_meta.get('card_payment'),
+                })
         
         if exclude_internal:
             all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]
@@ -3674,6 +3918,11 @@ def get_transactions():
         persist_transactions(all_transactions)
         all_transactions.sort(key=lambda t: t['date'], reverse=sort_desc)
         total_count = len(all_transactions)
+        amount_eur_missing_count = sum(
+            1
+            for tx in all_transactions
+            if str(tx.get('currency') or 'EUR').upper() != 'EUR' and tx.get('amount_eur') is None
+        )
         paged = all_transactions[offset:offset + limit]
         
         logger.info(f"✅ Retrieved {total_count} transactions (page {page})")
@@ -3683,7 +3932,10 @@ def get_transactions():
             'count': total_count,
             'page': page,
             'page_size': limit,
-            'sort': sort
+            'sort': sort,
+            'truncated': bool(truncated_accounts),
+            'truncated_accounts': truncated_accounts,
+            'amount_eur_missing_count': amount_eur_missing_count,
         }
         
         if cache_allowed():
@@ -3706,13 +3958,40 @@ def get_transactions():
             'error': str(e)
         }), 500
 
-def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_ibans=None, account_name=None):
-    """Get transactions for specific account"""
-    payments = list_payments_for_account(account_id, cutoff_date=cutoff_date)
+def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_ibans=None, account_name=None, return_meta=False):
+    """Get transactions for specific account."""
+    payments, payment_meta = list_payments_for_account(account_id, cutoff_date=cutoff_date, return_meta=True)
+
+    card_payments = []
+    card_meta = {
+        'source': 'card_payment',
+        'available': False,
+        'truncated': False,
+        'count': 0,
+        'error': None,
+    }
+    try:
+        card_payments, raw_card_meta = list_card_payments_for_account(
+            account_id,
+            cutoff_date=cutoff_date,
+            return_meta=True
+        )
+        card_meta = {
+            **raw_card_meta,
+            'available': True,
+            'error': None,
+        }
+    except Exception as exc:
+        # Optional endpoint; keep core payment flow working even when unsupported.
+        card_meta['error'] = str(exc)
+
+    entries = [('payment', item) for item in payments] + [('card_payment', item) for item in card_payments]
+
     transactions = []
     own_ibans = own_ibans or set()
-    
-    for payment in payments:
+    seen_transaction_keys = set()
+
+    for source_name, payment in entries:
         payment_id = get_obj_field(payment, 'id_', 'id', default='unknown')
         created_raw = get_obj_field(payment, 'created', 'created_at', 'date')
         if not created_raw:
@@ -3727,25 +4006,31 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             continue
 
         if cutoff_date and created < cutoff_date:
-            # bunq returns payments newest-first. Once we find a payment older
-            # than the cutoff, all subsequent ones will also be older, so we
-            # can break early only when iterating in descending order.
-            if sort_desc:
-                break
             continue
-        
+
         is_internal_transfer = False
         counterparty_alias = get_obj_field(payment, 'counterparty_alias', 'counterparty')
         counterparty_name = extract_counterparty_name(counterparty_alias)
         counterparty_iban = extract_alias_iban(counterparty_alias)
         if counterparty_iban and counterparty_iban in own_ibans:
             is_internal_transfer = True
-        
+
         description = get_obj_field(payment, 'description', 'label', default='') or ''
         amount_value, amount_currency = parse_monetary_value(
             get_obj_field(payment, 'amount', 'monetary_value'),
             context=f"payment {payment_id} amount"
         )
+        dedupe_key = "|".join([
+            str(payment_id),
+            created.isoformat(),
+            str(amount_value),
+            str(amount_currency),
+            description,
+        ])
+        if dedupe_key in seen_transaction_keys:
+            continue
+        seen_transaction_keys.add(dedupe_key)
+
         rate_date = created.date().isoformat()
         amount_eur_value, fx_rate_to_eur, fx_converted = convert_amount_to_eur(
             amount_value,
@@ -3778,7 +4063,7 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
                 (value.strip() for value in merchant_candidates if isinstance(value, str) and value.strip()),
                 'Onbekend'
             )
-        
+
         transactions.append({
             'id': payment_id,
             'date': created.isoformat(),
@@ -3792,11 +4077,18 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
             'merchant': merchant_label,
             'category': category,
             'type': get_obj_field(payment, 'type_', 'type'),
+            'source': source_name,
             'account_id': account_id,
             'account_name': account_name,
             'is_internal_transfer': is_internal_transfer
         })
-    
+
+    if return_meta:
+        return transactions, {
+            'payment': payment_meta,
+            'card_payment': card_meta,
+            'truncated': bool(payment_meta.get('truncated') or card_meta.get('truncated')),
+        }
     return transactions
 
 def categorize_transaction(description, counterparty_name, is_internal=False, merchant_category_code=None, amount=None):

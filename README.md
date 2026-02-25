@@ -18,6 +18,7 @@ Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseer
 - Productie-runtime via Gunicorn (geen Flask development server in container)
 - Lokale history-opslag (SQLite) voor langere-termijn inzichten
 - EUR-totalen voor niet-EUR rekeningen (met FX conversie en caching)
+- Transactie-dekking via Bunq `payment` én (waar beschikbaar) `card-payment` endpoints
 - 11+ visualisaties (cashflow, trends, categorieën)
 - Actionable insight cards (runway, needs-vs-wants, merchant concentration, monthly net projection) met deep-dive details
 - Caching en pagination voor performance
@@ -66,6 +67,13 @@ Meer details: [SECURITY.md](SECURITY.md)
 Health endpoints:
 - Liveness: `GET /api/live` (container/app process up)
 - Readiness: `GET /api/health` (Bunq context state; kan `503` geven bij key/IP mismatch)
+
+Transactie-diagnostiek:
+- `GET /api/transactions` retourneert extra velden:
+  - `truncated` (true/false)
+  - `truncated_accounts` (per account paging-cap info)
+  - `amount_eur_missing_count` (non-EUR transacties zonder EUR-conversie)
+- Dashboard toont hiervoor expliciete waarschuwingen i.p.v. stilzwijgende onderrapportage.
 
 Snelle check na deploy:
 ```bash

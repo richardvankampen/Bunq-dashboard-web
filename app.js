@@ -978,6 +978,9 @@ async function loadRealData() {
         let lastResponse = null;
         let loadError = '';
         let truncatedBySafetyCap = false;
+        let backendTruncated = false;
+        let backendMissingEurCount = 0;
+        const truncatedAccounts = new Map();
         
         const accountParam = buildAccountFilterParam();
         const excludeParam = `&exclude_internal=${CONFIG.excludeInternalTransfers}`;
@@ -995,6 +998,19 @@ async function loadRealData() {
                     loadError = 'Bunq API session token expired. The server will auto-recover — please try refreshing in a moment.';
                 }
                 break;
+            }
+
+            if (response.truncated) {
+                backendTruncated = true;
+                (response.truncated_accounts || []).forEach((item) => {
+                    const key = String(item?.account_id ?? '');
+                    if (!key || truncatedAccounts.has(key)) return;
+                    truncatedAccounts.set(key, item);
+                });
+            }
+            const missingEur = Number(response.amount_eur_missing_count || 0);
+            if (Number.isFinite(missingEur) && missingEur > backendMissingEurCount) {
+                backendMissingEurCount = missingEur;
             }
             
             if (total === null) total = response.count;
@@ -1015,6 +1031,17 @@ async function loadRealData() {
             if (truncatedBySafetyCap) {
                 console.warn(`⚠️ Transaction dataset truncated at ${all.length}/${total} rows (hardPageCap=${hardPageCap})`);
                 showError(`Result set capped at ${all.length} transactions. Narrow the period or account filter for complete data.`);
+            }
+            if (backendTruncated) {
+                const names = Array.from(truncatedAccounts.values())
+                    .map((item) => item?.account_name)
+                    .filter(Boolean)
+                    .slice(0, 3);
+                const label = names.length ? ` (${names.join(', ')}${truncatedAccounts.size > 3 ? ', ...' : ''})` : '';
+                showError(`Backend transaction window reached for one or more accounts${label}. Consider lower 'days' or higher BUNQ_PAYMENT_MAX_PAGES.`);
+            }
+            if (backendMissingEurCount > 0) {
+                showError(`${backendMissingEurCount} non-EUR transaction(s) have no EUR conversion and are excluded from EUR totals/charts.`);
             }
             transactionsData = all.map(t => ({
                 ...t,
@@ -1373,9 +1400,10 @@ function buildAccountFilterParam() {
     return `&account_ids=${encodeURIComponent(ids)}`;
 }
 
-function applyClientFilters(data) {
+function applyClientFilters(data, options = {}) {
     let filtered = [...data];
-    if (CONFIG.excludeInternalTransfers) {
+    const excludeInternalTransfers = options.excludeInternalTransfers ?? CONFIG.excludeInternalTransfers;
+    if (excludeInternalTransfers) {
         filtered = filtered.filter(t => !t.is_internal_transfer);
     }
     if (accountsList.length && selectedAccountIds.size > 0 && selectedAccountIds.size < accountsList.length) {
@@ -1943,9 +1971,9 @@ function openDetailModal({ title, summary, rows, chart }) {
     modalEl.classList.add('active');
 }
 
-function getCurrentNormalizedTransactions() {
+function getCurrentNormalizedTransactions(options = {}) {
     if (!Array.isArray(transactionsData)) return [];
-    const filtered = applyClientFilters(transactionsData);
+    const filtered = applyClientFilters(transactionsData, options);
     return normalizeTransactions(filtered);
 }
 
@@ -1980,7 +2008,9 @@ function buildDailySeries(transactions, pickValue) {
 }
 
 function showTransactionDetail(detailType) {
-    const transactions = getCurrentNormalizedTransactions();
+    const transactions = detailType === 'savings-transfers'
+        ? getCurrentNormalizedTransactions({ excludeInternalTransfers: false })
+        : getCurrentNormalizedTransactions();
 
     if (!transactions.length) {
         openDetailModal({
