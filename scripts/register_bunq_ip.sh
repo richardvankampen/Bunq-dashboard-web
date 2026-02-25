@@ -30,8 +30,13 @@ if [ -z "${CONTAINER_ID}" ]; then
   exit 1
 fi
 
-echo "[1/8] Container egress public IP"
-EGRESS_IP="$($DOCKER_CMD exec "${CONTAINER_ID}" python3 - <<'PY'
+PROVIDED_TARGET_IP="${TARGET_IP:-}"
+if [ -n "${PROVIDED_TARGET_IP}" ]; then
+  TARGET_IP="${PROVIDED_TARGET_IP}"
+  echo "[1/8] Using provided target IP (skip egress lookup): ${TARGET_IP}"
+else
+  echo "[1/8] Container egress public IP"
+  EGRESS_IP="$($DOCKER_CMD exec "${CONTAINER_ID}" python3 - <<'PY'
 import ipaddress
 import requests
 
@@ -60,9 +65,10 @@ if not resolved:
 print(resolved)
 PY
 )"
-echo "${EGRESS_IP}"
+  echo "${EGRESS_IP}"
+  TARGET_IP="${EGRESS_IP}"
+fi
 
-TARGET_IP="${TARGET_IP:-${EGRESS_IP}}"
 if [ "${NO_PROMPT}" != "true" ] && [ -t 0 ]; then
   printf "Whitelist IPv4 [%s]: " "${TARGET_IP}"
   IFS= read -r INPUT_IP || true

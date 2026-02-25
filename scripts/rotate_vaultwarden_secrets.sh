@@ -220,9 +220,13 @@ $DOCKER_CMD service logs --since 2m "${SERVICE_NAME}" 2>&1 | \
 CONTAINER_ID="$($DOCKER_CMD ps --filter "name=${SERVICE_NAME}" -q | head -n1 || true)"
 if [ -n "${CONTAINER_ID}" ]; then
   TOKEN_CODE="$($DOCKER_CMD exec "${CONTAINER_ID}" sh -lc '
-    URL="${VAULTWARDEN_URL:-http://vaultwarden:80}"
+    URL="${VAULTWARDEN_URL:-}"
     CID="$(tr -d "\r\n" </run/secrets/vaultwarden_client_id 2>/dev/null || true)"
     CSECRET="$(tr -d "\r\n" </run/secrets/vaultwarden_client_secret 2>/dev/null || true)"
+    if [ -z "$URL" ]; then
+      echo "missing-url"
+      exit 0
+    fi
     if [ -z "$CID" ] || [ -z "$CSECRET" ]; then
       echo "missing-secrets"
       exit 0
@@ -238,6 +242,8 @@ if [ -n "${CONTAINER_ID}" ]; then
   ' 2>/dev/null || true)"
   if [ "${TOKEN_CODE}" = "200" ]; then
     say "Vaultwarden token check: OK (200)"
+  elif [ "${TOKEN_CODE}" = "missing-url" ]; then
+    say "Vaultwarden token check: skipped (VAULTWARDEN_URL is not set in container env)"
   elif [ "${TOKEN_CODE}" = "missing-secrets" ]; then
     say "Vaultwarden token check: skipped (missing secrets in container)"
   else

@@ -970,17 +970,19 @@ async function loadRealData() {
         // pages. We use offset-based page params here to page through the
         // backend's aggregated result set efficiently.
         const pageSize = 500;
-        const maxPages = 20;
+        // Safety cap to prevent unbounded API loops on unexpected backend responses.
+        const hardPageCap = 200;
         let page = 1;
         let all = [];
         let total = null;
         let lastResponse = null;
         let loadError = '';
+        let truncatedBySafetyCap = false;
         
         const accountParam = buildAccountFilterParam();
         const excludeParam = `&exclude_internal=${CONFIG.excludeInternalTransfers}`;
         
-        while (page <= maxPages) {
+        while (page <= hardPageCap) {
             const url = `${CONFIG.apiEndpoint}/transactions?days=${CONFIG.timeRange}&page=${page}&page_size=${pageSize}${accountParam}${excludeParam}`;
             const response = await authenticatedFetch(url);
             lastResponse = response;
@@ -1004,8 +1006,16 @@ async function loadRealData() {
             
             page += 1;
         }
+
+        if (!loadError && total !== null && all.length < total && page > hardPageCap) {
+            truncatedBySafetyCap = true;
+        }
         
         if (all.length) {
+            if (truncatedBySafetyCap) {
+                console.warn(`⚠️ Transaction dataset truncated at ${all.length}/${total} rows (hardPageCap=${hardPageCap})`);
+                showError(`Result set capped at ${all.length} transactions. Narrow the period or account filter for complete data.`);
+            }
             transactionsData = all.map(t => ({
                 ...t,
                 date: new Date(t.date),

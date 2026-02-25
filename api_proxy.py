@@ -2966,13 +2966,13 @@ def build_data_quality_summary(days=90):
 # ============================================
 
 API_KEY = get_api_key_from_vaultwarden()
-CONFIG_FILE = 'config/bunq_production.conf'
 ENVIRONMENT_LABEL = os.getenv('BUNQ_ENVIRONMENT', 'PRODUCTION').strip().upper()
 if ENVIRONMENT_LABEL not in ('PRODUCTION', 'SANDBOX'):
     logger.warning(f"⚠️ Unknown BUNQ_ENVIRONMENT '{ENVIRONMENT_LABEL}', defaulting to PRODUCTION")
     ENVIRONMENT_LABEL = 'PRODUCTION'
 
 ENVIRONMENT_TYPE = ApiEnvironmentType.SANDBOX if ENVIRONMENT_LABEL == 'SANDBOX' else ApiEnvironmentType.PRODUCTION
+CONFIG_FILE = 'config/bunq_sandbox.conf' if ENVIRONMENT_LABEL == 'SANDBOX' else 'config/bunq_production.conf'
 BUNQ_INIT_AUTO_ATTEMPT = get_bool_env('BUNQ_INIT_AUTO_ATTEMPT', True)
 BUNQ_INIT_RETRY_SECONDS = max(get_int_env('BUNQ_INIT_RETRY_SECONDS', 120), 15)
 
