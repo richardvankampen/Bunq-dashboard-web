@@ -289,6 +289,47 @@ def _call_api_client_get(api_client, path, params=None):
             continue
     raise RuntimeError(f"api_client.get failed for path '{path}': {last_exc}")
 
+def _resolve_bunq_api_client():
+    """
+    Resolve Bunq SDK api client across SDK variants.
+    """
+    # Preferred accessor on BunqContext in most sdk variants.
+    bunq_context_client = getattr(BunqContext, 'api_client', None)
+    if callable(bunq_context_client):
+        try:
+            client = bunq_context_client()
+            if client is not None:
+                return client
+        except Exception:
+            pass
+
+    # Fallback to BunqContext static attribute variants.
+    for attr_name in ('_api_client', 'api_client_'):
+        client = getattr(BunqContext, attr_name, None)
+        if client is not None:
+            return client
+
+    # Fallback via ApiContext/BunqContext.api_context() accessor variants.
+    api_context = BunqContext.api_context()
+    for accessor in ('api_client', 'get_api_client'):
+        candidate = getattr(api_context, accessor, None)
+        if callable(candidate):
+            try:
+                client = candidate()
+                if client is not None:
+                    return client
+            except Exception:
+                pass
+        elif candidate is not None:
+            return candidate
+
+    for attr_name in ('_api_client', 'api_client_'):
+        client = getattr(api_context, attr_name, None)
+        if client is not None:
+            return client
+
+    return None
+
 def _extract_monetary_accounts_from_raw_payload(payload):
     if payload is None:
         return []
@@ -328,18 +369,26 @@ def list_monetary_accounts_raw_api(user_id):
     Fallback path: retrieve monetary accounts via raw API client payload.
     This bypasses SDK model deserialization issues on some account variants.
     """
-    api_context = BunqContext.api_context()
-    api_client_accessor = getattr(api_context, 'api_client', None)
-    api_client = api_client_accessor() if callable(api_client_accessor) else api_client_accessor
+    api_client = _resolve_bunq_api_client()
     if api_client is None:
         raise RuntimeError('bunq-sdk api_client unavailable')
 
-    paths = (
+    base_paths = (
         f"user/{user_id}/monetary-account",
-        f"/user/{user_id}/monetary-account",
-        f"v1/user/{user_id}/monetary-account",
-        f"/v1/user/{user_id}/monetary-account",
+        f"user/{user_id}/monetary-account-bank",
+        f"user/{user_id}/monetary-account-savings",
+        f"user/{user_id}/monetary-account-external-savings",
+        f"user/{user_id}/monetary-account-investment",
+        f"user/{user_id}/monetary-account-external",
+        f"user/{user_id}/monetary-account-joint",
+        f"user/{user_id}/monetary-account-card",
     )
+    paths = []
+    for base_path in base_paths:
+        paths.append(base_path)
+        paths.append(f"/{base_path}")
+        paths.append(f"v1/{base_path}")
+        paths.append(f"/v1/{base_path}")
     params_variants = (
         {'status': 'ACTIVE'},
         {},
@@ -347,6 +396,8 @@ def list_monetary_accounts_raw_api(user_id):
     )
 
     last_exc = None
+    merged_accounts = []
+    seen_ids = set()
     for path in paths:
         for params in params_variants:
             try:
@@ -354,16 +405,28 @@ def list_monetary_accounts_raw_api(user_id):
                 payload = _extract_json_payload(raw_result)
                 accounts = _extract_monetary_accounts_from_raw_payload(payload)
                 if accounts:
-                    logger.info(
-                        "Using raw Bunq monetary-account fallback: path=%s params=%s (+%d accounts)",
-                        path,
-                        params if params is not None else '{}',
-                        len(accounts),
-                    )
-                    return accounts
+                    added = 0
+                    for account in accounts:
+                        account_id = get_obj_field(account, 'id_', 'id')
+                        dedupe_key = str(account_id) if account_id is not None else f"obj:{id(account)}"
+                        if dedupe_key in seen_ids:
+                            continue
+                        seen_ids.add(dedupe_key)
+                        merged_accounts.append(account)
+                        added += 1
+                    if added:
+                        logger.info(
+                            "Using raw Bunq monetary-account fallback: path=%s params=%s (+%d accounts)",
+                            path,
+                            params if params is not None else '{}',
+                            added,
+                        )
             except Exception as exc:
                 last_exc = exc
                 continue
+
+    if merged_accounts:
+        return merged_accounts
 
     raise RuntimeError(f"raw monetary-account fallback failed: {last_exc}")
 
