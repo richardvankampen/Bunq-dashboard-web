@@ -1,302 +1,91 @@
 # Context Handover
 
-Laatste update: 2026-02-25 (transaction coverage + diagnostics)
+Laatste update: 2026-02-28 (savings-account incident)
 
-## Update 2026-02-25 (payment/card-payment dekking + diagnostiek)
+## Canonieke status
 
-### Wat is aangepast
+Dit bestand is de actuele bron voor overdracht.
+- Informatie staat hier bewust maar 1x.
+- Oudere of foutieve aannames zijn verwijderd i.p.v. naast nieuwe info te blijven staan.
 
-- Backend transactieflow is uitgebreid met endpoint-compatibiliteit en pagingdiagnostiek:
-  - payment-paging metadata wordt nu teruggegeven (`truncated`, `truncated_accounts`);
-  - card-payment endpoint wordt meegenomen waar de SDK die endpoint exposeert;
-  - response bevat nu ook `amount_eur_missing_count` om FX-gaten expliciet te maken.
-- Frontend verwerkt deze signalen nu zichtbaar:
-  - duidelijke waarschuwing bij dataset-truncation;
-  - duidelijke waarschuwing bij transacties zonder EUR-omrekening.
-- Savings-transfer detailflow gebruikt nu een dedicated pad zonder impliciete internal-transfer filtering.
-- Docs zijn gesynchroniseerd:
-  - `README.md` (transactie-diagnostiek),
-  - `SYNOLOGY_INSTALL.md` (payment/card-payment paging env vars),
-  - `TROUBLESHOOTING.md` (truncated diagnose + tuning flow).
+## Productiestatus (bevestigd)
 
-### Operationele noot
+- Vaultwarden-first werkt: API key wordt via CLI decrypt opgehaald.
+- Bunq context init werkt: `/api/health` kan `ready=true` en `bunq_context_initialized=true` geven.
+- Session-auth met secure cookies werkt.
+- Dashboard draait via Synology + Docker Swarm + Gunicorn.
 
-- Voor grote datasets eerst `truncated`/`truncated_accounts` controleren via `/api/transactions`.
-- Alleen bij `truncated=true` paginglimieten verhogen (`BUNQ_PAYMENT_MAX_PAGES`, `BUNQ_CARD_PAYMENT_MAX_PAGES`) en opnieuw deployen.
+## Open incident: spaarrekeningen ontbreken
 
-## Waar we staan
+### Symptoom
 
-- Vaultwarden-first setup blijft de voorkeursroute (`USE_VAULTWARDEN=true`).
-- Dashboard draait via Synology + Docker Swarm.
-- Recente fixes zijn gepusht op `main`:
-  - `8d6fb66`: bunq pagination + actionable budgeting visualisaties
-  - `fc30a08`: balance/merchant analytics + UI/visualisatie fixes
-  - `8c8a69e`: worklog update
-  - `c690891`: persistent context handover bestand
+- Widget `Spaarrekeningen` blijft leeg.
+- `/api/accounts` bevat alleen checking/external accounts.
+- Bekende echte rekeningen die missen:
+  - `Spaarrekening` (EUR)
+  - `Spaargeld in ZAR`
 
-## Wat net is aangepast (samenvatting)
+### Reproduceerbare observaties
 
-- Backend:
-  - payment-list paginatie aangescherpt met `count` + `older_id` (SDK-compatibel).
-  - cutoff-aware paging + deduplicatie toegevoegd voor stabielere transactielijsten.
-  - paging tuning via `BUNQ_PAYMENT_PAGE_SIZE` en `BUNQ_PAYMENT_MAX_PAGES`.
-- Frontend visualisaties:
-  - `3D Time-Space Journey` vervangen door `Budget Discipline (50/30/20)`.
-  - nieuwe budget-coach detailmodal (maandelijkse needs/wants/savings + targets).
-  - Sankey informatiever gemaakt: income split naar essentials/discretionary + net saved/buffer.
-  - Sunburst bevat nu `overig`-aggregatie (minder missende categorieën/winkels).
-- Insights:
-  - nieuwe KPI-kaart `50/30/20 Fit`.
-  - nieuwe KPI-kaart `Next Best Action`.
-  - nieuwe detailmodal `Action plan` met prioriteit + impactinschatting.
-- Verdieping/finetuning daarna:
-  - nieuwe KPI `Spend Volatility`.
-  - nieuwe KPI `Recurring Costs` + detailmodal.
-  - action-plan regels uitgebreid (multi-maand baseline, recurring costs, volatiliteit, negatieve savings).
-  - accounttype/categorisatie edge-cases verbeterd (`monetary_account_type` signalen, extra MCC/keyword categorieën).
+- Logs tonen SDK parse-fouten op savings endpoints:
+  - `MonetaryAccountApiObject failed: float() argument must be a string or a real number, not 'NoneType'`
+  - `MonetaryAccountSavingsApiObject failed: float() argument must be a string or a real number, not 'NoneType'`
+  - `MonetaryAccountExternalSavingsApiObject failed: float() argument must be a string or a real number, not 'NoneType'`
+- Accounts output toont alleen:
+  - 9x `MonetaryAccountBankApiObject`
+  - 1x `MonetaryAccountExternalApiObject`
 
-## Belangrijk voor volgende sessie
+## Wat recent is aangepast (code)
 
-- Eerst valideren op echte NAS-data:
-  - transaction paging performance en volledigheid (`/api/transactions` over langere periodes),
-  - 50/30/20 grafiek en Action Plan op echte categoriepatronen,
-  - Sunburst/Sankey leesbaarheid en informatiedichtheid.
-- Daarna volgende P1-substap:
-  - finetunen op echte gebruikersdata (drempels per categorie/merchant),
-  - checken of nieuwe categorieën (`Verzekering`, `Belastingen`, `Refund`, `Rente`) goed landen in visualisaties,
-  - eventuele extra deep-dives voor budgetcoach use-cases.
+Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
 
-## Concreet vervolgstappenplan
+- `e9da54c` - savings-classificatie verbeterd (backend + frontend).
+- `adb96f0` - monetary-account endpoint discovery + list modes verbreed.
+- `dcc7bb7` - retry met `status=ACTIVE` modes toegevoegd.
+- `6909e51` - raw monetary-account fallback toegevoegd bij SDK parse failures.
+- `223396f` - api-client resolutie verbreed voor raw fallback (`BunqContext`/`ApiContext` varianten).
+- `948a564` - meerdere Bunq user IDs detecteren en per user account-enumeratie proberen.
 
-1. NAS updaten/deployen:
-   - `cd /volume1/docker/bunq-dashboard`
-   - `sudo git pull`
-   - `sh scripts/install_or_update_synology.sh`
-2. Health + logs checken:
-   - `curl -s http://127.0.0.1:5000/api/health`
-   - `sudo docker service logs --since 5m bunq_bunq-dashboard | grep -E "ERROR|Warning|API key|initialized"`
-3. UI-functioneel testen:
-   - cards: `Spend Volatility`, `Recurring Costs`, `Next Best Action`
-   - detailmodals: `Budget Discipline`, `Action plan`, `Recurring costs`
-4. Datakwaliteit valideren:
-   - categorisatie op nieuwe labels (`Verzekering`, `Belastingen`, `Refund`, `Rente`)
-   - accounttype-classificatie (checking/savings/investment)
-5. Op basis van feedback:
-   - action-rules en thresholds verder bijstellen voor minder ruis en hogere relevantie.
+Status: laatste fix (`948a564`) moet nog op NAS bevestigd worden in runtime-logs/resultaten.
 
-## Handige update/deploy flow op NAS
+## Deployment + validatie (volgende stap)
 
 ```bash
 cd /volume1/docker/bunq-dashboard
-sudo git pull
-sudo docker build --no-cache -t bunq-dashboard:local .
-sudo docker service update --force --image bunq-dashboard:local bunq_bunq-dashboard
+sudo git pull --rebase origin main
+TAG=$(sudo git rev-parse --short HEAD)
+sudo docker build --no-cache -t bunq-dashboard:$TAG -t bunq-dashboard:local .
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 ```
 
-## Log-checks
+Controle 1 (nieuwe runtime-code aanwezig):
 
 ```bash
-sudo docker service logs --since 5m bunq_bunq-dashboard | grep -E "Vaultwarden|API key|Bunq API|Error|initialized"
-curl -s http://127.0.0.1:5000/api/health
+BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
+sudo docker exec "$BUNQ_CONTAINER" sh -c "grep -n 'discover_bunq_user_ids' /app/api_proxy.py"
 ```
 
-## Update 2026-02-15 (whitelist flows)
+Controle 2 (accounts + logs):
 
-- Script `scripts/register_bunq_ip.sh` is hardener gemaakt:
-  - publieke IPv4 validatie,
-  - non-interactive support (`NO_PROMPT=true`),
-  - robuustere egress IP detectie en foutoutput.
-- Dashboard knop `Set Bunq API whitelist IP` draait nu in verplichte veilige 2-staps flow:
-  1. create/activate target IP zonder deactiveren van andere ACTIVE IPs,
-  2. aparte confirm voor deactiveren van overige ACTIVE IPs.
-- De knop toont nu expliciet een IP-prompt, met fallback op ingevuld veld of bekend egress IP.
-- Relevante commits: `e1cd3b3`, `cb04bdd`.
+```bash
+curl -sS -k -b "$COOKIE_JAR" "$BASE_URL/api/accounts?_ts=$(date +%s)" | jq -r '
+(.data // [])[]
+| [.id, .description, .account_class, .account_type, (.monetary_account_type // ""), (.balance.value|tostring), .balance.currency] | @tsv'
+```
 
-## Update 2026-02-15 (P1 stap 1 t/m 4)
+```bash
+sudo docker service logs --since 5m bunq_bunq-dashboard | \
+grep -E "Using bunq endpoint class|raw Bunq monetary-account fallback|Merged [0-9]+ account|Retrieved [0-9]+ accounts|MonetaryAccountSavings|Error fetching accounts"
+```
 
-- Nieuwe real-data kwaliteitsdiagnostiek:
-  - backend endpoint `GET /api/admin/data-quality`,
-  - score + coverage + warnings/recommendations op basis van `transaction_cache` en `account_snapshots`.
-- Dashboard heeft nieuwe doorklikbare insight `Data Quality` met detailmodal (component scores + concrete waarschuwingen).
-- Action-plan regels zijn aangescherpt op:
-  - inkomensdaling (rolling 30d),
-  - categorie-concentratie,
-  - urgente liquiditeitsrunway (<60 dagen).
-- Edge-cases uitgebreid:
-  - accounttype-detectie (`potje`, `stash`, `etf/equity`),
-  - categorisatiekeywords voor extra NL-merchants.
-- Sankey/Sunburst verfijnd voor meer informatiedichtheid:
-  - Sankey link-shares en in/uit/netto annotatie,
-  - Sunburst share-aware selectie (minder missende categorieën/merchants) + parent-percentage hover.
+## Als savings nog steeds ontbreken
 
-## Update 2026-02-16 (P1 finetuning vervolg)
+Doe een gerichte raw inspectie per Bunq user-id en endpoint in de container (volgende debug-stap). Doel: exact vaststellen op welk `/user/{id}/monetary-account*` pad de twee spaarrekeningen terugkomen, zodat fallback daarop gefixeerd kan worden.
 
-- Action plan aangescherpt:
-  - dynamische impactdrempels o.b.v. recente spend-scale (minder ruis op kleine datasets),
-  - confidence-score per actie en sortering op prioriteit + confidence + impact,
-  - extra rule voor structurele vaste-lasten-risico (hoog recurring share),
-  - extra rule voor income-side focus als essentials structureel dominant zijn.
-- `Next Best Action` kaart toont nu confidence-percentage.
-- Data quality is uitgebreid met bedrag-gebaseerde dekkingen:
-  - `category_amount_coverage` en `merchant_amount_coverage`,
-  - nieuwe signalen: `active_transaction_days` en `dataset_span_days`.
-- Data quality detailmodal toont nu extra diagnostiek:
-  - actieve transactiedagen, dataspan,
-  - dekkingsratio’s op zowel aantallen als uitgavenvolume.
-- Relevante commit: `94e5b9d`.
+## Documentatie-afspraak
 
-## Update 2026-02-16 (P1/P2 4-stappenreeks)
-
-- P1 real-data categorisatie verbeterd:
-  - nieuwe `Abonnementen` signalen via MCC + merchant keywords.
-- P1 actionable insights verfijnd:
-  - nieuwe concrete cost-levers (categorie/merchant),
-  - action-plan detailweergave bevat nu ook concrete `Actie`/playbook.
-- P1/P2 ops-hardening scripts:
-  - `scripts/register_bunq_ip.sh` gebruikt veilige 2-staps flow als `DEACTIVATE_OTHERS=true`,
-  - post-run verificatie van container-egress IP tegen actieve Bunq whitelist,
-  - duidelijke auto-remediatiehint bij mismatch.
-  - `scripts/install_or_update_synology.sh` en `scripts/restart_bunq_service.sh` verwijzen naar dezelfde veilige flow.
-- P2 production runtime:
-  - Docker runtime switched naar Gunicorn (`scripts/run_server.sh` + `gunicorn` dependency),
-  - backend lazy/throttled Bunq context init voor WSGI workers (`BUNQ_INIT_AUTO_ATTEMPT`, `BUNQ_INIT_RETRY_SECONDS`),
-  - `/api/health` en `/api/admin/status` tonen nu expliciete Bunq-contextstatus en laatste init-fout.
-- Documentatie is bijgewerkt op bovenstaande flow in:
-  - `README.md`
-  - `SYNOLOGY_INSTALL.md`
-  - `SECURITY.md`
-  - `TROUBLESHOOTING.md`
-
-## Opslagstatus
-
-- Wijzigingen van de 4-stappenreeks en docs staan op `main`.
-- Laatste commit: `6b67696` (`Finalize P1/P2 hardening and sync installation docs`).
-
-## Directe vervolgacties
-
-1. NAS update/deploy:
-   - `cd /volume1/docker/bunq-dashboard`
-   - `sudo git pull --rebase`
-   - `sh scripts/install_or_update_synology.sh`
-2. Basisvalidatie:
-   - `curl -s http://127.0.0.1:5000/api/health`
-   - `sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "API key retrieved from vault|Bunq API initialized|Incorrect API key or IP address|No valid API key|ERROR"`
-3. Alleen bij IP-whitelist mismatch:
-   - `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard`
-4. Functionele check (P1):
-   - Action Plan met concrete levers
-   - Data Quality detail
-   - Accounts + Transactions endpoints op live data
-
-## Update 2026-02-17 (startup + Vaultwarden stabiliteit)
-
-### Wat is gefixt
-
-- Startup crash opgelost door log-level normalisatie in backend:
-  - in `api_proxy.py` gebruikt logging nu `os.getenv('LOG_LEVEL', 'INFO').upper()`.
-- Vaultwarden CLI race onder Gunicorn workers opgelost:
-  - `BITWARDENCLI_APPDATA_DIR` wordt nu per process opgebouwd (`<base>-<pid>`).
-- Wijzigingen staan op `main`:
-  - commit `0d9f5ae` (`Harden startup log level and isolate bw CLI state per worker`).
-
-### Huidige operationele status (NAS)
-
-- `bunq_bunq-dashboard` service is running en healthcheck blijft groen (`/api/health` = 200).
-- Runtime knobs op NAS:
-  - `BUNQ_PREBOOT_INIT=false`
-  - `GUNICORN_WORKERS=1`
-- Geen crashloop meer (`Unknown level: 'info'` verdwenen).
-
-### Nog open
-
-- Bunq API context initialisatie faalt nog met:
-  - `HTTP Response Code: 400`
-  - `Incorrect API key or IP address`
-- Gevolg: app/auth werkt, maar Bunq data endpoints kunnen `503` teruggeven tot whitelist/key matcht.
-
-### Aanbevolen vervolgstappen (direct uitvoerbaar op NAS)
-
-1. Container egress IP bepalen.
-2. `scripts/register_bunq_ip.sh` in veilige 2-staps modus draaien op die IP:
-   - stap 1: `DEACTIVATE_OTHERS=false`
-   - stap 2: `DEACTIVATE_OTHERS=true`
-3. Contextbestanden verwijderen (`/app/config/bunq_production.conf`, `/app/config/bunq_sandbox.conf`) en service forceren.
-4. Logs valideren op `Bunq API initialized successfully` zonder `Incorrect API key or IP address`.
-
-## Update 2026-02-17 (Bunq SDK validatie + parsingfixes)
-
-### Wat is aangepast
-
-- `api_proxy.py` gevalideerd tegen officiële Bunq SDK code (`https://github.com/bunq/sdk_python.git`).
-- Belangrijkste technische mismatch die is opgelost:
-  - `MonetaryAccountApiObject` kan wrapper-objecten teruggeven met nested varianten (`MonetaryAccountSavings`, `MonetaryAccountInvestment`, etc.).
-  - Counterparty data kan nested zitten onder `MonetaryAccountReference` (`label_monetary_account`, `label_user`, `pointer`).
-  - MCC (`merchant_category_code`) moet ook uit nested alias-velden gelezen worden.
-- Gefixte onderdelen in backend:
-  - account-unwrapping + sterkere accounttypeclassificatie voor savings/investment;
-  - diepere alias traversal voor naam/IBAN extractie;
-  - MCC extractie uit nested alias-structuren;
-  - transaction-categorisatie gebruikt verbeterde MCC-extractie.
-
-### SDK referentie (naslag)
-
-- Officiële SDK repo: `https://github.com/bunq/sdk_python.git`
-- Lokale inspectiepad gebruikt tijdens analyse: `/tmp/sdk_python` (tijdelijk pad)
-- Opnieuw lokaal klaarzetten:
-  - `git clone --depth 1 https://github.com/bunq/sdk_python.git /tmp/sdk_python`
-- Belangrijkste bronbestanden voor dit onderwerp:
-  - `/tmp/sdk_python/bunq/sdk/model/generated/endpoint.py`
-  - `/tmp/sdk_python/bunq/sdk/model/generated/object_.py`
-
-### Commitstatus
-
-- Commit gepusht op `main`:
-  - `acadc97` — `Fix savings classification and merchant/MCC extraction`
-
-### Praktische verificatie op NAS
-
-1. Build/deploy nieuwe versie:
-   - `cd /volume1/docker/bunq-dashboard`
-   - `sudo git pull --rebase origin main`
-   - `TAG=$(date +%Y%m%d%H%M%S)`
-   - `sudo docker build --build-arg BW_VERSION=2026.1.0 --build-arg BW_NPM_VERSION=2026.1.0 -t bunq-dashboard:$TAG -t bunq-dashboard:local .`
-   - `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
-   - `sudo docker service update --image bunq-dashboard:$TAG --force bunq_bunq-dashboard`
-2. Savings-classificatie valideren:
-   - `curl -sS -m 10 http://127.0.0.1:5000/api/accounts | jq -r '.data[] | [.id, .description, .account_type, .account_class] | @tsv'`
-3. Merchant/category output valideren:
-   - `curl -sS -m 20 'http://127.0.0.1:5000/api/transactions?days=90&page=1&page_size=200&exclude_internal=true' | jq -r '.data[] | [.date, .merchant, .category, .description] | @tsv' | head -n 40`
-4. Dekkingsratio in lokale transaction cache:
-   - `BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)`
-   - `sudo docker exec "$BUNQ_CONTAINER" python3 -c "import sqlite3; c=sqlite3.connect('/app/config/dashboard_data.db'); c.row_factory=sqlite3.Row; r=c.execute(\"SELECT COUNT(*) total, SUM(CASE WHEN merchant IS NOT NULL AND TRIM(merchant)!='' AND LOWER(TRIM(merchant)) NOT IN ('unknown','onbekend') THEN 1 ELSE 0 END) merchant_named, SUM(CASE WHEN category IS NOT NULL AND TRIM(category)!='' AND LOWER(TRIM(category)) NOT IN ('overig','unknown','onbekend') THEN 1 ELSE 0 END) categorized FROM transaction_cache\").fetchone(); print(dict(r)); c.close()"`
-
-## Update 2026-02-24 (Repo-wide review fixes)
-
-### Commit
-
-- `9e15ee2` — `Harden Vaultwarden URL defaults and Bunq readiness/whitelist recovery`
-
-### Wat is aangepast
-
-- Vaultwarden CLI hardening:
-  - runtime vereist nu expliciete `VAULTWARDEN_URL`.
-  - bij `VAULTWARDEN_ACCESS_METHOD=cli` wordt alleen HTTPS geaccepteerd.
-- Bunq init recovery:
-  - bij init/restore-fout met bestaand contextbestand wordt dat bestand automatisch verwijderd en volgt één retry met fresh context.
-- Health endpoints opgesplitst:
-  - `/api/live` = liveness (200 als process leeft),
-  - `/api/health` = readiness (kan 503 zijn als Bunq context niet initialized is),
-  - `/api/ready` = alias naar readiness.
-- Container healthchecks gebruiken nu `/api/live`:
-  - `Dockerfile`, `docker-compose.yml`, `SYNOLOGY_INSTALL.md`.
-- Whitelist script veiligere default:
-  - `scripts/register_bunq_ip.sh` default `DEACTIVATE_OTHERS=false`.
-  - docs en recovery hints aangepast naar veilige eerste pass + optionele cleanup-pass (`DEACTIVATE_OTHERS=true`).
-- Markdown docs bijgewerkt:
-  - `README.md`, `SYNOLOGY_INSTALL.md`, `SECURITY.md`, `TROUBLESHOOTING.md`, `.env.example`.
-
-### Operationele impact op NAS
-
-- `docker` healthcheck blijft groen op liveness, ook als Bunq tijdelijk niet init.
-- Gebruik `/api/health` voor Bunq readiness-diagnose.
-- Bij dynamisch egress-IP eerst whitelisten met `DEACTIVATE_OTHERS=false`; pas daarna (optioneel) cleanup-pass.
+Vanaf nu bij elke codewijziging:
+- `WORKLOG.md` bijwerken met wat/waarom/resultaat.
+- `CONTEXT_HANDOVER.md` bijwerken naar 1 actuele, niet-duplicerende waarheid.
+- Verouderde informatie in `CONTEXT_HANDOVER.md` verwijderen i.p.v. extra lagen toevoegen.

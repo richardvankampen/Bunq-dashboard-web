@@ -2,6 +2,43 @@
 
 Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies geen impact heeft.
 
+## 2026-02-28
+
+### Opgeleverd
+
+- Savings-account incidentanalyse aangescherpt op live NAS-data:
+  - bevestigd dat `/api/accounts` alleen checking/external teruggeeft;
+  - bevestigd dat SDK-savings endpoints falen op `float(None)` parsefout.
+- Backend account-enumeratie verder gehard in meerdere iteraties:
+  - savings/accounttype-herkenning uitgebreid;
+  - monetary-account discovery/list modes verbreed;
+  - retries met `status=ACTIVE` toegevoegd;
+  - raw monetary-account fallback toegevoegd;
+  - api-client resolutie voor raw fallback verbreed;
+  - multi-user-id discovery toegevoegd om accounts over meerdere user-contexten te kunnen ophalen.
+- Handover-documentatie opgeschoond naar een enkele actuele statusweergave zonder duplicaten.
+
+### Relevante commits
+
+- `948a564` Discover multiple Bunq user IDs for account enumeration
+- `223396f` Resolve Bunq api client variants for raw account fallback
+- `6909e51` Add raw monetary-account fallback for SDK parse failures
+- `dcc7bb7` Retry monetary account list with active-status modes
+- `adb96f0` Broaden monetary account endpoint discovery and list modes
+- `e9da54c` Fix savings account classification for balance widgets
+
+### Openstaand
+
+- Op NAS nog valideren dat runtime met `948a564` de spaarrekeningen daadwerkelijk retourneert.
+- Als dat niet zo is: gerichte raw endpoint inspectie per user-id uitvoeren en fallback finaliseren op het endpoint dat savings werkelijk levert.
+
+### Procesafspraak
+
+- Bij elke codewijziging:
+  - `WORKLOG.md` actualiseren;
+  - `CONTEXT_HANDOVER.md` actualiseren;
+  - verouderde info verwijderen i.p.v. dupliceren.
+
 ## 2026-02-25
 
 ### Opgeleverd
