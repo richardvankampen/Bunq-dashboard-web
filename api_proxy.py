@@ -196,16 +196,24 @@ def _is_monetary_list_endpoint(name, candidate):
 def _call_monetary_account_list(account_endpoint, user_id, mode):
     if mode == 'no_args':
         return account_endpoint.list()
+    if mode == 'kw_params_active':
+        return account_endpoint.list(params={'status': 'ACTIVE'})
     if mode == 'kw_params_empty':
         return account_endpoint.list(params={})
+    if mode == 'positional_params_active':
+        return account_endpoint.list({'status': 'ACTIVE'})
     if mode == 'positional_params_empty':
         return account_endpoint.list({})
     if mode == 'kw_user_id':
         return account_endpoint.list(user_id=user_id)
+    if mode == 'kw_user_id_params_active':
+        return account_endpoint.list(user_id=user_id, params={'status': 'ACTIVE'})
     if mode == 'kw_user_id_params_empty':
         return account_endpoint.list(user_id=user_id, params={})
     if mode == 'positional_user_id':
         return account_endpoint.list(user_id)
+    if mode == 'positional_user_id_params_active':
+        return account_endpoint.list(user_id, {'status': 'ACTIVE'})
     if mode == 'positional_user_id_params_empty':
         return account_endpoint.list(user_id, {})
     raise RuntimeError(f"Unknown monetary account list mode: {mode}")
@@ -291,11 +299,15 @@ def list_monetary_accounts():
     ensure_bunq_session_active()
 
     modes = (
+        'kw_params_active',
+        'positional_params_active',
         'no_args',
         'kw_params_empty',
         'positional_params_empty',
+        'kw_user_id_params_active',
         'kw_user_id',
         'kw_user_id_params_empty',
+        'positional_user_id_params_active',
         'positional_user_id',
         'positional_user_id_params_empty',
     )
@@ -356,7 +368,7 @@ def list_monetary_accounts():
             except Exception as exc:
                 last_exc = exc
                 logger.warning(f"⚠️ Bunq endpoint {name} ({mode}) failed: {exc}")
-                break
+                continue
 
         if not endpoint_succeeded:
             continue
