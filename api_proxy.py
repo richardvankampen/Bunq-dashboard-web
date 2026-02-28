@@ -441,6 +441,14 @@ _HTTP_CLIENT_ACCESSOR_NAMES = (
     '_api_adapter',
     '_http_client',
     '_api_requester',
+    'session_context',
+    'get_session_context',
+    'session',
+    'get_session',
+    'api_session',
+    'get_api_session',
+    '_session_context',
+    '_api_session',
 )
 
 def _extract_http_client_via_accessors(holder):
@@ -489,7 +497,10 @@ def _discover_http_client_candidate(root_obj, root_name='root', max_depth=2):
 
     queue = [(root_obj, root_name, 0)]
     visited = set()
-    keywords = ('api', 'client', 'adapter', 'http', 'request', 'transport', 'network', 'communication')
+    keywords = (
+        'api', 'client', 'adapter', 'http', 'request', 'transport', 'network', 'communication',
+        'session', 'context', 'installation', 'security', 'token',
+    )
 
     while queue:
         current_obj, current_path, depth = queue.pop(0)
@@ -513,7 +524,15 @@ def _discover_http_client_candidate(root_obj, root_name='root', max_depth=2):
             if attr_name.startswith('__'):
                 continue
             attr_name_l = attr_name.lower()
-            if not (attr_name_l.startswith('get_') or any(token in attr_name_l for token in keywords)):
+            should_follow = (
+                attr_name_l.startswith('get_')
+                or any(token in attr_name_l for token in keywords)
+                or attr_name.startswith('_ApiContext__')
+                or attr_name.startswith('_SessionContext__')
+                or attr_name.startswith('_InstallationContext__')
+                or attr_name.startswith('_BunqContext__')
+            )
+            if not should_follow:
                 continue
             try:
                 nested = getattr(current_obj, attr_name)
@@ -548,7 +567,7 @@ def _build_api_client_diagnostics(api_context):
             continue
         for attr_name in attr_names:
             attr_name_l = attr_name.lower()
-            if not any(token in attr_name_l for token in ('api', 'client', 'adapter', 'http', 'request')):
+            if not any(token in attr_name_l for token in ('api', 'client', 'adapter', 'http', 'request', 'session', 'context')):
                 continue
             candidates.append(f"{root_name}.{attr_name}")
 
@@ -682,12 +701,12 @@ def _resolve_bunq_api_client():
             return resolved
 
     # Generic discovery over BunqContext / ApiContext object graph.
-    discovered_client, discovered_path = _discover_http_client_candidate(BunqContext, root_name='BunqContext', max_depth=2)
+    discovered_client, discovered_path = _discover_http_client_candidate(BunqContext, root_name='BunqContext', max_depth=3)
     if discovered_client is not None:
         logger.info("Resolved Bunq HTTP client via %s", discovered_path)
         return discovered_client
 
-    discovered_client, discovered_path = _discover_http_client_candidate(api_context, root_name='api_context', max_depth=2)
+    discovered_client, discovered_path = _discover_http_client_candidate(api_context, root_name='api_context', max_depth=3)
     if discovered_client is not None:
         logger.info("Resolved Bunq HTTP client via %s", discovered_path)
         return discovered_client

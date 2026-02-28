@@ -14,6 +14,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - endpoint class (`MonetaryAccountApiObject.self`) werd ten onrechte als HTTP client gezien;
     - `_is_http_client_like` sluit endpoint classes/modelobjecten nu uit;
     - `_call_api_client_get` probeert alleen aanwezige methodes en logt duidelijker typefoutcontext.
+  - raw client discovery uitgebreid:
+    - extra session/context accessors toegevoegd;
+    - objectgraph-discovery volgt nu ook private SDK contextvelden;
+    - discovery-diepte naar 3 verhoogd voor interne session-client paden.
 - Savings-account incidentanalyse aangescherpt op live NAS-data:
   - bevestigd dat `/api/accounts` alleen checking/external teruggeeft;
   - bevestigd dat SDK-savings endpoints falen op `float(None)` parsefout.
