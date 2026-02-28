@@ -218,6 +218,155 @@ def _call_monetary_account_list(account_endpoint, user_id, mode):
         return account_endpoint.list(user_id, {})
     raise RuntimeError(f"Unknown monetary account list mode: {mode}")
 
+def _extract_json_payload(candidate):
+    if candidate is None:
+        return None
+
+    if isinstance(candidate, dict):
+        return candidate
+
+    if isinstance(candidate, (bytes, bytearray)):
+        try:
+            return json.loads(candidate.decode('utf-8', errors='ignore'))
+        except Exception:
+            return None
+
+    if isinstance(candidate, str):
+        text = candidate.strip()
+        if not text:
+            return None
+        if not text.startswith('{') and not text.startswith('['):
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return None
+
+    if isinstance(candidate, (list, tuple)):
+        for item in candidate:
+            payload = _extract_json_payload(item)
+            if payload is not None:
+                return payload
+        return None
+
+    for attr_name in (
+        'value',
+        'raw_body',
+        'raw_response',
+        'body',
+        'response_body',
+        'response',
+        'json',
+    ):
+        nested = getattr(candidate, attr_name, None)
+        if callable(nested):
+            try:
+                nested = nested()
+            except Exception:
+                continue
+        payload = _extract_json_payload(nested)
+        if payload is not None:
+            return payload
+
+    return None
+
+def _call_api_client_get(api_client, path, params=None):
+    calls = (
+        lambda: api_client.get(path, params=params),
+        lambda: api_client.get(path, params),
+        lambda: api_client.get(path, params, None),
+        lambda: api_client.get(path),
+    )
+    last_exc = None
+    for call in calls:
+        try:
+            return call()
+        except TypeError as exc:
+            last_exc = exc
+            continue
+        except Exception as exc:
+            last_exc = exc
+            continue
+    raise RuntimeError(f"api_client.get failed for path '{path}': {last_exc}")
+
+def _extract_monetary_accounts_from_raw_payload(payload):
+    if payload is None:
+        return []
+
+    response_items = []
+    if isinstance(payload, dict):
+        response_items = payload.get('Response') or payload.get('response') or []
+    elif isinstance(payload, list):
+        response_items = payload
+
+    accounts = []
+    for item in response_items:
+        if not isinstance(item, dict):
+            continue
+
+        variant_key = None
+        variant_value = None
+        for key, value in item.items():
+            normalized_key = str(key).lower().replace('_', '')
+            if normalized_key.startswith('monetaryaccount'):
+                variant_key = key
+                variant_value = value
+                break
+        if variant_value is None:
+            continue
+        if not isinstance(variant_value, dict):
+            continue
+
+        normalized = dict(variant_value)
+        normalized['_raw_type'] = variant_key
+        accounts.append(normalized)
+
+    return accounts
+
+def list_monetary_accounts_raw_api(user_id):
+    """
+    Fallback path: retrieve monetary accounts via raw API client payload.
+    This bypasses SDK model deserialization issues on some account variants.
+    """
+    api_context = BunqContext.api_context()
+    api_client_accessor = getattr(api_context, 'api_client', None)
+    api_client = api_client_accessor() if callable(api_client_accessor) else api_client_accessor
+    if api_client is None:
+        raise RuntimeError('bunq-sdk api_client unavailable')
+
+    paths = (
+        f"user/{user_id}/monetary-account",
+        f"/user/{user_id}/monetary-account",
+        f"v1/user/{user_id}/monetary-account",
+        f"/v1/user/{user_id}/monetary-account",
+    )
+    params_variants = (
+        {'status': 'ACTIVE'},
+        {},
+        None,
+    )
+
+    last_exc = None
+    for path in paths:
+        for params in params_variants:
+            try:
+                raw_result = _call_api_client_get(api_client, path, params=params)
+                payload = _extract_json_payload(raw_result)
+                accounts = _extract_monetary_accounts_from_raw_payload(payload)
+                if accounts:
+                    logger.info(
+                        "Using raw Bunq monetary-account fallback: path=%s params=%s (+%d accounts)",
+                        path,
+                        params if params is not None else '{}',
+                        len(accounts),
+                    )
+                    return accounts
+            except Exception as exc:
+                last_exc = exc
+                continue
+
+    raise RuntimeError(f"raw monetary-account fallback failed: {last_exc}")
+
 def discover_monetary_account_endpoints():
     """Discover monetary-account endpoints ordered by preference.
     
@@ -327,6 +476,7 @@ def list_monetary_accounts():
     merged_accounts = []
     seen_account_ids = set()
     last_exc = None
+    saw_endpoint_failure = False
     user_id = None
     for name, account_endpoint, candidate_modes in candidates:
         endpoint_succeeded = False
@@ -367,14 +517,49 @@ def list_monetary_accounts():
                 continue
             except Exception as exc:
                 last_exc = exc
+                saw_endpoint_failure = True
                 logger.warning(f"⚠️ Bunq endpoint {name} ({mode}) failed: {exc}")
                 continue
 
         if not endpoint_succeeded:
             continue
 
+    # SDK parsing can fail on some monetary account variants (e.g. savings).
+    # When we saw endpoint failures or when no savings accounts were discovered,
+    # try a raw API fallback and merge results.
+    has_savings = any(classify_account_type(account) == 'savings' for account in merged_accounts)
+    if merged_accounts and (saw_endpoint_failure or not has_savings):
+        if user_id is None:
+            user_id = get_bunq_user_id()
+        if user_id is not None:
+            try:
+                raw_accounts = list_monetary_accounts_raw_api(user_id)
+                added_from_raw = 0
+                for account in raw_accounts:
+                    account_id = get_obj_field(account, 'id_', 'id')
+                    dedupe_key = str(account_id) if account_id is not None else f"obj:{id(account)}"
+                    if dedupe_key in seen_account_ids:
+                        continue
+                    seen_account_ids.add(dedupe_key)
+                    merged_accounts.append(account)
+                    added_from_raw += 1
+                if added_from_raw:
+                    logger.info("Merged %d account(s) from raw fallback", added_from_raw)
+            except Exception as raw_exc:
+                logger.warning(f"⚠️ Raw Bunq monetary-account fallback failed: {raw_exc}")
+
     if merged_accounts:
         return merged_accounts
+
+    if user_id is None:
+        user_id = get_bunq_user_id()
+    if user_id is not None:
+        try:
+            raw_accounts = list_monetary_accounts_raw_api(user_id)
+            if raw_accounts:
+                return raw_accounts
+        except Exception as raw_exc:
+            logger.warning(f"⚠️ Raw Bunq monetary-account fallback failed: {raw_exc}")
 
     raise RuntimeError(f"bunq-sdk monetary account list failed: {last_exc}")
 
@@ -2075,7 +2260,9 @@ def classify_account_type(account):
     if _is_bunq_object_populated(get_obj_field(account, 'MonetaryAccountInvestment')):
         return 'investment'
 
-    class_name = _normalize_account_type_text(account.__class__.__name__)
+    class_name = _normalize_account_type_text(
+        get_obj_field(account, '_raw_type', default=account.__class__.__name__)
+    )
     description = _normalize_account_type_text(get_obj_field(account, 'description', 'display_name', default=''))
     profile = get_obj_field(account, 'monetary_account_profile')
     setting = get_obj_field(account, 'monetary_account_setting', 'setting')
@@ -3881,7 +4068,7 @@ def get_accounts():
                 'sub_status': sub_status,
                 'monetary_account_type': monetary_account_type,
                 'account_type': account_type,
-                'account_class': account.__class__.__name__
+                'account_class': get_obj_field(account, '_raw_type', default=account.__class__.__name__)
             })
         
         logger.info(f"✅ Retrieved {len(accounts_data)} accounts")
