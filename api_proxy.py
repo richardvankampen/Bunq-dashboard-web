@@ -70,6 +70,7 @@ def get_bool_env(name, default=False):
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 _MONETARY_ACCOUNT_ENDPOINT = None
+_MONETARY_ACCOUNT_LIST_MODE = None
 _PAYMENT_ENDPOINT = None
 _PAYMENT_LIST_MODE = None
 _CARD_PAYMENT_ENDPOINT = None
@@ -188,7 +189,26 @@ def _is_monetary_list_endpoint(name, candidate):
     normalized = name.lower().replace('_', '')
     if not normalized.startswith('monetaryaccount'):
         return False
-    return _has_zero_required_positional_args(candidate.list)
+    if any(blocked in normalized for blocked in ('attachment', 'schedule', 'batch', 'request', 'setting', 'profile')):
+        return False
+    return True
+
+def _call_monetary_account_list(account_endpoint, user_id, mode):
+    if mode == 'no_args':
+        return account_endpoint.list()
+    if mode == 'kw_params_empty':
+        return account_endpoint.list(params={})
+    if mode == 'positional_params_empty':
+        return account_endpoint.list({})
+    if mode == 'kw_user_id':
+        return account_endpoint.list(user_id=user_id)
+    if mode == 'kw_user_id_params_empty':
+        return account_endpoint.list(user_id=user_id, params={})
+    if mode == 'positional_user_id':
+        return account_endpoint.list(user_id)
+    if mode == 'positional_user_id_params_empty':
+        return account_endpoint.list(user_id, {})
+    raise RuntimeError(f"Unknown monetary account list mode: {mode}")
 
 def discover_monetary_account_endpoints():
     """Discover monetary-account endpoints ordered by preference.
@@ -265,19 +285,29 @@ def discover_monetary_account_endpoints():
 
 def list_monetary_accounts():
     """Return monetary accounts with bunq-sdk compatibility across versions."""
-    global _MONETARY_ACCOUNT_ENDPOINT
+    global _MONETARY_ACCOUNT_ENDPOINT, _MONETARY_ACCOUNT_LIST_MODE
 
     # Ensure the Bunq session token is still valid before any SDK call.
     ensure_bunq_session_active()
 
+    modes = (
+        'no_args',
+        'kw_params_empty',
+        'positional_params_empty',
+        'kw_user_id',
+        'kw_user_id_params_empty',
+        'positional_user_id',
+        'positional_user_id_params_empty',
+    )
+
     candidates = []
-    if _MONETARY_ACCOUNT_ENDPOINT is not None:
-        candidates.append(("cached", _MONETARY_ACCOUNT_ENDPOINT))
+    if _MONETARY_ACCOUNT_ENDPOINT is not None and _MONETARY_ACCOUNT_LIST_MODE is not None:
+        candidates.append(("cached", _MONETARY_ACCOUNT_ENDPOINT, (_MONETARY_ACCOUNT_LIST_MODE,)))
 
     for name, candidate in discover_monetary_account_endpoints():
         if _MONETARY_ACCOUNT_ENDPOINT is not None and candidate is _MONETARY_ACCOUNT_ENDPOINT:
             continue
-        candidates.append((name, candidate))
+        candidates.append((name, candidate, modes))
 
     if not candidates:
         raise RuntimeError('bunq-sdk missing monetary account endpoint')
@@ -285,32 +315,51 @@ def list_monetary_accounts():
     merged_accounts = []
     seen_account_ids = set()
     last_exc = None
-    for name, account_endpoint in candidates:
-        try:
-            result = account_endpoint.list()
-            accounts = getattr(result, 'value', result)
-            if accounts is None:
-                accounts = []
-
-            accounts_added = 0
-            for account in accounts:
-                resolved_account, _ = unwrap_monetary_account(account)
-                if resolved_account is None:
+    user_id = None
+    for name, account_endpoint, candidate_modes in candidates:
+        endpoint_succeeded = False
+        for mode in candidate_modes:
+            if 'user_id' in mode and user_id is None:
+                user_id = get_bunq_user_id()
+                if user_id is None:
                     continue
-                account_id = get_obj_field(resolved_account, 'id_', 'id')
-                dedupe_key = str(account_id) if account_id is not None else f"obj:{id(resolved_account)}"
-                if dedupe_key in seen_account_ids:
-                    continue
-                seen_account_ids.add(dedupe_key)
-                merged_accounts.append(resolved_account)
-                accounts_added += 1
+            try:
+                result = _call_monetary_account_list(account_endpoint, user_id, mode)
+                accounts = getattr(result, 'value', result)
+                if accounts is None:
+                    accounts = []
+                if not isinstance(accounts, list):
+                    accounts = list(accounts)
 
-            if _MONETARY_ACCOUNT_ENDPOINT is None:
+                accounts_added = 0
+                for account in accounts:
+                    resolved_account, _ = unwrap_monetary_account(account)
+                    if resolved_account is None:
+                        continue
+                    account_id = get_obj_field(resolved_account, 'id_', 'id')
+                    dedupe_key = str(account_id) if account_id is not None else f"obj:{id(resolved_account)}"
+                    if dedupe_key in seen_account_ids:
+                        continue
+                    seen_account_ids.add(dedupe_key)
+                    merged_accounts.append(resolved_account)
+                    accounts_added += 1
+
+                if _MONETARY_ACCOUNT_ENDPOINT is not account_endpoint or _MONETARY_ACCOUNT_LIST_MODE != mode:
+                    logger.info(f"Using bunq endpoint class: {name} ({mode}, +{accounts_added} accounts)")
                 _MONETARY_ACCOUNT_ENDPOINT = account_endpoint
-            logger.info(f"Using bunq endpoint class: {name} (+{accounts_added} accounts)")
-        except Exception as exc:
-            last_exc = exc
-            logger.warning(f"⚠️ Bunq endpoint {name} failed: {exc}")
+                _MONETARY_ACCOUNT_LIST_MODE = mode
+                endpoint_succeeded = True
+                break
+            except TypeError as exc:
+                last_exc = exc
+                continue
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(f"⚠️ Bunq endpoint {name} ({mode}) failed: {exc}")
+                break
+
+        if not endpoint_succeeded:
+            continue
 
     if merged_accounts:
         return merged_accounts
