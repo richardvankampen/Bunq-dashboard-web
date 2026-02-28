@@ -119,6 +119,12 @@ _ALIAS_NESTED_FIELDS = (
     'counterparty_alias',
     'bunq_me',
 )
+_USER_VARIANT_FIELDS = (
+    'UserPerson',
+    'UserCompany',
+    'UserPaymentServiceProvider',
+    'UserApiKey',
+)
 
 def get_obj_field(obj, *field_names, default=None):
     """Read first non-empty field from objects or dictionaries."""
@@ -151,6 +157,77 @@ def _is_bunq_object_populated(obj):
         return True
 
     return not isinstance(obj, (str, bytes))
+
+def _extract_user_id_from_entry(entry):
+    if entry is None:
+        return None
+
+    direct_id = get_obj_field(entry, 'id_', 'id')
+    if direct_id is not None:
+        return direct_id
+
+    if isinstance(entry, dict):
+        for key, value in entry.items():
+            normalized = str(key).lower().replace('_', '')
+            if not normalized.startswith('user'):
+                continue
+            nested_id = get_obj_field(value, 'id_', 'id')
+            if nested_id is not None:
+                return nested_id
+        return None
+
+    for field_name in _USER_VARIANT_FIELDS:
+        nested = get_obj_field(entry, field_name)
+        nested_id = get_obj_field(nested, 'id_', 'id')
+        if nested_id is not None:
+            return nested_id
+
+    return None
+
+def discover_bunq_user_ids():
+    ids = []
+    seen = set()
+
+    def add_user_id(value):
+        if value is None:
+            return
+        key = str(value)
+        if key in seen:
+            return
+        seen.add(key)
+        ids.append(value)
+
+    add_user_id(get_bunq_user_id())
+
+    user_endpoint_candidates = (
+        getattr(endpoint, 'UserApiObject', None),
+        getattr(endpoint, 'User', None),
+    )
+    modes = ('no_args', 'params_empty')
+
+    for user_endpoint in user_endpoint_candidates:
+        if user_endpoint is None or not callable(getattr(user_endpoint, 'list', None)):
+            continue
+        for mode in modes:
+            try:
+                if mode == 'no_args':
+                    result = user_endpoint.list()
+                else:
+                    result = user_endpoint.list(params={})
+            except TypeError:
+                continue
+            except Exception:
+                continue
+
+            entries = _unwrap_endpoint_result(result)
+            if not isinstance(entries, list):
+                entries = list(entries) if entries is not None else []
+            for entry in entries:
+                add_user_id(_extract_user_id_from_entry(entry))
+            if ids:
+                break
+
+    return ids
 
 def unwrap_monetary_account(account):
     """
@@ -540,49 +617,60 @@ def list_monetary_accounts():
     seen_account_ids = set()
     last_exc = None
     saw_endpoint_failure = False
-    user_id = None
+    discovered_user_ids = None
     for name, account_endpoint, candidate_modes in candidates:
         endpoint_succeeded = False
         for mode in candidate_modes:
-            if 'user_id' in mode and user_id is None:
-                user_id = get_bunq_user_id()
-                if user_id is None:
+            mode_user_ids = [None]
+            if 'user_id' in mode:
+                if discovered_user_ids is None:
+                    discovered_user_ids = discover_bunq_user_ids()
+                if not discovered_user_ids:
                     continue
-            try:
-                result = _call_monetary_account_list(account_endpoint, user_id, mode)
-                accounts = getattr(result, 'value', result)
-                if accounts is None:
-                    accounts = []
-                if not isinstance(accounts, list):
-                    accounts = list(accounts)
+                mode_user_ids = discovered_user_ids
 
-                accounts_added = 0
-                for account in accounts:
-                    resolved_account, _ = unwrap_monetary_account(account)
-                    if resolved_account is None:
-                        continue
-                    account_id = get_obj_field(resolved_account, 'id_', 'id')
-                    dedupe_key = str(account_id) if account_id is not None else f"obj:{id(resolved_account)}"
-                    if dedupe_key in seen_account_ids:
-                        continue
-                    seen_account_ids.add(dedupe_key)
-                    merged_accounts.append(resolved_account)
-                    accounts_added += 1
+            mode_succeeded = False
+            mode_accounts_added = 0
+            for mode_user_id in mode_user_ids:
+                try:
+                    result = _call_monetary_account_list(account_endpoint, mode_user_id, mode)
+                    accounts = getattr(result, 'value', result)
+                    if accounts is None:
+                        accounts = []
+                    if not isinstance(accounts, list):
+                        accounts = list(accounts)
 
+                    for account in accounts:
+                        resolved_account, _ = unwrap_monetary_account(account)
+                        if resolved_account is None:
+                            continue
+                        account_id = get_obj_field(resolved_account, 'id_', 'id')
+                        dedupe_key = str(account_id) if account_id is not None else f"obj:{id(resolved_account)}"
+                        if dedupe_key in seen_account_ids:
+                            continue
+                        seen_account_ids.add(dedupe_key)
+                        merged_accounts.append(resolved_account)
+                        mode_accounts_added += 1
+
+                    mode_succeeded = True
+                except TypeError as exc:
+                    last_exc = exc
+                    mode_succeeded = False
+                    mode_accounts_added = 0
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    saw_endpoint_failure = True
+                    logger.warning(f"⚠️ Bunq endpoint {name} ({mode}) failed: {exc}")
+                    continue
+
+            if mode_succeeded:
                 if _MONETARY_ACCOUNT_ENDPOINT is not account_endpoint or _MONETARY_ACCOUNT_LIST_MODE != mode:
-                    logger.info(f"Using bunq endpoint class: {name} ({mode}, +{accounts_added} accounts)")
+                    logger.info(f"Using bunq endpoint class: {name} ({mode}, +{mode_accounts_added} accounts)")
                 _MONETARY_ACCOUNT_ENDPOINT = account_endpoint
                 _MONETARY_ACCOUNT_LIST_MODE = mode
                 endpoint_succeeded = True
                 break
-            except TypeError as exc:
-                last_exc = exc
-                continue
-            except Exception as exc:
-                last_exc = exc
-                saw_endpoint_failure = True
-                logger.warning(f"⚠️ Bunq endpoint {name} ({mode}) failed: {exc}")
-                continue
 
         if not endpoint_succeeded:
             continue
@@ -592,9 +680,9 @@ def list_monetary_accounts():
     # try a raw API fallback and merge results.
     has_savings = any(classify_account_type(account) == 'savings' for account in merged_accounts)
     if merged_accounts and (saw_endpoint_failure or not has_savings):
-        if user_id is None:
-            user_id = get_bunq_user_id()
-        if user_id is not None:
+        if discovered_user_ids is None:
+            discovered_user_ids = discover_bunq_user_ids()
+        for user_id in (discovered_user_ids or []):
             try:
                 raw_accounts = list_monetary_accounts_raw_api(user_id)
                 added_from_raw = 0
@@ -608,15 +696,16 @@ def list_monetary_accounts():
                     added_from_raw += 1
                 if added_from_raw:
                     logger.info("Merged %d account(s) from raw fallback", added_from_raw)
+                    break
             except Exception as raw_exc:
                 logger.warning(f"⚠️ Raw Bunq monetary-account fallback failed: {raw_exc}")
 
     if merged_accounts:
         return merged_accounts
 
-    if user_id is None:
-        user_id = get_bunq_user_id()
-    if user_id is not None:
+    if discovered_user_ids is None:
+        discovered_user_ids = discover_bunq_user_ids()
+    for user_id in (discovered_user_ids or []):
         try:
             raw_accounts = list_monetary_accounts_raw_api(user_id)
             if raw_accounts:
