@@ -10,6 +10,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - monetary-account list calls sturen nu altijd `count` mee via nieuwe helper (`BUNQ_ACCOUNT_PAGE_SIZE`, default/max 200), inclusief `status=ACTIVE` modes;
   - raw-client resolutie uitgebreid naar endpoint-module en endpoint-klassen (`MonetaryAccount*`, `PaymentApiObject`);
   - verbeterde diagnostiek voor raw fallback (`api_client unavailable (candidates: ...)`) zodat runtime-verschillen sneller traceerbaar zijn.
+  - false-positive client-resolutie gefixt:
+    - endpoint class (`MonetaryAccountApiObject.self`) werd ten onrechte als HTTP client gezien;
+    - `_is_http_client_like` sluit endpoint classes/modelobjecten nu uit;
+    - `_call_api_client_get` probeert alleen aanwezige methodes en logt duidelijker typefoutcontext.
 - Savings-account incidentanalyse aangescherpt op live NAS-data:
   - bevestigd dat `/api/accounts` alleen checking/external teruggeeft;
   - bevestigd dat SDK-savings endpoints falen op `float(None)` parsefout.

@@ -55,10 +55,13 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
   - `_call_monetary_account_list(...)` stuurt nu standaard `count` mee (`BUNQ_ACCOUNT_PAGE_SIZE`, default/max 200), ook in `status=ACTIVE` varianten.
   - `_resolve_bunq_api_client(...)` probeert nu ook endpoint-module + endpoint-klassen (`MonetaryAccount*`, `PaymentApiObject`) voor client-resolutie.
   - raw-fallback foutmelding bevat uitgebreide kandidaatdiagnostiek (`candidates: ...`) i.p.v. alleen `api_client unavailable`.
+  - Runtime-incidentfix: endpoint-klasse werd foutief als HTTP client gezien (`Resolved ... endpoint.MonetaryAccountApiObject.self`).
+    - `_is_http_client_like(...)` sluit nu endpoint classes/objecten expliciet uit.
+    - `_call_api_client_get(...)` bouwt nu dynamisch alleen calls voor beschikbare methodes (`get/request/execute`) en geeft duidelijke fout als geen van drie beschikbaar is.
 
 Status: incident nog open; volgende validatie richt zich op:
 - of `count`-param direct extra accounts (incl. savings) teruggeeft;
-- of raw-fallback nu een bruikbare client resolveert i.p.v. `api_client unavailable`.
+- of raw-fallback nu een bruikbare client resolveert i.p.v. endpoint-class false positive / `api_client unavailable`.
 
 ## Deployment + validatie (volgende stap)
 

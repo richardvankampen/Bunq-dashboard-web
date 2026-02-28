@@ -359,23 +359,40 @@ def _extract_json_payload(candidate):
     return None
 
 def _call_api_client_get(api_client, path, params=None):
-    calls = (
-        # Common api-client style
-        lambda: api_client.get(path, params=params),
-        lambda: api_client.get(path, params),
-        lambda: api_client.get(path, params, None),
-        lambda: api_client.get(path),
-        # Common adapter/request style
-        lambda: api_client.request('GET', path, params=params),
-        lambda: api_client.request('GET', path, params),
-        lambda: api_client.request(path, 'GET', params=params),
-        lambda: api_client.request(path, 'GET', params),
-        lambda: api_client.request('GET', path),
-        # Generic execute style
-        lambda: api_client.execute('GET', path, params=params),
-        lambda: api_client.execute('GET', path, params),
-        lambda: api_client.execute('GET', path),
-    )
+    calls = []
+    get_fn = getattr(api_client, 'get', None)
+    if callable(get_fn):
+        calls.extend((
+            lambda: get_fn(path, params=params),
+            lambda: get_fn(path, params),
+            lambda: get_fn(path, params, None),
+            lambda: get_fn(path),
+        ))
+
+    request_fn = getattr(api_client, 'request', None)
+    if callable(request_fn):
+        calls.extend((
+            lambda: request_fn('GET', path, params=params),
+            lambda: request_fn('GET', path, params),
+            lambda: request_fn(path, 'GET', params=params),
+            lambda: request_fn(path, 'GET', params),
+            lambda: request_fn('GET', path),
+        ))
+
+    execute_fn = getattr(api_client, 'execute', None)
+    if callable(execute_fn):
+        calls.extend((
+            lambda: execute_fn('GET', path, params=params),
+            lambda: execute_fn('GET', path, params),
+            lambda: execute_fn('GET', path),
+        ))
+
+    if not calls:
+        raise RuntimeError(
+            "api_client has no callable get/request/execute methods "
+            f"(type={type(api_client).__name__})"
+        )
+
     last_exc = None
     for call in calls:
         try:
@@ -391,7 +408,14 @@ def _call_api_client_get(api_client, path, params=None):
 def _is_http_client_like(obj):
     if obj is None:
         return False
+    if inspect.isclass(obj):
+        return False
     if isinstance(obj, (str, bytes, bytearray, int, float, bool, list, tuple, dict, set)):
+        return False
+    module_name = getattr(obj, '__module__', '') or ''
+    if 'bunq.sdk.model.generated.endpoint' in module_name:
+        return False
+    if callable(getattr(obj, 'list', None)) and module_name.startswith('bunq.sdk.model'):
         return False
     return (
         callable(getattr(obj, 'get', None))
