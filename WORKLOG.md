@@ -16,6 +16,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - raw monetary-account fallback toegevoegd;
   - api-client resolutie voor raw fallback verbreed;
   - multi-user-id discovery toegevoegd om accounts over meerdere user-contexten te kunnen ophalen.
+- Runtime-validatie toegevoegd op NAS:
+  - `discover_bunq_user_ids()` geeft momenteel één id terug (`75231272`);
+  - daardoor is multi-user mismatch niet de primaire oorzaak.
+  - resterende blocker: raw fallback meldt nog `bunq-sdk api_client unavailable`.
+- Nieuwe fix voorbereid:
+  - `_resolve_bunq_api_client` uitgebreid met adapter/request/execute varianten om raw fallback alsnog te activeren.
 - Handover-documentatie opgeschoond naar een enkele actuele statusweergave zonder duplicaten.
 
 ### Relevante commits
@@ -30,7 +36,8 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 ### Openstaand
 
 - Op NAS nog valideren dat runtime met `948a564` de spaarrekeningen daadwerkelijk retourneert.
-- Als dat niet zo is: gerichte raw endpoint inspectie per user-id uitvoeren en fallback finaliseren op het endpoint dat savings werkelijk levert.
+- Daarna valideren dat de nieuwe api-client-resolutie fix raw fallback activeert en de twee spaarrekeningen teruggeeft.
+- Als dat niet zo is: gerichte raw endpoint inspectie per user-id uitvoeren en fallback finaliseren op exact endpoint-niveau.
 
 ### Procesafspraak
 

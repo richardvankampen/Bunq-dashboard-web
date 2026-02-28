@@ -349,10 +349,21 @@ def _extract_json_payload(candidate):
 
 def _call_api_client_get(api_client, path, params=None):
     calls = (
+        # Common api-client style
         lambda: api_client.get(path, params=params),
         lambda: api_client.get(path, params),
         lambda: api_client.get(path, params, None),
         lambda: api_client.get(path),
+        # Common adapter/request style
+        lambda: api_client.request('GET', path, params=params),
+        lambda: api_client.request('GET', path, params),
+        lambda: api_client.request(path, 'GET', params=params),
+        lambda: api_client.request(path, 'GET', params),
+        lambda: api_client.request('GET', path),
+        # Generic execute style
+        lambda: api_client.execute('GET', path, params=params),
+        lambda: api_client.execute('GET', path, params),
+        lambda: api_client.execute('GET', path),
     )
     last_exc = None
     for call in calls:
@@ -404,6 +415,46 @@ def _resolve_bunq_api_client():
         client = getattr(api_context, attr_name, None)
         if client is not None:
             return client
+
+    # Try adapter-style accessors and common nested client holders.
+    adapters = []
+    for accessor in ('api_adapter', 'get_api_adapter'):
+        candidate = getattr(api_context, accessor, None)
+        if callable(candidate):
+            try:
+                candidate = candidate()
+            except Exception:
+                continue
+        if candidate is not None:
+            adapters.append(candidate)
+    for attr_name in ('_api_adapter', 'api_adapter_'):
+        candidate = getattr(api_context, attr_name, None)
+        if candidate is not None:
+            adapters.append(candidate)
+
+    for adapter in adapters:
+        if adapter is None:
+            continue
+        # Sometimes the adapter itself exposes request/get.
+        if callable(getattr(adapter, 'get', None)) or callable(getattr(adapter, 'request', None)):
+            return adapter
+        for nested_name in (
+            'api_client', 'get_api_client',
+            'http_client', 'get_http_client',
+            '_api_client', '_http_client',
+        ):
+            nested = getattr(adapter, nested_name, None)
+            if callable(nested):
+                try:
+                    nested = nested()
+                except Exception:
+                    continue
+            if nested is not None and (
+                callable(getattr(nested, 'get', None))
+                or callable(getattr(nested, 'request', None))
+                or callable(getattr(nested, 'execute', None))
+            ):
+                return nested
 
     return None
 

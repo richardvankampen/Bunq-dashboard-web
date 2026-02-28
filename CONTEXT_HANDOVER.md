@@ -34,6 +34,12 @@ Dit bestand is de actuele bron voor overdracht.
 - Accounts output toont alleen:
   - 9x `MonetaryAccountBankApiObject`
   - 1x `MonetaryAccountExternalApiObject`
+- Runtime-check in container:
+  - `init_ok=True`, `last_error=None`
+  - `discover_bunq_user_ids()` retourneert `user_ids=[75231272]`
+  - Conclusie: multi-user mismatch is niet de primaire oorzaak.
+- Raw fallback faalt in runtime met:
+  - `Raw Bunq monetary-account fallback failed: bunq-sdk api_client unavailable`
 
 ## Wat recent is aangepast (code)
 
@@ -44,9 +50,12 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
 - `dcc7bb7` - retry met `status=ACTIVE` modes toegevoegd.
 - `6909e51` - raw monetary-account fallback toegevoegd bij SDK parse failures.
 - `223396f` - api-client resolutie verbreed voor raw fallback (`BunqContext`/`ApiContext` varianten).
-- `948a564` - meerdere Bunq user IDs detecteren en per user account-enumeratie proberen.
+- `948a564` - meerdere Bunq user IDs detecteren en per user account-enumeratie proberen (bevestigd: momenteel 1 user-id gevonden).
+- (nieuw) lokale fix gereed voor deploy:
+  - `_resolve_bunq_api_client` uitgebreid met adapter/request/execute varianten.
+  - raw fallback ondersteunt nu meer client/adaptor call signatures.
 
-Status: laatste fix (`948a564`) moet nog op NAS bevestigd worden in runtime-logs/resultaten.
+Status: incident nog open; volgende validatie richt zich op het wegnemen van `api_client unavailable`.
 
 ## Deployment + validatie (volgende stap)
 
@@ -63,7 +72,7 @@ Controle 1 (nieuwe runtime-code aanwezig):
 
 ```bash
 BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
-sudo docker exec "$BUNQ_CONTAINER" sh -c "grep -n 'discover_bunq_user_ids' /app/api_proxy.py"
+sudo docker exec "$BUNQ_CONTAINER" sh -c "grep -n '_resolve_bunq_api_client' /app/api_proxy.py"
 ```
 
 Controle 2 (accounts + logs):
