@@ -6,6 +6,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Savings-incident extra gehard op backend:
+  - monetary-account list calls sturen nu altijd `count` mee via nieuwe helper (`BUNQ_ACCOUNT_PAGE_SIZE`, default/max 200), inclusief `status=ACTIVE` modes;
+  - raw-client resolutie uitgebreid naar endpoint-module en endpoint-klassen (`MonetaryAccount*`, `PaymentApiObject`);
+  - verbeterde diagnostiek voor raw fallback (`api_client unavailable (candidates: ...)`) zodat runtime-verschillen sneller traceerbaar zijn.
 - Savings-account incidentanalyse aangescherpt op live NAS-data:
   - bevestigd dat `/api/accounts` alleen checking/external teruggeeft;
   - bevestigd dat SDK-savings endpoints falen op `float(None)` parsefout.
@@ -35,8 +39,8 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Openstaand
 
-- Op NAS nog valideren dat runtime met `948a564` de spaarrekeningen daadwerkelijk retourneert.
-- Daarna valideren dat de nieuwe api-client-resolutie fix raw fallback activeert en de twee spaarrekeningen teruggeeft.
+- Op NAS valideren of `count`-param in monetary-account list de ontbrekende savings al oplost.
+- Daarna valideren dat nieuwe endpoint-gebaseerde api-client-resolutie raw fallback activeert en de twee spaarrekeningen teruggeeft.
 - Als dat niet zo is: gerichte raw endpoint inspectie per user-id uitvoeren en fallback finaliseren op exact endpoint-niveau.
 
 ### Procesafspraak

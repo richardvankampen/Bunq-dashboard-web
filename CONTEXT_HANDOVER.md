@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-02-28 (savings-account incident)
+Laatste update: 2026-02-28 (savings-account incident, extra fallback-hardening)
 
 ## Canonieke status
 
@@ -51,11 +51,14 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
 - `6909e51` - raw monetary-account fallback toegevoegd bij SDK parse failures.
 - `223396f` - api-client resolutie verbreed voor raw fallback (`BunqContext`/`ApiContext` varianten).
 - `948a564` - meerdere Bunq user IDs detecteren en per user account-enumeratie proberen (bevestigd: momenteel 1 user-id gevonden).
-- (nieuw) lokale fix gereed voor deploy:
-  - `_resolve_bunq_api_client` uitgebreid met adapter/request/execute varianten.
-  - raw fallback ondersteunt nu meer client/adaptor call signatures.
+- Extra hardening (nieuw, nog te valideren op NAS na deploy):
+  - `_call_monetary_account_list(...)` stuurt nu standaard `count` mee (`BUNQ_ACCOUNT_PAGE_SIZE`, default/max 200), ook in `status=ACTIVE` varianten.
+  - `_resolve_bunq_api_client(...)` probeert nu ook endpoint-module + endpoint-klassen (`MonetaryAccount*`, `PaymentApiObject`) voor client-resolutie.
+  - raw-fallback foutmelding bevat uitgebreide kandidaatdiagnostiek (`candidates: ...`) i.p.v. alleen `api_client unavailable`.
 
-Status: incident nog open; volgende validatie richt zich op het wegnemen van `api_client unavailable`.
+Status: incident nog open; volgende validatie richt zich op:
+- of `count`-param direct extra accounts (incl. savings) teruggeeft;
+- of raw-fallback nu een bruikbare client resolveert i.p.v. `api_client unavailable`.
 
 ## Deployment + validatie (volgende stap)
 
@@ -85,12 +88,13 @@ curl -sS -k -b "$COOKIE_JAR" "$BASE_URL/api/accounts?_ts=$(date +%s)" | jq -r '
 
 ```bash
 sudo docker service logs --since 5m bunq_bunq-dashboard | \
-grep -E "Using bunq endpoint class|raw Bunq monetary-account fallback|Merged [0-9]+ account|Retrieved [0-9]+ accounts|MonetaryAccountSavings|Error fetching accounts"
+grep -E "Using bunq endpoint class|Resolved Bunq HTTP client via|raw Bunq monetary-account fallback|Merged [0-9]+ account|Retrieved [0-9]+ accounts|MonetaryAccountSavings|api_client unavailable|candidates:|Error fetching accounts"
 ```
 
 ## Als savings nog steeds ontbreken
-
-Doe een gerichte raw inspectie per Bunq user-id en endpoint in de container (volgende debug-stap). Doel: exact vaststellen op welk `/user/{id}/monetary-account*` pad de twee spaarrekeningen terugkomen, zodat fallback daarop gefixeerd kan worden.
+- Neem de exacte nieuwe `api_client unavailable (candidates: ...)` logregel over; die bepaalt het volgende concrete resolverpad.
+- Als nog steeds geen raw client: gerichte inspectie van `BunqContext.api_context()` objectgraph in runtime-container uitvoeren en op die accessor patchen.
+- Als raw client wel resolved maar nog geen savings: endpoint/pagination output per `/user/{id}/monetary-account*` pad inspecteren en fallback daarop fixeren.
 
 ## Documentatie-afspraak
 

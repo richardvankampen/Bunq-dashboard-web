@@ -270,29 +270,40 @@ def _is_monetary_list_endpoint(name, candidate):
         return False
     return True
 
+def _monetary_account_query_params(active_only=False):
+    page_size = get_int_env('BUNQ_ACCOUNT_PAGE_SIZE', 200)
+    if page_size < 1:
+        page_size = 200
+    if page_size > 200:
+        page_size = 200
+    params = {'count': page_size}
+    if active_only:
+        params['status'] = 'ACTIVE'
+    return params
+
 def _call_monetary_account_list(account_endpoint, user_id, mode):
     if mode == 'no_args':
         return account_endpoint.list()
     if mode == 'kw_params_active':
-        return account_endpoint.list(params={'status': 'ACTIVE'})
+        return account_endpoint.list(params=_monetary_account_query_params(active_only=True))
     if mode == 'kw_params_empty':
-        return account_endpoint.list(params={})
+        return account_endpoint.list(params=_monetary_account_query_params(active_only=False))
     if mode == 'positional_params_active':
-        return account_endpoint.list({'status': 'ACTIVE'})
+        return account_endpoint.list(_monetary_account_query_params(active_only=True))
     if mode == 'positional_params_empty':
-        return account_endpoint.list({})
+        return account_endpoint.list(_monetary_account_query_params(active_only=False))
     if mode == 'kw_user_id':
         return account_endpoint.list(user_id=user_id)
     if mode == 'kw_user_id_params_active':
-        return account_endpoint.list(user_id=user_id, params={'status': 'ACTIVE'})
+        return account_endpoint.list(user_id=user_id, params=_monetary_account_query_params(active_only=True))
     if mode == 'kw_user_id_params_empty':
-        return account_endpoint.list(user_id=user_id, params={})
+        return account_endpoint.list(user_id=user_id, params=_monetary_account_query_params(active_only=False))
     if mode == 'positional_user_id':
         return account_endpoint.list(user_id)
     if mode == 'positional_user_id_params_active':
-        return account_endpoint.list(user_id, {'status': 'ACTIVE'})
+        return account_endpoint.list(user_id, _monetary_account_query_params(active_only=True))
     if mode == 'positional_user_id_params_empty':
-        return account_endpoint.list(user_id, {})
+        return account_endpoint.list(user_id, _monetary_account_query_params(active_only=False))
     raise RuntimeError(f"Unknown monetary account list mode: {mode}")
 
 def _extract_json_payload(candidate):
@@ -377,6 +388,165 @@ def _call_api_client_get(api_client, path, params=None):
             continue
     raise RuntimeError(f"api_client.get failed for path '{path}': {last_exc}")
 
+def _is_http_client_like(obj):
+    if obj is None:
+        return False
+    if isinstance(obj, (str, bytes, bytearray, int, float, bool, list, tuple, dict, set)):
+        return False
+    return (
+        callable(getattr(obj, 'get', None))
+        or callable(getattr(obj, 'request', None))
+        or callable(getattr(obj, 'execute', None))
+    )
+
+_HTTP_CLIENT_ACCESSOR_NAMES = (
+    'api_client',
+    'get_api_client',
+    'client',
+    'get_client',
+    'api_adapter',
+    'get_api_adapter',
+    'http_client',
+    'get_http_client',
+    'requester',
+    'get_requester',
+    'api_requester',
+    'get_api_requester',
+    '_api_client',
+    '_client',
+    '_api_adapter',
+    '_http_client',
+    '_api_requester',
+)
+
+def _extract_http_client_via_accessors(holder):
+    if holder is None:
+        return None, None
+    if _is_http_client_like(holder):
+        return holder, 'self'
+
+    for accessor in _HTTP_CLIENT_ACCESSOR_NAMES:
+        candidate = getattr(holder, accessor, None)
+        if candidate is None:
+            continue
+
+        if callable(candidate):
+            if not _has_zero_required_positional_args(candidate):
+                continue
+            try:
+                candidate = candidate()
+            except Exception:
+                continue
+
+        if candidate is None:
+            continue
+        if _is_http_client_like(candidate):
+            return candidate, accessor
+
+        for nested_accessor in _HTTP_CLIENT_ACCESSOR_NAMES:
+            nested = getattr(candidate, nested_accessor, None)
+            if nested is None:
+                continue
+            if callable(nested):
+                if not _has_zero_required_positional_args(nested):
+                    continue
+                try:
+                    nested = nested()
+                except Exception:
+                    continue
+            if _is_http_client_like(nested):
+                return nested, f"{accessor}.{nested_accessor}"
+
+    return None, None
+
+def _discover_http_client_candidate(root_obj, root_name='root', max_depth=2):
+    if root_obj is None:
+        return None, None
+
+    queue = [(root_obj, root_name, 0)]
+    visited = set()
+    keywords = ('api', 'client', 'adapter', 'http', 'request', 'transport', 'network', 'communication')
+
+    while queue:
+        current_obj, current_path, depth = queue.pop(0)
+        current_id = id(current_obj)
+        if current_id in visited:
+            continue
+        visited.add(current_id)
+
+        if _is_http_client_like(current_obj):
+            return current_obj, current_path
+
+        if depth >= max_depth:
+            continue
+
+        try:
+            attr_names = dir(current_obj)
+        except Exception:
+            continue
+
+        for attr_name in attr_names:
+            if attr_name.startswith('__'):
+                continue
+            attr_name_l = attr_name.lower()
+            if not (attr_name_l.startswith('get_') or any(token in attr_name_l for token in keywords)):
+                continue
+            try:
+                nested = getattr(current_obj, attr_name)
+            except Exception:
+                continue
+
+            if callable(nested):
+                if not _has_zero_required_positional_args(nested):
+                    continue
+                try:
+                    nested = nested()
+                except Exception:
+                    continue
+
+            if nested is None:
+                continue
+            queue.append((nested, f"{current_path}.{attr_name}", depth + 1))
+
+    return None, None
+
+def _build_api_client_diagnostics(api_context):
+    candidates = []
+    probe_roots = (
+        (BunqContext, 'BunqContext'),
+        (api_context, 'api_context'),
+        (endpoint, 'endpoint'),
+    )
+    for root_obj, root_name in probe_roots:
+        try:
+            attr_names = dir(root_obj)
+        except Exception:
+            continue
+        for attr_name in attr_names:
+            attr_name_l = attr_name.lower()
+            if not any(token in attr_name_l for token in ('api', 'client', 'adapter', 'http', 'request')):
+                continue
+            candidates.append(f"{root_name}.{attr_name}")
+
+    endpoint_candidates = (
+        'MonetaryAccountApiObject',
+        'MonetaryAccountBankApiObject',
+        'MonetaryAccountSavingsApiObject',
+        'MonetaryAccountExternalSavingsApiObject',
+        'PaymentApiObject',
+    )
+    for class_name in endpoint_candidates:
+        cls = getattr(endpoint, class_name, None)
+        if cls is None:
+            continue
+        for accessor in _HTTP_CLIENT_ACCESSOR_NAMES:
+            if hasattr(cls, accessor):
+                candidates.append(f"endpoint.{class_name}.{accessor}")
+
+    # keep deterministic, short diagnostics
+    candidates = sorted(set(candidates))[:40]
+    return ', '.join(candidates) if candidates else 'none'
+
 def _resolve_bunq_api_client():
     """
     Resolve Bunq SDK api client across SDK variants.
@@ -399,6 +569,14 @@ def _resolve_bunq_api_client():
 
     # Fallback via ApiContext/BunqContext.api_context() accessor variants.
     api_context = BunqContext.api_context()
+
+    # Generic accessor-based probing on BunqContext/ApiContext first.
+    for root_obj, root_name in ((BunqContext, 'BunqContext'), (api_context, 'api_context')):
+        resolved, accessor = _extract_http_client_via_accessors(root_obj)
+        if resolved is not None:
+            logger.info("Resolved Bunq HTTP client via %s.%s", root_name, accessor)
+            return resolved
+
     for accessor in ('api_client', 'get_api_client'):
         candidate = getattr(api_context, accessor, None)
         if callable(candidate):
@@ -456,6 +634,40 @@ def _resolve_bunq_api_client():
             ):
                 return nested
 
+    # Probe endpoint module and known endpoint classes for SDK variants where
+    # request clients are attached on generated endpoint classes.
+    resolved, accessor = _extract_http_client_via_accessors(endpoint)
+    if resolved is not None:
+        logger.info("Resolved Bunq HTTP client via endpoint.%s", accessor)
+        return resolved
+
+    endpoint_candidates = (
+        'MonetaryAccountApiObject',
+        'MonetaryAccountBankApiObject',
+        'MonetaryAccountSavingsApiObject',
+        'MonetaryAccountExternalSavingsApiObject',
+        'PaymentApiObject',
+    )
+    for class_name in endpoint_candidates:
+        endpoint_class = getattr(endpoint, class_name, None)
+        if endpoint_class is None:
+            continue
+        resolved, accessor = _extract_http_client_via_accessors(endpoint_class)
+        if resolved is not None:
+            logger.info("Resolved Bunq HTTP client via endpoint.%s.%s", class_name, accessor)
+            return resolved
+
+    # Generic discovery over BunqContext / ApiContext object graph.
+    discovered_client, discovered_path = _discover_http_client_candidate(BunqContext, root_name='BunqContext', max_depth=2)
+    if discovered_client is not None:
+        logger.info("Resolved Bunq HTTP client via %s", discovered_path)
+        return discovered_client
+
+    discovered_client, discovered_path = _discover_http_client_candidate(api_context, root_name='api_context', max_depth=2)
+    if discovered_client is not None:
+        logger.info("Resolved Bunq HTTP client via %s", discovered_path)
+        return discovered_client
+
     return None
 
 def _extract_monetary_accounts_from_raw_payload(payload):
@@ -499,7 +711,9 @@ def list_monetary_accounts_raw_api(user_id):
     """
     api_client = _resolve_bunq_api_client()
     if api_client is None:
-        raise RuntimeError('bunq-sdk api_client unavailable')
+        api_context = BunqContext.api_context()
+        diag = _build_api_client_diagnostics(api_context)
+        raise RuntimeError(f"bunq-sdk api_client unavailable (candidates: {diag})")
 
     base_paths = (
         f"user/{user_id}/monetary-account",
