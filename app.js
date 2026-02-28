@@ -1128,7 +1128,7 @@ function hexToRgba(hex, alpha = 1) {
 
 function classifyAccountType(account) {
     const declaredType = String(account?.account_type || '').toLowerCase();
-    if (['checking', 'savings', 'investment'].includes(declaredType)) {
+    if (declaredType === 'savings' || declaredType === 'investment') {
         return declaredType;
     }
 
@@ -1163,16 +1163,13 @@ function classifyAccountType(account) {
         || explicitTypeText.includes('current')
     ) return 'checking';
 
-    // Guardrail: plain MonetaryAccountBank is checking unless explicit type fields say otherwise.
-    if (className.includes('monetaryaccountbank')) {
-        return 'checking';
-    }
-
     const fingerprint = `${description} ${className} ${explicitTypeText}`;
     if (
         fingerprint.includes('savings')
+        || fingerprint.includes('savingsaccount')
         || fingerprint.includes('spaar')
         || fingerprint.includes('spaarrekening')
+        || fingerprint.includes('spaargeld')
         || fingerprint.includes('sparen')
     ) return 'savings';
     if (
@@ -1183,6 +1180,17 @@ function classifyAccountType(account) {
         || fingerprint.includes('share')
         || fingerprint.includes('etf')
     ) return 'investment';
+
+    // Guardrail: plain MonetaryAccountBank is checking unless strong savings/
+    // investment hints were detected first.
+    if (className.includes('monetaryaccountbank')) {
+        return 'checking';
+    }
+
+    if (declaredType === 'checking') {
+        return 'checking';
+    }
+
     return 'checking';
 }
 
@@ -1893,7 +1901,7 @@ function showBalanceDetail(type) {
                 ? `${formatCurrencyWithCode(acc.balanceValue, acc.balanceCurrency)} (niet omgerekend)`
                 : `${formatCurrency(acc.balanceEurValue)}${acc.balanceCurrency !== 'EUR' ? ` (${formatCurrencyWithCode(acc.balanceValue, acc.balanceCurrency)})` : ''}`
         }))
-        : [{ label: 'Geen EUR-rekeningen beschikbaar.', value: '' }];
+        : [{ label: 'Geen rekeningen beschikbaar.', value: '' }];
 
     let chartConfig = null;
     if (accounts.length) {

@@ -2086,17 +2086,18 @@ def classify_account_type(account):
     if any(token in explicit_type_text for token in ('checking', 'payment', 'bank', 'card', 'current')):
         return 'checking'
 
-    # Guardrail: plain MonetaryAccountBank objects are checking unless the SDK
-    # gives explicit savings/investment indicators above.
-    if 'monetaryaccountbank' in class_name:
-        return 'checking'
-
     if any(token in fingerprint for token in (
-        'savings', 'saving', 'spaar', 'spaarrekening', 'sparen'
+        'savings', 'saving', 'savingsaccount', 'spaar', 'spaarrekening', 'spaargeld', 'sparen'
     )):
         return 'savings'
     if any(token in fingerprint for token in ('investment', 'stock', 'share', 'crypto', 'belegging', 'etf', 'equity')):
         return 'investment'
+
+    # Guardrail: plain MonetaryAccountBank objects are checking unless strong
+    # savings/investment hints were detected first (description/type/profile).
+    if 'monetaryaccountbank' in class_name:
+        return 'checking'
+
     return 'checking'
 
 def get_cached_fx_rate(base_currency, quote_currency='EUR', rate_date=None):
@@ -3767,6 +3768,19 @@ def get_accounts():
                 context=f"account {account_id} balance"
             )
             account_type = account_type_hints.get(str(account_id)) or classify_account_type(account)
+            monetary_account_type = (
+                get_obj_field(
+                    account,
+                    'sub_type',
+                    'subtype',
+                    'type_',
+                    'type',
+                    'monetary_account_type',
+                    'account_type',
+                    default=''
+                ) or ''
+            )
+            sub_status = get_obj_field(account, 'sub_status', 'substatus', default='') or ''
             balance_eur_value = None
             fx_rate_to_eur = None
             fx_converted = False
@@ -3803,6 +3817,8 @@ def get_accounts():
                 'fx_rate_to_eur': fx_rate_to_eur,
                 'fx_converted': fx_converted,
                 'status': get_obj_field(account, 'status', 'status_') or 'UNKNOWN',
+                'sub_status': sub_status,
+                'monetary_account_type': monetary_account_type,
                 'account_type': account_type,
                 'account_class': account.__class__.__name__
             })
