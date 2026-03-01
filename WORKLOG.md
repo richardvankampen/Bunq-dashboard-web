@@ -32,6 +32,9 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - extra session/context accessors toegevoegd;
     - objectgraph-discovery volgt nu ook private SDK contextvelden;
     - discovery-diepte naar 3 verhoogd voor interne session-client paden.
+  - nieuwe constructor-fallback toegevoegd:
+    - backend probeert nu SDK HTTP-client direct te bouwen vanuit `ApiContext` via `bunq.sdk.http.api_client*` klassen/factories;
+    - signature-gebaseerde arg-mapping toegevoegd voor SDK-variantcompatibiliteit.
 - Savings-account incidentanalyse aangescherpt op live NAS-data:
   - bevestigd dat `/api/accounts` alleen checking/external teruggeeft;
   - bevestigd dat SDK-savings endpoints falen op `float(None)` parsefout.

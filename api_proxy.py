@@ -590,6 +590,116 @@ def _build_api_client_diagnostics(api_context):
     candidates = sorted(set(candidates))[:40]
     return ', '.join(candidates) if candidates else 'none'
 
+def _construct_sdk_http_client_from_api_context(api_context):
+    if api_context is None:
+        return None, None
+
+    constructor_candidates = (
+        ('bunq.sdk.http.api_client', 'ApiClient'),
+        ('bunq.sdk.http.api_client_bunq', 'ApiClientBunq'),
+        ('bunq.sdk.http.api_client', 'ApiClientBunq'),
+        ('bunq.sdk.http.api_client_default', 'ApiClientDefault'),
+    )
+
+    try:
+        installation_context = api_context.installation_context()
+    except Exception:
+        installation_context = None
+    try:
+        session_context = api_context.session_context()
+    except Exception:
+        session_context = None
+    try:
+        api_key = api_context.api_key()
+    except Exception:
+        api_key = None
+
+    def _try_candidate(obj, source):
+        if _is_http_client_like(obj):
+            return obj, source
+        return None, None
+
+    for module_name, class_name in constructor_candidates:
+        try:
+            module = importlib.import_module(module_name)
+            cls = getattr(module, class_name, None)
+        except Exception:
+            cls = None
+        if cls is None:
+            continue
+
+        # Common factory methods across SDK variants.
+        for factory_name in ('create', 'from_api_context', 'for_api_context', 'get_instance'):
+            factory = getattr(cls, factory_name, None)
+            if not callable(factory):
+                continue
+            for call in (
+                lambda: factory(api_context),
+                lambda: factory(api_context, session_context),
+                lambda: factory(api_context, installation_context, session_context),
+            ):
+                try:
+                    candidate = call()
+                except Exception:
+                    continue
+                resolved, source = _try_candidate(candidate, f"{module_name}.{class_name}.{factory_name}")
+                if resolved is not None:
+                    return resolved, source
+
+        # Constructor call with signature-based arg mapping.
+        try:
+            signature = inspect.signature(cls)
+        except (TypeError, ValueError):
+            signature = None
+
+        constructor_calls = []
+        if signature is not None:
+            kwargs = {}
+            can_call = True
+            for parameter in signature.parameters.values():
+                if parameter.name == 'self':
+                    continue
+                name = parameter.name.lower()
+                assigned = False
+                if 'api_context' in name:
+                    kwargs[parameter.name] = api_context
+                    assigned = True
+                elif 'installation' in name:
+                    kwargs[parameter.name] = installation_context
+                    assigned = True
+                elif 'session' in name:
+                    kwargs[parameter.name] = session_context
+                    assigned = True
+                elif 'api_key' in name:
+                    kwargs[parameter.name] = api_key
+                    assigned = True
+                elif parameter.default is not inspect.Parameter.empty:
+                    assigned = True
+
+                if not assigned:
+                    can_call = False
+                    break
+
+            if can_call:
+                constructor_calls.append(lambda kwargs=kwargs: cls(**kwargs))
+
+        constructor_calls.extend((
+            lambda: cls(api_context),
+            lambda: cls(api_context, session_context),
+            lambda: cls(api_context, installation_context, session_context),
+        ))
+
+        for call in constructor_calls:
+            try:
+                candidate = call()
+            except Exception:
+                continue
+            resolved, source = _try_candidate(candidate, f"{module_name}.{class_name}.__init__")
+            if resolved is not None:
+                return resolved, source
+
+    return None, None
+
 def _resolve_bunq_api_client():
     """
     Resolve Bunq SDK api client across SDK variants.
@@ -699,6 +809,12 @@ def _resolve_bunq_api_client():
         if resolved is not None:
             logger.info("Resolved Bunq HTTP client via endpoint.%s.%s", class_name, accessor)
             return resolved
+
+    # Construct SDK HTTP client directly from ApiContext when possible.
+    constructed_client, constructed_source = _construct_sdk_http_client_from_api_context(api_context)
+    if constructed_client is not None:
+        logger.info("Resolved Bunq HTTP client via %s", constructed_source)
+        return constructed_client
 
     # Generic discovery over BunqContext / ApiContext object graph.
     discovered_client, discovered_path = _discover_http_client_candidate(BunqContext, root_name='BunqContext', max_depth=3)

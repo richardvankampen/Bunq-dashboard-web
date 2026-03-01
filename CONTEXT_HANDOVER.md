@@ -66,6 +66,8 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
     - accessor-probing uitgebreid met session-gerelateerde paden;
     - object-graph traversal volgt nu ook private contextvelden (`_ApiContext__*`, `_SessionContext__*`, etc.);
     - traversal-diepte verhoogd van 2 naar 3 om interne SDK context-objecten te bereiken.
+  - Nieuwe fallback-laag toegevoegd:
+    - SDK HTTP client wordt nu ook direct geconstrueerd vanuit `ApiContext` via bekende SDK-klassen/factories (`bunq.sdk.http.api_client*`) met signature-gebaseerde argumentmapping.
 
 Status: incident nog open; volgende validatie richt zich op:
 - of `count`-param direct extra accounts (incl. savings) teruggeeft;
