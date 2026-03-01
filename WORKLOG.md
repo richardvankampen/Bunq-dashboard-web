@@ -6,6 +6,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Interne tegenpartij op eigen naam (bijv. `Richard`) nu ook gefilterd:
+  - backend identity-extractie uitgebreid met account-houder/co-owner/aliasnamen (`display_name`, `public_nick_name`, `first_name + last_name`, etc.);
+  - `extract_own_account_names(...)` gebruikt nu deze bredere identity-set, zodat interne transacties zonder bruikbaar account-id/IBAN alsnog als intern worden gemarkeerd;
+  - `/api/accounts` levert per rekening `identity_names` mee;
+  - frontend `getOwnBunqAccountIdentitySets()` gebruikt `identity_names` als extra fallback voor client-side filtering.
+
 - Overfilter-correctie voor `exclude internal` (inkomsten/uitgaven vielen naar 0):
   - backend deterministic internal-check markeert alleen intern als `counterparty_account_id` in eigen Bunq-ids zit én verschilt van bron `account_id`;
   - backend `reconcile_internal_transfers` pass 1 aangescherpt naar `payment-id + minute + amount + currency` om false pairings te vermijden;

@@ -3088,6 +3088,64 @@ def normalize_party_name(value):
         return ''
     return re.sub(r'\s+', ' ', str(value)).strip().casefold()
 
+def _add_identity_name(target, value):
+    """Add normalized identity names while avoiding noisy short tokens."""
+    normalized = normalize_party_name(value)
+    if len(normalized) < 4:
+        return
+    target.add(normalized)
+
+def _collect_identity_names_from_node(target, node):
+    if node is None:
+        return
+
+    for attr_name in (
+        'description',
+        'display_name',
+        'public_nick_name',
+        'name',
+        'merchant_name',
+        'company_name',
+        'legal_name',
+        'holder_name',
+        'account_holder_name',
+    ):
+        _add_identity_name(target, get_obj_field(node, attr_name))
+
+    first_name = get_obj_field(node, 'first_name')
+    last_name = get_obj_field(node, 'last_name')
+    full_name_parts = [part for part in (first_name, last_name) if isinstance(part, str) and part.strip()]
+    if full_name_parts:
+        _add_identity_name(target, " ".join(full_name_parts))
+
+def extract_account_identity_names(account):
+    """Extract own account and holder identity names for internal-transfer matching."""
+    names = set()
+    if account is None:
+        return names
+
+    _collect_identity_names_from_node(names, account)
+
+    for wrapper_name in ('UserPerson', 'UserCompany', 'LabelUser', 'LabelMonetaryAccount'):
+        _collect_identity_names_from_node(names, get_obj_field(account, wrapper_name))
+
+    co_owners = get_obj_field(account, 'all_co_owner', 'co_owner') or []
+    if not isinstance(co_owners, (list, tuple, set)):
+        co_owners = [co_owners]
+    for owner in co_owners:
+        _collect_identity_names_from_node(names, owner)
+        for wrapper_name in ('UserPerson', 'UserCompany', 'LabelUser'):
+            _collect_identity_names_from_node(names, get_obj_field(owner, wrapper_name))
+
+    aliases = get_obj_field(account, 'alias', 'user_alias') or []
+    if not isinstance(aliases, (list, tuple, set)):
+        aliases = [aliases]
+    for alias in aliases:
+        for alias_node in iter_alias_nodes(alias):
+            _collect_identity_names_from_node(names, alias_node)
+
+    return names
+
 def is_own_bunq_account(account):
     """
     Internal transfer detection should only treat Bunq-owned monetary accounts
@@ -3108,17 +3166,7 @@ def extract_own_account_names(accounts):
     for account in accounts:
         if not is_own_bunq_account(account):
             continue
-        primary_name = get_obj_field(account, 'description', 'display_name', 'name')
-        primary_name_normalized = normalize_party_name(primary_name)
-        if primary_name_normalized:
-            names.add(primary_name_normalized)
-
-        aliases = get_obj_field(account, 'alias') or []
-        for alias in aliases:
-            alias_name = get_obj_field(alias, 'display_name', 'name')
-            alias_name_normalized = normalize_party_name(alias_name)
-            if alias_name_normalized:
-                names.add(alias_name_normalized)
+        names.update(extract_account_identity_names(account))
     return names
 
 def extract_own_account_ids(accounts):
@@ -5077,6 +5125,7 @@ def get_accounts():
             accounts_data.append({
                 'id': account_id,
                 'description': get_obj_field(account, 'description', 'display_name') or f"Account {account_id}",
+                'identity_names': sorted(extract_account_identity_names(account)),
                 'balance': {
                     'value': balance_value,
                     'currency': balance_currency

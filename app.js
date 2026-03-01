@@ -79,11 +79,21 @@ function getOwnBunqAccountIdentitySets() {
             .map((account) => String(account?.id || '').trim())
             .filter(Boolean)
     );
-    const ownNames = new Set(
-        ownAccounts
-            .map((account) => normalizePartyNameForMatch(account?.description || account?.display_name || ''))
-            .filter(Boolean)
-    );
+    const ownNames = new Set();
+    ownAccounts.forEach((account) => {
+        const baseName = normalizePartyNameForMatch(account?.description || account?.display_name || '');
+        if (baseName.length >= 4) {
+            ownNames.add(baseName);
+        }
+
+        const identityNames = Array.isArray(account?.identity_names) ? account.identity_names : [];
+        identityNames.forEach((name) => {
+            const normalized = normalizePartyNameForMatch(name);
+            if (normalized.length >= 4) {
+                ownNames.add(normalized);
+            }
+        });
+    });
     return { ownIds, ownNames };
 }
 

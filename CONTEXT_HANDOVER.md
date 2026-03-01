@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven + eigen-naam internal detectie)
 
 ## Canonieke status
 
@@ -70,9 +70,13 @@ Dit bestand is de actuele bron voor overdracht.
   - overfilter-correctie (inkomsten/uitgaven op 0 voorkomen):
     - deterministische account-id-match markeert alleen intern als `counterparty_account_id` een eigen Bunq-account is én verschilt van de bronrekening (`account_id`);
     - reconcile pass 1 gebruikt nu ook minuut-timestamp in de key (`payment-id + minute + amount + currency`) om false matches tussen ongerelateerde transacties te voorkomen.
+  - eigen-naam detectie uitgebreid:
+    - backend bouwt `own_account_names` nu ook uit houder/co-owner/alias-identiteiten (o.a. `display_name`, `public_nick_name`, `first_name + last_name`);
+    - transacties naar eigen tegenpartijnaam (zoals `Richard`) worden daardoor ook als intern gemarkeerd wanneer account-id/IBAN metadata ontbreekt.
   - deze detectie wordt toegepast in zowel `/api/transactions` als `/api/statistics`.
   - frontend bevat extra fallback-filtering op tegenrekening-account-id, tegenrekening/merchant-naam en omschrijving-match vs eigen Bunq-rekeningen wanneer backend-flagging in een runtimevariant onvolledig is.
   - frontend account-id fallback respecteert nu ook bronrekening-id (zelfde account-id wordt niet automatisch intern weggefilterd).
+  - `/api/accounts` bevat nu `identity_names` per account zodat frontend-fallback ook houdernamen kan matchen.
   - balanswidgets voor betaal/spaar gebruiken nu alleen eigen Bunq-rekeningen (Triodos valt buiten `Betaalrekeningen (totaal)`).
 
 ## Widgetteksten (actueel)
