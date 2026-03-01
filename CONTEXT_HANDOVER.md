@@ -169,6 +169,44 @@ Let op:
 - Als nog steeds geen raw client: gerichte inspectie van `BunqContext.api_context()` objectgraph in runtime-container uitvoeren en op die accessor patchen.
 - Als raw client wel resolved maar nog geen savings: endpoint/pagination output per `/user/{id}/monetary-account*` pad inspecteren en fallback daarop fixeren.
 
+## Volgende sessie (nog uit te voeren)
+
+1) Handmatige redeploy met `.env` geladen:
+
+```bash
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
+```
+
+2) Raw debug opnieuw draaien en kernregels verzamelen:
+
+```bash
+sudo sh scripts/debug_raw_monetary_accounts.sh bunq_bunq-dashboard 0 | tee /tmp/monetary_debug.log
+grep -E "^(attempt_count=|== /user/|== user/|parsed_accounts=|first_account=|error=)" /tmp/monetary_debug.log
+```
+
+3) API checker draaien:
+
+```bash
+sudo chmod 755 /volume1/docker/bunq-dashboard/scripts/check_accounts_api.py
+
+EXPECTED_ACCOUNTS_JSON='[
+  {"description":"Spaarrekening","currency":"EUR"},
+  {"description":"Spaargeld in ZAR","currency":"ZAR"}
+]'
+DASHBOARD_USERNAME="$BASIC_AUTH_USERNAME" \
+DASHBOARD_PASSWORD="$BASIC_AUTH_PASSWORD" \
+python3 /volume1/docker/bunq-dashboard/scripts/check_accounts_api.py \
+  --base-url "$BASE_URL" \
+  --insecure \
+  --expected-json "$EXPECTED_ACCOUNTS_JSON" \
+  --timeout 180
+```
+
+Belangrijk:
+- gebruik variabele `EXPECTED_ACCOUNTS_JSON` (niet `EXPECTED_ACTS_JSON`).
+- voor analyse zijn de `first_account=...` regels essentieel.
+
 ## Documentatie-afspraak
 
 Vanaf nu bij elke codewijziging:

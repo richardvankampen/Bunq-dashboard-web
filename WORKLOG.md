@@ -53,6 +53,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - brede `display_name`-achtige matches zonder accountkenmerken worden niet meer als account geteld.
   - debugscript toont nu per route ook `first_account=<id>|<description>|<currency>|<type>` zodat `MAX_ROWS=0` toch bruikbare identificatie geeft.
 - `scripts/check_accounts_api.py` default timeout verhoogd naar 120s (was 20s) vanwege langzamere `/api/accounts` runs tijdens uitgebreide raw probing.
+- Volgende-sessie checklist expliciet vastgelegd in `CONTEXT_HANDOVER.md`:
+  - redeploy met `.env` geladen;
+  - raw debug rerun + grep met `first_account=...`;
+  - checker rerun met `EXPECTED_ACCOUNTS_JSON` (typo-valkuil `EXPECTED_ACTS_JSON` benoemd).
 - Installatie-instructies aangescherpt op Synology:
   - `scripts/install_or_update_synology.sh` expliciet als root laten uitvoeren (`sudo sh ...`).
   - `NO_CACHE` overrides nu gedocumenteerd via root-shell variant (`sudo sh -c 'NO_CACHE=... sh ...'`) om sudo-env valkuilen te vermijden.
