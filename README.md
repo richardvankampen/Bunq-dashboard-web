@@ -122,8 +122,15 @@ Useful script options:
 Automated install/update (after Vaultwarden setup):
 ```bash
 cd /volume1/docker/bunq-dashboard
-sudo git pull
+sudo git pull --rebase origin main
 sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
+```
+
+Quick redeploy for code-only changes (no `.env` / compose / secrets / network changes):
+```bash
+cd /volume1/docker/bunq-dashboard
+sudo git pull --rebase origin main
+sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
 ```
 
 Important (Synology):

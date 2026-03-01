@@ -115,8 +115,15 @@ Nuttige script-opties:
 Geautomatiseerde install/update (na Vaultwarden setup):
 ```bash
 cd /volume1/docker/bunq-dashboard
-sudo git pull
+sudo git pull --rebase origin main
 sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
+```
+
+Snelle redeploy voor alleen codewijzigingen (geen `.env` / compose / secrets / netwerkwijzigingen):
+```bash
+cd /volume1/docker/bunq-dashboard
+sudo git pull --rebase origin main
+sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
 ```
 
 Belangrijk (Synology):

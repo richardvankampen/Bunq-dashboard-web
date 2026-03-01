@@ -772,7 +772,15 @@ Package Center → Container Manager → Settings
 Snelle update (aanbevolen):
 ```bash
 cd /volume1/docker/bunq-dashboard
+sudo git pull --rebase origin main
 sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
+```
+
+Snelle redeploy bij alleen codewijzigingen (geen `.env`/compose/secrets/netwerk):
+```bash
+cd /volume1/docker/bunq-dashboard
+sudo git pull --rebase origin main
+sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
 ```
 
 Handmatig:
@@ -860,8 +868,9 @@ No code changes needed! ✨
 
 - Logs: `sudo docker service logs -f bunq_bunq-dashboard` en `sudo docker logs vaultwarden`
 - Connectivity: `sudo docker exec $(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1) ping vaultwarden`
-- Redeploy na .env wijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
-- Alleen herstart (zonder config/secrets wijzigingen): `sudo docker service update --force bunq_bunq-dashboard`
+- Snelle code-only redeploy: `cd /volume1/docker/bunq-dashboard && sudo git pull --rebase origin main && sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false`
+- Full deploy na `.env`/compose/secrets/netwerkwijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq; docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard'`
+- Alleen herstart (zonder image-update): `sudo docker service update --force bunq_bunq-dashboard`
 - Herstart + startup-validatie (aanbevolen): `sudo sh scripts/restart_bunq_service.sh`
 - Bunq IP/device opnieuw registreren (safe): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
 

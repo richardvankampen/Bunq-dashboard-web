@@ -65,8 +65,7 @@ sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
 If config changed (`.env` / compose / secrets), do full deploy:
 
 ```bash
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-sudo docker service update --force bunq_bunq-dashboard
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq; docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard'
 ```
 
 ### 2. Login works, but Bunq data fails
@@ -165,12 +164,15 @@ Actions:
 # Show service image currently in use
 sudo docker service inspect bunq_bunq-dashboard --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
 
-# Force rolling restart
+# Force rolling restart (no image change)
 sudo docker service update --force bunq_bunq-dashboard
 
-# Full update flow
+# Quick code-only redeploy
 cd /volume1/docker/bunq-dashboard
 sudo git pull --rebase origin main
+sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
+
+# Full update flow
 sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
 

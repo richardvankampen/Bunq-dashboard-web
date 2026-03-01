@@ -6,6 +6,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Markdown instructie-audit uitgevoerd en gecorrigeerd op nieuwe deployflow:
+  - `README.md` en `README-NL.md`: `sudo git pull` vervangen door `sudo git pull --rebase origin main` en quick code-only redeploy toegevoegd (`sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false`).
+  - `TROUBLESHOOTING.md`: full deploy snippet geüpdatet naar `.env` load + `docker service update --force --image bunq-dashboard:$TAG ...`; quick redeploy sectie expliciet toegevoegd.
+  - `TROUBLESHOOTING-NL.md`: kritieke redeploy/recovery snippets aangepast naar quick redeploy of full deploy met `.env` + image-force update.
+  - `SYNOLOGY_INSTALL-NL.md`: update-sectie aangevuld met `git pull --rebase` en quick code-only redeploy; korte troubleshootingblokken consistent gemaakt met huidige flow.
+
 - Settings “Enable background particles” wow-upgrade:
   - standaard checkbox vervangen door een prominente visual FX togglekaart.
   - nieuwe kaart bevat badge, duidelijke titel/subtitel en custom switch.

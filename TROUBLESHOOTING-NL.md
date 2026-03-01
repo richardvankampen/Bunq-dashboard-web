@@ -91,7 +91,7 @@ sudo chmod -R 755 /volume1/docker/bunq-dashboard
 # Recreate containers
 docker stack rm bunq
 # Redeploy (reload .env)
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq; docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard'
 ```
 
 #### D. Syntax Error in Code
@@ -122,11 +122,13 @@ docker ps | grep bunq-dashboard
 # If not running, check why:
 docker service logs bunq_bunq-dashboard
 
-# Restart service
-docker service update --force bunq_bunq-dashboard
+# Quick code-only redeploy (aanbevolen)
+cd /volume1/docker/bunq-dashboard
+sudo git pull --rebase origin main
+sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
 
-# If service doesn't exist, redeploy:
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+# Als service niet bestaat of config gewijzigd is: full deploy
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq; docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard'
 ```
 
 #### B. Firewall Blocking

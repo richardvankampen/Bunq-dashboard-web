@@ -28,6 +28,10 @@ Dit bestand is de actuele bron voor overdracht.
 - Korte release-samenvatting voor docs-updates is nu tweetalig beschikbaar:
   - `RELEASE_NOTES.md` (EN)
   - `RELEASE_NOTES-NL.md` (NL)
+- Operationele markdown-instructies zijn gesynchroniseerd op de huidige updateflow:
+  - `git pull` voorbeelden gebruiken nu `sudo git pull --rebase origin main`;
+  - README EN/NL bevatten nu ook expliciet quick code-only redeploy (`scripts/quick_redeploy.sh`);
+  - troubleshooting/synology NL voorbeelden voor full deploy gebruiken `.env`-load + `docker service update --force --image bunq-dashboard:$TAG ...` in dezelfde shell.
 
 ## Frontend detailweergave (actueel)
 
