@@ -96,7 +96,8 @@ Dit bestand is de actuele bron voor overdracht.
 - Bovenstaande widgettitels hebben korte hover-uitleg (native tooltip via `title`).
 - Insights-kaarten (o.a. `Terugkerende kosten`, `Volgende beste actie`, `Datakwaliteit`) zijn ook vertaald naar Nederlands en voorzien van korte hover-uitleg.
   - tooltip op insight-kaarten staat nu op de hele tegel (`.insight-card`), niet alleen op de `h4`-titel.
-  - tooltips zijn nu ook statisch in de HTML op elke inzichttegel gezet (`title` op elk `.insight-card`) zodat mouse-over altijd werkt, ook zonder JS-helper.
+  - tooltips zijn nu ook statisch in de HTML op elke inzichttegel gezet (`title` op elk `.insight-card`) en daarnaast als custom CSS-tooltip (`data-tooltip`) gerenderd voor consistente hover-weergave in browsers die `title` op `div` beperkt tonen.
+- `Geldstromen` samenvattingstekst (`In · Uit · Netto`) staat nu als HTML-balk boven de Sankey i.p.v. als Plotly-annotatie; dit voorkomt render-artifacts in fullscreen (tekst werd een dunne onleesbare lijn).
 - Op `Cashflow (tijdslijn)` is de downloadknop verwijderd; detailview opent via de detailactieknop.
 
 ## Categorie-race (actueel)

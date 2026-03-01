@@ -894,11 +894,19 @@ function setupEventListeners() {
 
 function syncInsightCardTooltips() {
     document.querySelectorAll('.insight-card').forEach((card) => {
+        const cardTooltip = String(card.getAttribute('title') || '').trim();
         const heading = card.querySelector('h4[title]');
-        if (!heading) return;
-        const tooltip = String(heading.getAttribute('title') || '').trim();
-        if (!tooltip) return;
+        const headingTooltip = heading ? String(heading.getAttribute('title') || '').trim() : '';
+        const tooltip = cardTooltip || headingTooltip;
+        if (!tooltip) {
+            card.removeAttribute('data-tooltip');
+            return;
+        }
         card.setAttribute('title', tooltip);
+        card.setAttribute('data-tooltip', tooltip);
+        if (!card.hasAttribute('aria-label')) {
+            card.setAttribute('aria-label', tooltip);
+        }
     });
 }
 
@@ -3323,6 +3331,7 @@ function renderCashflowChart(data) {
 function renderSankeyChart(data) {
     const container = document.getElementById('sankeyChart');
     if (!container) return;
+    setSankeySummary(container, '');
 
     const incomeByCategory = {};
     const essentialByCategory = {};
@@ -3453,6 +3462,11 @@ function renderSankeyChart(data) {
         linkSharePct.push(totalIncome > 0 ? (Math.abs(net) / totalIncome) * 100 : 0);
     }
 
+    setSankeySummary(
+        container,
+        `In ${formatCurrency(totalIncome)} · Uit ${formatCurrency(totalExpenses)} · Netto ${formatCurrency(net)}`
+    );
+
     const trace = {
         type: 'sankey',
         arrangement: 'snap',
@@ -3486,20 +3500,27 @@ function renderSankeyChart(data) {
     const layout = {
         margin: { t: 20, r: 20, l: 20, b: 20 },
         paper_bgcolor: 'rgba(0,0,0,0)',
-        font: { color: '#cbd5f5' },
-        annotations: [{
-            text: `In ${formatCurrency(totalIncome)} · Uit ${formatCurrency(totalExpenses)} · Netto ${formatCurrency(net)}`,
-            showarrow: false,
-            x: 0,
-            y: 1.05,
-            xref: 'paper',
-            yref: 'paper',
-            xanchor: 'left',
-            font: { size: 12, color: '#cbd5f5' }
-        }]
+        font: { color: '#cbd5f5' }
     };
 
     Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
+}
+
+function setSankeySummary(container, text) {
+    const cardBody = container?.closest('.card-body');
+    if (!cardBody) return;
+
+    let summary = cardBody.querySelector('.sankey-summary');
+    if (!summary) {
+        summary = document.createElement('div');
+        summary.className = 'sankey-summary';
+        summary.setAttribute('aria-live', 'polite');
+        cardBody.insertBefore(summary, container);
+    }
+
+    const normalizedText = String(text || '').trim();
+    summary.textContent = normalizedText;
+    summary.hidden = normalizedText.length === 0;
 }
 
 function renderSunburstChart(data) {

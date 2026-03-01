@@ -753,6 +753,14 @@ body.reduce-animations .play-btn:hover {
     height: 380px;
 }
 
+.sankey-summary {
+    margin-bottom: var(--spacing-sm);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    line-height: 1.35;
+}
+
 #ridgePlotCanvas {
     width: 100%;
     height: 260px;
@@ -789,6 +797,11 @@ body.reduce-animations .play-btn:hover {
 .viz-card:-webkit-full-screen #merchantsChart,
 .viz-card:-webkit-full-screen #racingChart {
     height: calc(100vh - 180px);
+}
+
+.viz-card:fullscreen #sankeyChart,
+.viz-card:-webkit-full-screen #sankeyChart {
+    height: calc(100vh - 220px);
 }
 
 /* Animation Controls */
@@ -863,10 +876,59 @@ body.reduce-animations .play-btn:hover {
     border-radius: var(--radius-lg);
     text-align: center;
     transition: all var(--transition-medium);
+    position: relative;
+    overflow: visible;
 }
 
 .insight-card:hover {
     transform: translateY(-5px) scale(1.02);
+}
+
+.insight-card[data-tooltip]::before,
+.insight-card[data-tooltip]::after {
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    z-index: 40;
+}
+
+.insight-card[data-tooltip]::before {
+    content: '';
+    left: 50%;
+    top: calc(100% + 2px);
+    transform: translateX(-50%) translateY(4px);
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent transparent rgba(15, 23, 42, 0.96) transparent;
+}
+
+.insight-card[data-tooltip]::after {
+    content: attr(data-tooltip);
+    left: 50%;
+    top: calc(100% + 8px);
+    transform: translateX(-50%) translateY(6px);
+    min-width: 220px;
+    max-width: min(320px, calc(100vw - 32px));
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.96);
+    color: #e2e8f0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.35;
+    text-align: left;
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.45);
+    white-space: normal;
+}
+
+.insight-card[data-tooltip]:hover::before,
+.insight-card[data-tooltip]:hover::after,
+.insight-card[data-tooltip]:focus-within::before,
+.insight-card[data-tooltip]:focus-within::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
 }
 
 .insight-icon {

@@ -6,6 +6,15 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Tooltip/hover-fix inzichttegels robuuster gemaakt:
+  - `syncInsightCardTooltips()` zet nu naast `title` ook `data-tooltip` op elke `.insight-card`.
+  - nieuwe CSS-tooltiplaag toegevoegd (`::before/::after` op `.insight-card[data-tooltip]`) zodat hover-uitleg zichtbaar blijft in browsers waar native `title` op `div` onbetrouwbaar is.
+
+- `Geldstromen` fullscreen renderfix:
+  - samenvattingstekst (`In ... · Uit ... · Netto ...`) verplaatst van Plotly `annotations` naar een stabiele HTML-regel (`.sankey-summary`) boven de grafiek.
+  - specifieke fullscreen hoogte voor `#sankeyChart` aangepast zodat de summary-regel niet over de grafiek heen valt.
+  - doel: voorkomen dat de samenvatting in fullscreen als onleesbare witte puntjes/lijntjes rendert.
+
 - Tooltipdekking inzichttegels hard gemaakt:
   - op elke `.insight-card` is nu direct een `title`-attribuut gezet in `index.html`;
   - hierdoor werkt mouse-over uitleg per inzichttegel ook als JS-tooltip-sync niet draait.
