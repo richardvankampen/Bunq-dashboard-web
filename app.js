@@ -895,26 +895,32 @@ function setupEventListeners() {
 
 function syncInsightCardTooltips() {
     document.querySelectorAll('.insight-card').forEach((card) => {
+        const dataTooltip = String(card.getAttribute('data-tooltip') || '').trim();
         const cardTooltip = String(card.getAttribute('title') || '').trim();
-        const heading = card.querySelector('h4[title]');
+        const heading = card.querySelector('h4');
         const headingTooltip = heading ? String(heading.getAttribute('title') || '').trim() : '';
-        const tooltip = cardTooltip || headingTooltip;
+        const tooltip = dataTooltip || cardTooltip || headingTooltip;
         if (!tooltip) {
             card.removeAttribute('data-tooltip');
+            card.removeAttribute('title');
+            if (heading) heading.removeAttribute('title');
             return;
         }
-        card.setAttribute('title', tooltip);
         card.setAttribute('data-tooltip', tooltip);
         if (!card.hasAttribute('aria-label')) {
             card.setAttribute('aria-label', tooltip);
         }
+        // Remove native browser tooltips so only the custom tooltip is shown.
+        card.removeAttribute('title');
+        if (heading) heading.removeAttribute('title');
     });
 }
 
 const insightHoverTooltipState = {
     element: null,
     activeCard: null,
-    listenersBound: false
+    listenersBound: false,
+    lastPointer: null
 };
 
 function ensureInsightHoverTooltipElement() {
@@ -931,34 +937,54 @@ function ensureInsightHoverTooltipElement() {
     return tooltip;
 }
 
-function positionInsightHoverTooltip(card) {
+function positionInsightHoverTooltip(card, pointer = null) {
     const tooltip = ensureInsightHoverTooltipElement();
     const rect = card.getBoundingClientRect();
     const viewportPadding = 8;
-    const tooltipMargin = 10;
+    const tooltipMargin = 12;
+    const cursorOffsetX = 14;
+    const cursorOffsetY = 16;
     const maxWidth = Math.max(220, Math.min(360, window.innerWidth - 2 * viewportPadding));
     tooltip.style.maxWidth = `${maxWidth}px`;
 
     const tooltipWidth = tooltip.offsetWidth || Math.min(maxWidth, 320);
     const tooltipHeight = tooltip.offsetHeight || 48;
 
-    let left = rect.left + rect.width / 2 - tooltipWidth / 2;
-    left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipWidth - viewportPadding));
-
-    let top = rect.top - tooltipHeight - tooltipMargin;
-    let placement = 'top';
-    if (top < viewportPadding) {
-        top = rect.bottom + tooltipMargin;
+    const hasPointer = pointer && Number.isFinite(pointer.x) && Number.isFinite(pointer.y);
+    let left;
+    let top;
+    let placement;
+    if (hasPointer) {
+        left = pointer.x + cursorOffsetX;
+        top = pointer.y + cursorOffsetY;
         placement = 'bottom';
+        if (top + tooltipHeight > window.innerHeight - viewportPadding) {
+            top = pointer.y - tooltipHeight - tooltipMargin;
+            placement = 'top';
+        }
+    } else {
+        left = rect.left + rect.width / 2 - tooltipWidth / 2;
+        top = rect.top - tooltipHeight - tooltipMargin;
+        placement = 'top';
+        if (top < viewportPadding) {
+            top = rect.bottom + tooltipMargin;
+            placement = 'bottom';
+        }
     }
 
+    left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipWidth - viewportPadding));
+    top = Math.max(viewportPadding, Math.min(top, window.innerHeight - tooltipHeight - viewportPadding));
+
+    const anchorX = hasPointer ? pointer.x : (rect.left + rect.width / 2);
+    const arrowOffset = Math.max(14, Math.min(tooltipWidth - 14, anchorX - left));
+    tooltip.style.setProperty('--tooltip-arrow-x', `${Math.round(arrowOffset)}px`);
     tooltip.style.left = `${Math.round(left)}px`;
     tooltip.style.top = `${Math.round(top)}px`;
     tooltip.setAttribute('data-placement', placement);
 }
 
-function showInsightHoverTooltip(card) {
-    const tooltipText = String(card.getAttribute('data-tooltip') || card.getAttribute('title') || '').trim();
+function showInsightHoverTooltip(card, pointer = null) {
+    const tooltipText = String(card.getAttribute('data-tooltip') || '').trim();
     if (!tooltipText) return;
 
     const tooltip = ensureInsightHoverTooltipElement();
@@ -966,8 +992,11 @@ function showInsightHoverTooltip(card) {
     tooltip.hidden = false;
     tooltip.setAttribute('data-visible', 'true');
     insightHoverTooltipState.activeCard = card;
+    insightHoverTooltipState.lastPointer = pointer && Number.isFinite(pointer.x) && Number.isFinite(pointer.y)
+        ? pointer
+        : null;
     card.setAttribute('aria-describedby', 'insightHoverTooltip');
-    positionInsightHoverTooltip(card);
+    positionInsightHoverTooltip(card, insightHoverTooltipState.lastPointer);
 }
 
 function hideInsightHoverTooltip(card = null) {
@@ -979,6 +1008,7 @@ function hideInsightHoverTooltip(card = null) {
         insightHoverTooltipState.activeCard.removeAttribute('aria-describedby');
     }
     insightHoverTooltipState.activeCard = null;
+    insightHoverTooltipState.lastPointer = null;
     tooltip.setAttribute('data-visible', 'false');
     tooltip.hidden = true;
 }
@@ -993,14 +1023,17 @@ function setupInsightHoverTooltips() {
         if (card.dataset.tooltipBound === '1') return;
         card.dataset.tooltipBound = '1';
 
-        card.addEventListener('mouseenter', () => showInsightHoverTooltip(card));
-        card.addEventListener('mousemove', () => {
+        card.addEventListener('mouseenter', (event) => {
+            showInsightHoverTooltip(card, { x: event.clientX, y: event.clientY });
+        });
+        card.addEventListener('mousemove', (event) => {
             if (insightHoverTooltipState.activeCard === card) {
-                positionInsightHoverTooltip(card);
+                insightHoverTooltipState.lastPointer = { x: event.clientX, y: event.clientY };
+                positionInsightHoverTooltip(card, insightHoverTooltipState.lastPointer);
             }
         });
         card.addEventListener('mouseleave', () => hideInsightHoverTooltip(card));
-        card.addEventListener('focusin', () => showInsightHoverTooltip(card));
+        card.addEventListener('focusin', () => showInsightHoverTooltip(card, null));
         card.addEventListener('focusout', () => hideInsightHoverTooltip(card));
         card.addEventListener('blur', () => hideInsightHoverTooltip(card));
     });
@@ -1008,12 +1041,18 @@ function setupInsightHoverTooltips() {
     if (!insightHoverTooltipState.listenersBound) {
         window.addEventListener('scroll', () => {
             if (insightHoverTooltipState.activeCard) {
-                positionInsightHoverTooltip(insightHoverTooltipState.activeCard);
+                positionInsightHoverTooltip(
+                    insightHoverTooltipState.activeCard,
+                    insightHoverTooltipState.lastPointer
+                );
             }
         }, true);
         window.addEventListener('resize', () => {
             if (insightHoverTooltipState.activeCard) {
-                positionInsightHoverTooltip(insightHoverTooltipState.activeCard);
+                positionInsightHoverTooltip(
+                    insightHoverTooltipState.activeCard,
+                    insightHoverTooltipState.lastPointer
+                );
             }
         });
         insightHoverTooltipState.listenersBound = true;

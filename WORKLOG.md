@@ -13,6 +13,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - floating tooltip visuele stijl omgezet naar dezelfde glassmorphism variabelen als de overige tegels voor consistente look.
   - reden: Safari in gemaximaliseerd/fullscreen venster toonde tooltip niet consistent.
 
+- Tooltip-UX verfijning op verzoek:
+  - oude native `title` mouse-overs op inzichttegels runtime verwijderd, zodat alleen custom tooltip zichtbaar blijft.
+  - custom tooltip volgt nu de cursor en verschijnt net onder de muis (met automatische fallback boven de cursor bij weinig ruimte).
+  - tooltipstijl lichter gemaakt met subtiele magenta glass-tint voor extra contrast/zichtbaarheid.
+
 - Stilistische widgetfixes:
   - `Top tegenrekeningen` en `Categorie-race` renderen nu met transparante plotachtergrond (`plot_bgcolor`) zodat de tegelachtergrond zichtbaar blijft (geen witte chart-vlakken).
   - `Budget discipline` en `Categorie-race` hebben niet langer de aparte featured-card rand; ze gebruiken nu dezelfde standaard randstijl als andere widgets.

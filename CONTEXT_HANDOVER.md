@@ -103,8 +103,10 @@ Dit bestand is de actuele bron voor overdracht.
 - `Budget discipline` en `Categorie-race` gebruiken nu dezelfde standaard tegelrand als andere widgets (featured-card rand verwijderd).
 - Safari hover-fix inzichttegels:
   - JS-gestuurde floating tooltip toegevoegd (`.insight-hover-tooltip`) die op `mouseenter/focus` op inzichttegels toont.
+  - oude native `title` mouse-overs op inzichttegels worden nu runtime verwijderd, zodat alleen de nieuwe custom tooltip zichtbaar is.
   - CSS pseudo-tooltips worden automatisch uitgeschakeld wanneer JS-tooltip actief is (`body.js-insight-tooltips`) om dubbele tooltips te voorkomen.
-  - floating tooltip gebruikt nu dezelfde glass-stijlvariabelen als de rest van de UI (`--glass-bg`, `--glass-border`, blur/backdrop) voor consistente styling.
+  - tooltip volgt nu de cursor en wordt net onder de muis getoond (met viewport fallback boven de cursor indien nodig).
+  - floating tooltip heeft nu een lichtere glass-tint met subtiele magenta-accenten voor betere zichtbaarheid.
   - doel: ook in Safari (maximized/fullscreen) consistente tooltipweergave.
 
 ## Detailmodal styling (actueel)
