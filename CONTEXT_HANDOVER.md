@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split)
 
 ## Canonieke status
 
@@ -14,6 +14,16 @@ Dit bestand is de actuele bron voor overdracht.
 - Bunq context init werkt op productie.
 - Session-auth met secure cookies werkt.
 - Dashboard draait via Synology + Docker Swarm + Gunicorn.
+
+## Documentatie-talen (actueel)
+
+- User-facing docs hebben nu een Engelse hoofdversie (`*.md`) en een Nederlandse variant (`*-NL.md`).
+- Huidige mapping:
+  - `README.md` (EN) / `README-NL.md` (NL)
+  - `SECURITY.md` (EN) / `SECURITY-NL.md` (NL)
+  - `SYNOLOGY_INSTALL.md` (EN) / `SYNOLOGY_INSTALL-NL.md` (NL)
+  - `TROUBLESHOOTING.md` (EN) / `TROUBLESHOOTING-NL.md` (NL)
+- `README.md` bevat expliciete taalkeuze zodat gebruikers EN/NL direct kunnen kiezen.
 
 ## Frontend detailweergave (actueel)
 

@@ -1,93 +1,105 @@
 # 💰 Bunq Financial Dashboard
 
-**Veilige web-based visualisaties van je Bunq transactiedata (Synology-first)**
-Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseert.
+**Secure web-based visualizations of your Bunq transaction data (Synology-first).**
+Read-only dashboard that fetches data from the Bunq API and presents it clearly.
+
+## 🌐 Language
+
+- English (this file): [README.md](README.md)
+- Dutch: [README-NL.md](README-NL.md)
+
+Dutch companion docs:
+- [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
+- [SECURITY-NL.md](SECURITY-NL.md)
+- [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
 
 ⚠️ **IMPORTANT:** Access ONLY via VPN. NEVER forward ports to the internet.
 
 ---
 
-## ✨ Belangrijkste Features
+## ✨ Key Features
 
-- Single-port dashboard (frontend + API) op poort 5000
-- Real-time data uit de Bunq API (read-only)
-- Vaultwarden-first key management (aanbevolen), met optionele directe fallback
-- Vaultwarden decrypt via `bw` CLI (master-password secret) voor betrouwbare key retrieval
-  - Intel/amd64: native pinned `bw` binary (met automatische npm fallback als release-asset tijdelijk ontbreekt)
+- Single-port dashboard (frontend + API) on port 5000
+- Real-time data from the Bunq API (read-only)
+- Vaultwarden-first key management (recommended), with optional direct fallback
+- Vaultwarden decrypt via `bw` CLI (master-password secret) for reliable key retrieval
+  - Intel/amd64: native pinned `bw` binary (with automatic npm fallback if a release asset is temporarily unavailable)
   - ARM64: pinned `@bitwarden/cli` npm fallback (officially recommended for ARM)
-- Productie-runtime via Gunicorn (geen Flask development server in container)
-- Lokale history-opslag (SQLite) voor langere-termijn inzichten
-- EUR-totalen voor niet-EUR rekeningen (met FX conversie en caching)
-- Transactie-dekking via Bunq `payment` én (waar beschikbaar) `card-payment` endpoints
-- 11+ visualisaties (cashflow, trends, categorieën)
-- Actionable insight cards (runway, needs-vs-wants, merchant concentration, monthly net projection) met deep-dive details
-- Caching en pagination voor performance
-- Synology‑ready deployment
-- Admin maintenance tools in Settings (status, egress IP, Bunq context re-init, bundled maintenance run met opties)
-- Terminal-helper knoppen in admin panel (tonen copy-ready install/update en restart commando's)
+- Production runtime via Gunicorn (no Flask development server in the container)
+- Local history storage (SQLite) for longer-term insights
+- EUR totals for non-EUR accounts (with FX conversion and caching)
+- Transaction coverage via Bunq `payment` and (where available) `card-payment` endpoints
+- 11+ visualizations (cashflow, trends, categories)
+- Actionable insight cards (runway, needs-vs-wants, merchant concentration, monthly net projection) with deep-dive details
+- Caching and pagination for performance
+- Synology-ready deployment
+- Admin maintenance tools in Settings (status, egress IP, Bunq context re-init, bundled maintenance run with options)
+- Terminal-helper buttons in the admin panel (copy-ready install/update and restart commands)
 
-**Visualisaties:**
-- KPI Cards (inkomsten/uitgaven/sparen)
+**Visualizations:**
+- KPI Cards (income/expenses/savings)
 - Cashflow timeline
-- Sankey diagram (geldstromen)
-- Sunburst (categorieën)
+- Sankey diagram (money flow)
+- Sunburst (categories)
 - 3D time-space chart
-- Heatmap (dag/uur)
+- Heatmap (day/hour)
 - Top merchants
-- Ridge plot (distributie)
+- Ridge plot (distribution)
 - Racing bar chart
-- Insights (automatisch)
+- Insights (automatic)
 - Custom charts
 
-## 🔒 Security (Kort)
+## 🔒 Security (Short)
 
-- Session-based auth met HttpOnly cookies en CSRF‑bescherming
-- `SESSION_COOKIE_SECURE=true` als veilige default (zet alleen op `false` bij lokale HTTP)
-- Secrets via Vaultwarden + Docker Swarm secrets (Vaultwarden is preferred; `VAULTWARDEN_ACCESS_METHOD=cli`)
-- VPN‑only toegang, geen publieke exposure
-- Rate limiting op login en API
-Meer details: [SECURITY.md](SECURITY.md)
+- Session-based auth with HttpOnly cookies and CSRF protection
+- `SESSION_COOKIE_SECURE=true` as secure default (set to `false` only for local HTTP)
+- Secrets via Vaultwarden + Docker Swarm secrets (Vaultwarden preferred; `VAULTWARDEN_ACCESS_METHOD=cli`)
+- VPN-only access, no public exposure
+- Rate limiting for login and API
+
+More details: [SECURITY.md](SECURITY.md)  
+Dutch version: [SECURITY-NL.md](SECURITY-NL.md)
 
 ## 🚀 Quick Start (Synology)
 
-1. Installeer **Container Manager** (Package Center)
-2. Zorg voor **VPN-only toegang** (geen publieke exposure)
-3. Volg de volledige installatieguide: [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
-4. Gebruik **Vaultwarden als primaire Bunq API key bron** (`USE_VAULTWARDEN=true`)
-5. Gebruik `VAULTWARDEN_ACCESS_METHOD=cli` + secret `bunq_vaultwarden_master_password`
-   - Zet `VAULTWARDEN_URL` op een **HTTPS** URL (reverse proxy/domein met geldig certificaat)
-6. Gebruik directe `bunq_api_key` alleen als nood-fallback (`USE_VAULTWARDEN=false`)
-7. Voor install/update op Synology: run altijd als root:
+1. Install **Container Manager** (Package Center)
+2. Ensure **VPN-only access** (no public exposure)
+3. Follow the full installation guide: [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
+4. Use **Vaultwarden as the primary Bunq API key source** (`USE_VAULTWARDEN=true`)
+5. Use `VAULTWARDEN_ACCESS_METHOD=cli` + secret `bunq_vaultwarden_master_password`
+   - Set `VAULTWARDEN_URL` to an **HTTPS** URL (reverse proxy/domain with valid certificate)
+6. Use direct `bunq_api_key` only as an emergency fallback (`USE_VAULTWARDEN=false`)
+7. For install/update on Synology, always run as root:
    - `sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh`
-   - Niet als normale user uitvoeren.
-8. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh`
-   - Veilige non-interactive default: `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
-   - Optionele cleanup-pass daarna: `... DEACTIVATE_OTHERS=true ...`
-9. Na deploy/herstart kun je startup-validatie doen met `sudo sh scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
-10. Build/deploy controleert ook egress-IP vs actieve Bunq whitelist en geeft direct herstelcommando bij mismatch
+   - Do not run as a regular user.
+8. On new Bunq API key or IP change: run `scripts/register_bunq_ip.sh`
+   - Safe non-interactive default: `TARGET_IP=<PUBLIC_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
+   - Optional cleanup pass afterwards: `... DEACTIVATE_OTHERS=true ...`
+9. After deploy/restart, run startup validation with `sudo sh scripts/restart_bunq_service.sh` (uses git tag by default + prunes old `bunq-dashboard` images)
+10. Build/deploy also checks egress IP vs active Bunq whitelist and prints a direct recovery command on mismatch
 
 Health endpoints:
 - Liveness: `GET /api/live` (container/app process up)
-- Readiness: `GET /api/health` (Bunq context state; kan `503` geven bij key/IP mismatch)
+- Readiness: `GET /api/health` (Bunq context state; may return `503` on key/IP mismatch)
 
-Transactie-diagnostiek:
-- `GET /api/transactions` retourneert extra velden:
+Transaction diagnostics:
+- `GET /api/transactions` returns extra fields:
   - `truncated` (true/false)
-  - `truncated_accounts` (per account paging-cap info)
-  - `amount_eur_missing_count` (non-EUR transacties zonder EUR-conversie)
-- Dashboard toont hiervoor expliciete waarschuwingen i.p.v. stilzwijgende onderrapportage.
+  - `truncated_accounts` (per-account paging-cap info)
+  - `amount_eur_missing_count` (non-EUR transactions without EUR conversion)
+- Dashboard shows explicit warnings for these cases instead of silent underreporting.
 
-Savings-accounts (SDK-first):
-- Accountophaalpad volgt de officiële Bunq SDK-endpoints:
+Savings accounts (SDK-first):
+- Account retrieval follows official Bunq SDK endpoints:
   - `MonetaryAccount.list(...)` (unified)
   - `MonetaryAccountSavings.list(...)`
   - `MonetaryAccountExternalSavings.list(...)`
-- Alleen als SDK-deserialisatie op savings faalt, gebruikt de backend een beperkte raw fallback op:
+- Only when SDK deserialization fails on savings, backend uses a limited raw fallback on:
   - `/user/{user_id}/monetary-account`
   - `/user/{user_id}/monetary-account-savings`
   - `/user/{user_id}/monetary-account-external-savings`
 
-Snelle check na deploy:
+Quick check after deploy:
 ```bash
 TAG=$(sudo git rev-parse --short HEAD)
 sudo docker build --no-cache -t bunq-dashboard:$TAG .
@@ -95,43 +107,43 @@ sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
 sudo sh scripts/restart_bunq_service.sh
 
-# Handmatige fallback:
+# Manual fallback:
 sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key"
 curl -s http://127.0.0.1:5000/api/live
 curl -s http://127.0.0.1:5000/api/health
 ```
 
-Nuttige script-opties:
-- `AUTO_TAG_FROM_GIT=false` om zonder image-tag override te herstarten
-- `CLEANUP_OLD_IMAGES=false` om geen oude images te verwijderen
-- `KEEP_IMAGE_COUNT=3` om meer recente oudere tags te bewaren
+Useful script options:
+- `AUTO_TAG_FROM_GIT=false` to restart without image-tag override
+- `CLEANUP_OLD_IMAGES=false` to keep old images
+- `KEEP_IMAGE_COUNT=3` to keep more recent older tags
 
-Geautomatiseerde install/update (na Vaultwarden setup):
+Automated install/update (after Vaultwarden setup):
 ```bash
 cd /volume1/docker/bunq-dashboard
 sudo git pull
 sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
 
-Belangrijk (Synology):
-- Run het install/update script altijd met `sudo sh ...`.
-- Als je het als normale user draait, kan `docker stack deploy` met default-waarden starten (`*.jouwdomein.nl`) i.p.v. je `.env` waarden.
+Important (Synology):
+- Always run the install/update script using `sudo sh ...`.
+- If you run it as a regular user, `docker stack deploy` can start with default values (`*.yourdomain.com`) instead of your `.env` values.
 
-Het script vraagt standaard:
+By default, the script asks:
 - `Use clean Docker build (--no-cache)? [Y/n]`
 
-Handige overrides:
-- `sudo sh -c 'NO_CACHE=false sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'` (sneller, cached build)
-- `sudo sh -c 'NO_CACHE=true sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'` (volledig schone build)
-- In non-interactive runs blijft veilige default `NO_CACHE=true` actief.
+Useful overrides:
+- `sudo sh -c 'NO_CACHE=false sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'` (faster, cached build)
+- `sudo sh -c 'NO_CACHE=true sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'` (fully clean build)
+- In non-interactive runs, safe default `NO_CACHE=true` remains active.
 
-Wanneer `NO_CACHE=false` gebruiken:
-- Alleen code/documentatie wijzigingen (bijv. `app.js`, `api_proxy.py`, `index.html`, `.md`) en geen dependency/base-image wijzigingen.
-- Je wilt sneller deployen en Docker-cache hergebruiken.
+When to use `NO_CACHE=false`:
+- Only code/documentation changes (for example `app.js`, `api_proxy.py`, `index.html`, `.md`) and no dependency/base-image changes.
+- You want faster deploys by reusing Docker cache.
 
-Wanneer `NO_CACHE=true` gebruiken:
-- Wijzigingen in `Dockerfile`, dependencies, base image, of build issues met mogelijk stale layers.
+When to use `NO_CACHE=true`:
+- Changes in `Dockerfile`, dependencies, base image, or build issues that may involve stale layers.
 
 ---
 

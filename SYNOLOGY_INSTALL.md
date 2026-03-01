@@ -1,129 +1,65 @@
 # 🏠 Synology NAS Installation Guide
 
-Complete stap-voor-stap instructies voor het installeren van Bunq Dashboard op je Synology NAS met Vaultwarden secret management.
+Step-by-step guide for installing Bunq Dashboard on Synology NAS.
+
+**Language versions**
+- English (this file): [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
+- Dutch (full original): [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
 
 ---
 
-## 🧭 Navigatie
+## 🧭 Navigation
 
-- Startpunt (dit document): [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
-- Korte overzichtspagina: [README.md](README.md)
-- Security hardening: [SECURITY.md](SECURITY.md)
+- Overview and quick start: [README.md](README.md)
+- Security best practices: [SECURITY.md](SECURITY.md)
 - Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
-Tip: De lijst met visualisaties staat kort in de [README.md](README.md).
-
-## 📋 Vereisten
+## 📋 Requirements
 
 ### Hardware
-- **Synology NAS** met DSM 7.0 of hoger
-- **Minimaal 2GB RAM** (4GB aanbevolen)
-- **10GB vrije schijfruimte**
-- **Intel/AMD CPU** (ARM wordt niet ondersteund door Bunq SDK)
+- Synology NAS with DSM 7+
+- Minimum 2GB RAM (4GB recommended)
+- Minimum 10GB free disk space
+- Intel/AMD CPU (Bunq SDK on ARM is not supported)
 
 ### Software
-- **Container Manager** (via Package Center)
-- **SSH toegang** (optioneel maar aanbevolen)
-- **Bunq Pro/Premium** account
+- Container Manager
+- SSH access (recommended)
+- Bunq Pro/Premium account
 
-### Netwerk
-- **Vaste lokale IP** voor je NAS (bijv. 192.168.1.100)
-- **Poorten vrij**: 5000 (Dashboard + API), 9000 (Vaultwarden)
+### Network
+- Static NAS LAN IP (for example `192.168.1.100`)
+- Open local ports:
+  - `5000` (dashboard + API)
+  - `9000` (Vaultwarden)
 
----
+## 🔧 Part 1: Preparation
 
-## 🔧 Deel 1: Voorbereiding
+### Step 1.1 Enable SSH
 
-### Stap 1.1: Enable SSH (Optioneel maar aanbevolen)
+DSM:
+- `Control Panel -> Terminal & SNMP -> Enable SSH`
 
-```
-Control Panel → Terminal & SNMP
-├── Enable SSH service ✓
-└── Port: 22 (default)
-```
-
-Test verbinding:
+Test:
 ```bash
-ssh admin@192.168.1.100 # Het IP adres van je NAS
-# Password: je NAS admin wachtwoord
+ssh admin@192.168.1.100
 ```
 
-### Stap 1.2: Installeer Container Manager
+### Step 1.2 Create folders
 
-```
-Package Center → Zoek "Container Manager" → Installeer
-```
-
-Wacht tot installatie compleet is (kan 5 minuten duren).
-
-### Stap 1.3: Maak Project Directories
-
-Via SSH:
 ```bash
 sudo mkdir -p /volume1/docker/vaultwarden
 sudo mkdir -p /volume1/docker/bunq-dashboard
-
-# Set permissions
 sudo chmod -R 755 /volume1/docker
 ```
 
-Of via File Station:
-```
-File Station → docker (create if not exists)
-├── vaultwarden (nieuwe map)
-└── bunq-dashboard (nieuwe map)
+## 🔐 Part 2: Vaultwarden
 
-**Let op:** `config` en `logs` worden later aangemaakt (Deel 3) nadat de repo is gedownload.
-```
+### Step 2.1 Run Vaultwarden
 
----
+Use Container Manager UI or Docker compose.
 
-## 🔐 Deel 2: Vaultwarden Installeren
-
-Vaultwarden is een lightweight, self-hosted Bitwarden server voor het veilig opslaan van secrets.
-
-### Stap 2.1: Download Vaultwarden Image
-
-```
-Container Manager → Registry
-├── Zoek: "vaultwarden/server"
-└── Download → Tag: "latest"
-```
-
-Wacht tot download compleet (zie Notifications).
-
-### Stap 2.2: Create Vaultwarden Container
-
-**Via Container Manager UI:**
-
-```
-Container Manager → Container → Create
-
-General Settings:
-├── Container Name: vaultwarden
-├── Image: vaultwarden/server:latest
-└── Enable auto-restart ✓
-
-Port Settings:
-└── Local Port 9000 → Container Port 80
-
-Volume Settings:
-└── /volume1/docker/vaultwarden → /data
-
-Environment:
-├── DOMAIN = http://192.168.1.100:9000 (vervang met je NAS IP!)
-├── SIGNUPS_ALLOWED = true
-└── LOG_LEVEL = info
-
-Resource Limits:
-├── CPU: 50% (max)
-└── Memory: 512 MB
-
-Network:
-└── bridge (default — we’ll attach to `bunq-net` in stap 3.3)
-```
-
-**Of via docker compose** (`/volume1/docker/vaultwarden/docker-compose.yml`):
+Minimal compose example (`/volume1/docker/vaultwarden/docker-compose.yml`):
 
 ```yaml
 version: '3.8'
@@ -133,763 +69,161 @@ services:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: unless-stopped
-
     ports:
       - "9000:80"
-
     volumes:
       - /volume1/docker/vaultwarden:/data
-
     environment:
-      DOMAIN: "http://192.168.1.100:9000"  # CHANGE THIS!
-      SIGNUPS_ALLOWED: "true"  # Change to false after first account!
+      DOMAIN: "http://192.168.1.100:9000"
+      SIGNUPS_ALLOWED: "true"
       LOG_LEVEL: "info"
-      WEBSOCKET_ENABLED: "true"
-
-    # Later in stap 3.3, connect to bunq-net:
-    # sudo docker network connect bunq-net vaultwarden
 ```
 
-### Stap 2.3: Start Vaultwarden
-
-Klik "Run" of via SSH:
+Start:
 ```bash
 cd /volume1/docker/vaultwarden
 sudo docker compose up -d
 ```
 
-**Tip:** Als `docker compose` niet werkt op jouw DSM, gebruik dan `docker-compose` (met een streepje).
+### Step 2.2 Create account and harden
 
-Verify:
-```bash
-sudo docker ps | grep vaultwarden
-# Should show container running
-```
+1. Open `http://192.168.1.100:9000`
+2. Create first account
+3. Set `SIGNUPS_ALLOWED=false` and restart Vaultwarden
 
-### Stap 2.4: Setup Vaultwarden Account
+### Step 2.3 Store Bunq API key
 
-1. **Open browser**: `http://192.168.1.100:9000`
+In Vaultwarden:
+- Create item (type Login)
+- Name: `Bunq API Key` (exact)
+- Password: your Bunq API key
 
-2. **Create Account**:
-   - Email: `admin@local` (of jouw email)
-   - Master Password: **Kies een STERK wachtwoord!**
-   - Confirm password
-   - Create Account
+## 📊 Part 3: Dashboard Setup
 
-3. **⚠️ KRITIEK: Disable Signups**
-
-   Na account aanmaken:
-   ```
-   Container Manager → vaultwarden → Edit
-   └── Environment → SIGNUPS_ALLOWED = false
-
-   Apply → Restart container
-   ```
-
-### Stap 2.5: Sla Bunq API Key op
-
-1. **Verkrijg Bunq API Key** (indien nog niet gedaan):
-   ```
-   Bunq App op je telefoon:
-   ├── Profile → Security & Settings
-   ├── Developers → API Keys
-   ├── + Add API Key
-   └── Copy key (begint met "sandbox_" of lang random string)
-   ```
-
-2. **Bewaar in Vaultwarden**:
-   ```
-   Vaultwarden web interface (http://192.168.1.100:9000)
-   ├── Login met je account
-   ├── My Vault → + Add Item
-   ├── Item Type: Login
-   ├── Name: Bunq API Key (exact deze naam!)
-   ├── Username: bunq-dashboard
-   ├── Password: [plak hier je Bunq API key]
-   ├── Notes: Created for Bunq Dashboard
-   └── Save
-   ```
-
-3. **Verify**: Je zou nu 1 item moeten zien in "My Vault"
-
-### Stap 2.6: Genereer API Access Token
-
-Vaultwarden gebruikt OAuth2 voor programmatic access.
-
-**Methode 1: Via Vaultwarden CLI (Aanbevolen)**
-
-```bash
-# Install Vaultwarden CLI (eenmalig)
-sudo docker exec -it vaultwarden /bin/sh
-
-# Inside container:
-# (Dit is complex - gebruik Methode 2!)
-exit
-```
-
-**Methode 2: Via Web Interface (Makkelijker)**
-
-```
-Vaultwarden → Instellingen → Beveiliging
-├── Sleutels → API-sleutel bekijken
-├── Enter Master Password
-├── Copy "client_id" (bv: user.xxxx-xxxx-xxxx)
-└── Copy "client_secret" (lange random string)
-```
-
-**Bewaar deze credentials!** Je hebt ze nodig voor de dashboard.
-
----
-
-## 📊 Deel 3: Bunq Dashboard Installeren
-
-### Stap 3.1: Download Project Files
-
-**Optie A: Via Git (HTTPS)**
+### Step 3.1 Clone repository
 
 ```bash
 cd /volume1/docker/bunq-dashboard
 sudo git clone https://github.com/richardvankampen/Bunq-dashboard-web.git .
 ```
 
-**Let op:** Dit werkt alleen als `/volume1/docker/bunq-dashboard/` leeg is.
-Krijg je `fatal: destination path '.' already exists and is not an empty directory`?
-Verwijder (of verplaats) eerst bestaande mappen/bestanden zoals `config/` en `logs/`, of clone naar een submap zonder de trailing `.`.
-
-**Optie B: Manual Download**
-
-1. Download ZIP van GitHub
-2. Unzip lokaal op je computer
-3. Upload via File Station naar `/volume1/docker/bunq-dashboard/`
-
-Verify files:
-```bash
-ls /volume1/docker/bunq-dashboard/
-# Should show: index.html, styles.css, app.js, api_proxy.py, etc.
-```
-
-### Stap 3.2: Maak Runtime Mappen
+### Step 3.2 Create runtime folders
 
 ```bash
-sudo mkdir -p /volume1/docker/bunq-dashboard/config
-sudo mkdir -p /volume1/docker/bunq-dashboard/logs
+cd /volume1/docker/bunq-dashboard
+sudo mkdir -p config logs
+sudo chmod -R 755 config logs
 ```
 
-### Stap 3.3: Configureer .env + Docker secrets (verplicht)
+### Step 3.3 Configure `.env`
 
-**Belangrijk:** Gevoelige waarden **mogen niet in `.env`**. Die gaan via Docker Swarm secrets.
+Create `/volume1/docker/bunq-dashboard/.env` with non-secret settings.
 
-#### A) `.env` (alleen niet‑gevoelig)
-
-Maak `/volume1/docker/bunq-dashboard/.env` met **niet‑gevoelige** settings.
-
-**Verplicht (.env):**
-
-| Variabele | Betekenis | Aanbevolen/default waarde |
-|---|---|---|
-| `BASIC_AUTH_USERNAME` | Inlog gebruikersnaam voor het dashboard | `admin` (of eigen keuze) |
-| `VAULTWARDEN_URL` | Vaultwarden URL voor key retrieval | `https://vault.jouwdomein.nl` (aanbevolen bij `VAULTWARDEN_ACCESS_METHOD=cli`) |
-| `VAULTWARDEN_ACCESS_METHOD` | Methode om Vaultwarden item te lezen | `cli` (aanbevolen/default) |
-| `VAULTWARDEN_ITEM_NAME` | Naam van het Vault item met je Bunq API key | `Bunq API Key` |
-| `USE_VAULTWARDEN` | Gebruik Vaultwarden i.p.v. directe API key | `true` |
-| `BUNQ_ENVIRONMENT` | Bunq omgeving | `PRODUCTION` (of `SANDBOX` voor test) |
-| `AUTO_SET_BUNQ_WHITELIST_IP` | Probeer Bunq allowlist automatisch te updaten op startup/reinit | `true` |
-| `AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS` | Zet andere ACTIVE IPs automatisch op INACTIVE | `false` (veiligste default) |
-| `ALLOWED_ORIGINS` | Toegestane frontend origins voor CORS | `https://bunq.jouwdomein.nl` (of `http://<NAS-IP>:5000` bij lokale HTTP) |
-| `SESSION_COOKIE_SECURE` | Alleen veilige cookies via HTTPS | `true` (aanbevolen/default), alleen `false` bij lokale HTTP |
-
-**Let op (cookie domein):** De session cookie wordt gezet op het domein waarmee je het dashboard opent.  
-Voorbeelden:  
-- `http://192.168.1.100:5000` → cookie op `192.168.1.100`  
-- `https://bunq.jouwdomein.nl` → cookie op `bunq.jouwdomein.nl`  
-Gebruik daarom **altijd dezelfde URL** (HTTP of HTTPS), anders werkt je sessie niet goed.
-
-**Optioneel (.env):**
-
-| Variabele | Betekenis | Aanbevolen/default waarde |
-|---|---|---|
-| `LOG_LEVEL` | Log niveau | `INFO` |
-| `FLASK_DEBUG` | Debug mode | `false` |
-| `BUNQ_INIT_AUTO_ATTEMPT` | Lazy Bunq init voor API requests (WSGI/Gunicorn) | `true` |
-| `BUNQ_INIT_RETRY_SECONDS` | Wachttijd tussen automatische init-retries | `120` |
-| `CACHE_ENABLED` | Cache aan/uit | `true` |
-| `CACHE_TTL_SECONDS` | Cache TTL in seconden | `60` |
-| `DEFAULT_PAGE_SIZE` | Default pagination size | `500` |
-| `MAX_PAGE_SIZE` | Max pagination size | `2000` |
-| `MAX_DAYS` | Max dagen voor queries | `3650` |
-| `BUNQ_PAYMENT_PAGE_SIZE` | Bunq Payment page-size per SDK call (max 200) | `200` |
-| `BUNQ_PAYMENT_MAX_PAGES` | Max Bunq Payment pagina's per account/per request | `50` |
-| `BUNQ_CARD_PAYMENT_PAGE_SIZE` | Bunq Card Payment page-size per SDK call (max 200) | Zelfde als `BUNQ_PAYMENT_PAGE_SIZE` |
-| `BUNQ_CARD_PAYMENT_MAX_PAGES` | Max Bunq Card Payment pagina's per account/per request | Zelfde als `BUNQ_PAYMENT_MAX_PAGES` |
-| `DATA_DB_ENABLED` | Lokale SQLite history storage aan/uit | `true` |
-| `DATA_DB_PATH` | Pad naar lokale SQLite DB | `config/dashboard_data.db` |
-| `FX_ENABLED` | Omgerekende EUR totalen voor niet-EUR rekeningen | `true` |
-| `FX_RATE_SOURCE` | Wisselkoersbron | `frankfurter` |
-| `FX_REQUEST_TIMEOUT_SECONDS` | Timeout FX API call | `8` |
-| `FX_CACHE_HOURS` | Hoe lang FX rates gecached worden | `24` |
-| `GUNICORN_WORKERS` | Aantal Gunicorn workers | `2` |
-| `GUNICORN_THREADS` | Aantal threads per worker | `4` |
-| `GUNICORN_TIMEOUT` | Request timeout (seconden) | `120` |
-| `GUNICORN_KEEPALIVE` | Keepalive (seconden) | `5` |
-| `GUNICORN_MAX_REQUESTS` | Requests per worker voor recycle | `1200` |
-| `GUNICORN_MAX_REQUESTS_JITTER` | Random extra op worker recycle | `120` |
-| `GUNICORN_LOG_LEVEL` | Gunicorn log level | `info` |
-| `BUNQ_PREBOOT_INIT` | Probeer Bunq init tijdens container startup | `true` |
-| `VAULTWARDEN_DEVICE_IDENTIFIER` | Device ID voor Vaultwarden OAuth | Automatisch gegenereerd |
-| `VAULTWARDEN_DEVICE_NAME` | Device naam voor Vaultwarden OAuth | `Bunq Dashboard` |
-| `VAULTWARDEN_DEVICE_TYPE` | Device type voor Vaultwarden OAuth | `22` |
-
-**Voorbeeld minimale `.env`:**
+Minimal production example:
 
 ```bash
 BASIC_AUTH_USERNAME=admin
-VAULTWARDEN_URL=https://vault.jouwdomein.nl
-VAULTWARDEN_ACCESS_METHOD=cli
-VAULTWARDEN_ITEM_NAME="Bunq API Key"
-USE_VAULTWARDEN=true
-BUNQ_ENVIRONMENT=PRODUCTION
-AUTO_SET_BUNQ_WHITELIST_IP=true
-AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS=false
-ALLOWED_ORIGINS=https://bunq.jouwdomein.nl
-# Alleen bij lokale HTTP:
-# ALLOWED_ORIGINS=http://192.168.1.100:5000
+ALLOWED_ORIGINS=https://bunq.yourdomain.com
 SESSION_COOKIE_SECURE=true
-# Alleen bij lokale HTTP:
-# SESSION_COOKIE_SECURE=false
-LOG_LEVEL=INFO
+
+USE_VAULTWARDEN=true
+VAULTWARDEN_ACCESS_METHOD=cli
+VAULTWARDEN_URL=https://vault.yourdomain.com
+VAULTWARDEN_ITEM_NAME=Bunq API Key
+
+BUNQ_ENVIRONMENT=PRODUCTION
 FLASK_DEBUG=false
-BUNQ_INIT_AUTO_ATTEMPT=true
-BUNQ_INIT_RETRY_SECONDS=120
-# Optional paging tuning (voor zeer grote datasets):
-# BUNQ_PAYMENT_PAGE_SIZE=200
-# BUNQ_PAYMENT_MAX_PAGES=50
-# BUNQ_CARD_PAYMENT_PAGE_SIZE=200
-# BUNQ_CARD_PAYMENT_MAX_PAGES=50
-DATA_DB_ENABLED=true
-FX_ENABLED=true
-# Gunicorn (optioneel, defaults zijn prima):
-# GUNICORN_WORKERS=2
-# GUNICORN_THREADS=4
-# GUNICORN_TIMEOUT=120
-# GUNICORN_KEEPALIVE=5
-# GUNICORN_MAX_REQUESTS=1200
-# GUNICORN_MAX_REQUESTS_JITTER=120
-# GUNICORN_LOG_LEVEL=info
-# BUNQ_PREBOOT_INIT=true
+LOG_LEVEL=INFO
 ```
 
-**Tip:** Bij `VAULTWARDEN_ACCESS_METHOD=cli` is een HTTPS URL vereist.
-Gebruik daarom je reverse-proxy domein met geldig certificaat, bijvoorbeeld `https://vault.jouwdomein.nl`.
-Alleen als je bewust `VAULTWARDEN_ACCESS_METHOD=api` gebruikt kun je een interne HTTP URL gebruiken (bijv. `http://vaultwarden:80`).
+### Step 3.4 Create Docker secrets
 
-#### B) Docker secrets (verplicht)
+Examples:
 
-Gevoelige waarden gaan in Docker Swarm secrets.
-
-**Eenmalig (Swarm activeren):**
 ```bash
-sudo docker swarm init
-# Als je een melding krijgt dat dit al actief is: negeren.
+# Dashboard password
+printf "%s" "<STRONG_PASSWORD>" | sudo docker secret create bunq_basic_auth_password -
+
+# Flask secret key (64 hex)
+SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+printf "%s" "$SECRET_KEY" | sudo docker secret create bunq_flask_secret_key -
+
+# Vaultwarden credentials
+printf "%s" "<VAULTWARDEN_CLIENT_ID>" | sudo docker secret create bunq_vaultwarden_client_id -
+printf "%s" "<VAULTWARDEN_CLIENT_SECRET>" | sudo docker secret create bunq_vaultwarden_client_secret -
+printf "%s" "<VAULTWARDEN_MASTER_PASSWORD>" | sudo docker secret create bunq_vaultwarden_master_password -
 ```
 
-**Krijg je een fout over meerdere IP’s?** Gebruik dan je LAN‑IP:
+## 🚀 Part 4: Deploy
+
+### Recommended install/update command (root)
+
 ```bash
-sudo docker swarm init --advertise-addr 192.168.1.100
-```
-Vervang dit met het IP van je NAS (bijv. `192.168.1.242`).
-
-**Netwerk (voor Vaultwarden koppeling):**
-```bash
-# Create an attachable overlay network for Swarm + standalone containers
-sudo docker network create --driver overlay --attachable bunq-net
-# Bestaat hij al? "already exists" is oké.
-
-# Connect Vaultwarden container (from stap 2) to bunq-net
-sudo docker network connect bunq-net vaultwarden
-# Als hij al verbonden is, kun je de foutmelding negeren.
-```
-
-**Verplicht (Docker secrets):**
-
-| Secret naam | Betekenis | Aanbevolen waarde |
-|---|---|---|
-| `bunq_basic_auth_password` | Dashboard wachtwoord | Sterk wachtwoord (min 12+ tekens) |
-| `bunq_flask_secret_key` | Sessie‑encryptie sleutel | Genereer 64 hex chars: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
-| `bunq_vaultwarden_client_id` | OAuth client_id uit Vaultwarden | Waarde uit stap 2.6 |
-| `bunq_vaultwarden_client_secret` | OAuth client_secret uit Vaultwarden | Waarde uit stap 2.6 |
-| `bunq_vaultwarden_master_password` | Master password van dezelfde Vaultwarden account | Verplicht bij `VAULTWARDEN_ACCESS_METHOD=cli` |
-
-**Optioneel (alleen als `USE_VAULTWARDEN=false`):**
-
-| Secret naam | Betekenis | Aanbevolen waarde |
-|---|---|---|
-| `bunq_api_key` | Bunq API key (direct) | Alleen gebruiken als je geen Vaultwarden gebruikt |
-
-**Aanbevolen werkwijze:** laat `USE_VAULTWARDEN=true` staan en gebruik `bunq_api_key` alleen als tijdelijke nood-fallback.
-
-**Secrets aanmaken:**
-```bash
-# Let op: vervang de voorbeeldwaarden door je eigen echte waarden.
-# Alleen deze regel mag je letterlijk uitvoeren (die genereert een random key):
-# python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
-
-printf '%s' "JouwSterkeWachtwoord" | sudo docker secret create bunq_basic_auth_password -
-python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
-printf '%s' "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -
-printf '%s' "jouw_vaultwarden_client_secret" | sudo docker secret create bunq_vaultwarden_client_secret -
-printf '%s' "jouw_vaultwarden_master_password" | sudo docker secret create bunq_vaultwarden_master_password -
-
-# Alleen als USE_VAULTWARDEN=false:
-# printf '%s' "jouw_bunq_api_key" | sudo docker secret create bunq_api_key -
-```
-
-**Veilige methode (voorkomt shell‑expansie bij speciale tekens):**
-```bash
-# Plak client_id (zichtbaar)
-read -r CLIENT_ID
-# Plak client_secret (onzichtbaar)
-read -s CLIENT_SECRET
-# Plak vaultwarden master password (onzichtbaar)
-read -s MASTER_PASSWORD
-
-printf '%s' "$CLIENT_ID" | sudo docker secret create bunq_vaultwarden_client_id -
-printf '%s' "$CLIENT_SECRET" | sudo docker secret create bunq_vaultwarden_client_secret -
-printf '%s' "$MASTER_PASSWORD" | sudo docker secret create bunq_vaultwarden_master_password -
-
-unset CLIENT_ID CLIENT_SECRET MASTER_PASSWORD
-```
-
-### Stap 3.4: Update docker-compose.yml
-
-Maak/Edit `/volume1/docker/bunq-dashboard/docker-compose.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  bunq-dashboard:
-    image: bunq-dashboard:local
-
-    ports:
-      - "5000:5000"  # Dashboard + API
-
-    environment:
-      BASIC_AUTH_USERNAME: "${BASIC_AUTH_USERNAME:-admin}"
-      VAULTWARDEN_URL: "${VAULTWARDEN_URL:-https://vault.jouwdomein.nl}"
-      VAULTWARDEN_ACCESS_METHOD: "${VAULTWARDEN_ACCESS_METHOD:-cli}"
-      VAULTWARDEN_ITEM_NAME: "${VAULTWARDEN_ITEM_NAME:-Bunq API Key}"
-      USE_VAULTWARDEN: "${USE_VAULTWARDEN:-true}"
-      BUNQ_ENVIRONMENT: "${BUNQ_ENVIRONMENT:-PRODUCTION}"
-      AUTO_SET_BUNQ_WHITELIST_IP: "${AUTO_SET_BUNQ_WHITELIST_IP:-true}"
-      AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS: "${AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS:-false}"
-      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-https://bunq.jouwdomein.nl}"
-      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-true}"
-      FLASK_DEBUG: "${FLASK_DEBUG:-false}"
-      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
-      BUNQ_INIT_AUTO_ATTEMPT: "${BUNQ_INIT_AUTO_ATTEMPT:-true}"
-      BUNQ_INIT_RETRY_SECONDS: "${BUNQ_INIT_RETRY_SECONDS:-120}"
-      CACHE_ENABLED: "${CACHE_ENABLED:-true}"
-      CACHE_TTL_SECONDS: "${CACHE_TTL_SECONDS:-60}"
-      DEFAULT_PAGE_SIZE: "${DEFAULT_PAGE_SIZE:-500}"
-      MAX_PAGE_SIZE: "${MAX_PAGE_SIZE:-2000}"
-      MAX_DAYS: "${MAX_DAYS:-3650}"
-      BUNQ_PAYMENT_PAGE_SIZE: "${BUNQ_PAYMENT_PAGE_SIZE:-200}"
-      BUNQ_PAYMENT_MAX_PAGES: "${BUNQ_PAYMENT_MAX_PAGES:-50}"
-      BUNQ_CARD_PAYMENT_PAGE_SIZE: "${BUNQ_CARD_PAYMENT_PAGE_SIZE:-200}"
-      BUNQ_CARD_PAYMENT_MAX_PAGES: "${BUNQ_CARD_PAYMENT_MAX_PAGES:-50}"
-      DATA_DB_ENABLED: "${DATA_DB_ENABLED:-true}"
-      DATA_DB_PATH: "${DATA_DB_PATH:-config/dashboard_data.db}"
-      FX_ENABLED: "${FX_ENABLED:-true}"
-      FX_RATE_SOURCE: "${FX_RATE_SOURCE:-frankfurter}"
-      FX_REQUEST_TIMEOUT_SECONDS: "${FX_REQUEST_TIMEOUT_SECONDS:-8}"
-      FX_CACHE_HOURS: "${FX_CACHE_HOURS:-24}"
-      GUNICORN_WORKERS: "${GUNICORN_WORKERS:-2}"
-      GUNICORN_THREADS: "${GUNICORN_THREADS:-4}"
-      GUNICORN_TIMEOUT: "${GUNICORN_TIMEOUT:-120}"
-      GUNICORN_KEEPALIVE: "${GUNICORN_KEEPALIVE:-5}"
-      GUNICORN_MAX_REQUESTS: "${GUNICORN_MAX_REQUESTS:-1200}"
-      GUNICORN_MAX_REQUESTS_JITTER: "${GUNICORN_MAX_REQUESTS_JITTER:-120}"
-      GUNICORN_LOG_LEVEL: "${GUNICORN_LOG_LEVEL:-info}"
-      BUNQ_PREBOOT_INIT: "${BUNQ_PREBOOT_INIT:-true}"
-
-    secrets:
-      - source: bunq_basic_auth_password
-        target: basic_auth_password
-      - source: bunq_flask_secret_key
-        target: flask_secret_key
-      - source: bunq_vaultwarden_client_id
-        target: vaultwarden_client_id
-      - source: bunq_vaultwarden_client_secret
-        target: vaultwarden_client_secret
-      - source: bunq_vaultwarden_master_password
-        target: vaultwarden_master_password
-      # Optional: only when USE_VAULTWARDEN=false
-      # - source: bunq_api_key
-      #   target: bunq_api_key
-
-    volumes:
-      - /volume1/docker/bunq-dashboard/config:/app/config
-      - /volume1/docker/bunq-dashboard/logs:/app/logs
-
-    networks:
-      - bunq-net
-
-    deploy:
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 0
-        window: 60s
-
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-
-networks:
-  bunq-net:
-    external: true
-
-secrets:
-  bunq_basic_auth_password:
-    external: true
-  bunq_flask_secret_key:
-    external: true
-  bunq_vaultwarden_client_id:
-    external: true
-  bunq_vaultwarden_client_secret:
-    external: true
-  bunq_vaultwarden_master_password:
-    external: true
-  # Optional: only when USE_VAULTWARDEN=false
-  # bunq_api_key:
-  #   external: true
-```
-
-**Let op:** Zorg dat de Vaultwarden container uit Deel 2 op hetzelfde `bunq-net` netwerk draait (zie stap 3.3).
-
-### Stap 3.5: Vaultwarden Integratie (al ingebouwd)
-
-De `api_proxy.py` bevat standaard Vaultwarden-integratie. Zorg dat je:
-- `.env` correct is ingevuld (zoals in stap 3.3),
-- `USE_VAULTWARDEN=true` gebruikt,
-- `VAULTWARDEN_ACCESS_METHOD=cli` gebruikt (aanbevolen),
-- en de secret `bunq_vaultwarden_master_password` hebt aangemaakt.
-
-### Stap 3.6: Build en Start
-
-**Snelle route (aanbevolen):**
-```bash
-cd /volume1/docker/bunq-dashboard
 sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
 
-Belangrijk:
-- Voer dit script altijd uit met `sudo sh ...` (root).
-- Run je het als normale user, dan kan `docker stack deploy` defaults uit `docker-compose.yml` gebruiken (`*.jouwdomein.nl`) i.p.v. je `.env` waarden.
+Important:
+- Always run with `sudo sh ...`
+- Running as a regular user can cause `.env` values to be missed
 
-Tijdens de run vraagt het script:
-- `Use clean Docker build (--no-cache)? [Y/n]`
+### Manual stack deploy (if needed)
 
-Je kunt dit vooraf forceren:
+Always load `.env` explicitly:
+
 ```bash
-# Sneller (cached build)
-sudo sh -c 'NO_CACHE=false sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'
-
-# Volledig schone build
-sudo sh -c 'NO_CACHE=true sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'
+sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 ```
 
-Dit script doet:
-- Swarm/network checks
-- check op vereiste secrets (maakt ze niet automatisch aan)
-- build + deploy + startup-validatie
-- post-deploy Bunq checks (API key/init + egress-IP vs actieve whitelist)
+### Quick redeploy for code-only changes
 
-**Handmatige route (equivalent):**
 ```bash
 cd /volume1/docker/bunq-dashboard
+sudo git pull --rebase origin main
+sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
+```
 
-# Build image
-TAG=$(sudo git rev-parse --short HEAD)
-sudo docker build --no-cache -t bunq-dashboard:$TAG .
-sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
+Use full stack deploy only for `.env`, `docker-compose.yml`, secrets, or network changes.
 
-# Architectuur-opmerking (Bitwarden CLI):
-# - amd64/Intel NAS: native bw binary (kleiner image), met automatische npm fallback als release-asset/checksum tijdelijk ontbreekt
-# - arm64 NAS: @bitwarden/cli via npm fallback (groter image, maar nodig op ARM)
-#
-# Let op (pip warning):
-# Tijdens het builden kun je zien:
-# WARNING: Running pip as the 'root' user ...
-# of een melding over een nieuwe pip-versie.
-# Dit is normaal in Docker builds.
+## ✅ Part 5: Validation
 
-# Deploy stack (Swarm) with values from .env
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+### Health checks
 
-# Force service restart + startup check (script gebruikt standaard git-tag)
-sudo sh scripts/restart_bunq_service.sh
-
-# Check logs
-sudo docker service logs -f bunq_bunq-dashboard
-
-# Liveness/readiness check
+```bash
 curl -s http://127.0.0.1:5000/api/live
 curl -s http://127.0.0.1:5000/api/health
 ```
 
-Je zou moeten zien:
-```
-== Bunq Dashboard Gunicorn startup ==
-🔐 Retrieving API key from Vaultwarden (cli method)...
-✅ API key retrieved from vault
-✅ Bunq API initialized
-Listening at: http://0.0.0.0:5000
-```
-
-### Stap 3.7: Open Dashboard
-
-Browser (gebruik exact je `ALLOWED_ORIGINS` URL):
-- aanbevolen: `https://bunq.jouwdomein.nl` (reverse proxy + `SESSION_COOKIE_SECURE=true`)
-- alleen lokale HTTP fallback: `http://192.168.1.100:5000` met `SESSION_COOKIE_SECURE=false`
-
-🎉 **SUCCESS!** Je dashboard draait nu!
-
-**Health semantics:**
-- `/api/live` = liveness (service draait)
-- `/api/health` = readiness (Bunq context status, kan `503` zijn bij key/IP mismatch)
-
-### Stap 3.8: Bunq IP Whitelisting & Re-registratie (verplicht bij key/IP wijziging)
-
-Gebruik dit wanneer:
-- je een nieuwe Bunq API key hebt aangemaakt
-- je publieke IP is gewijzigd (bijv. VPN/ISP wijziging)
-- je logs tonen: `Incorrect API key or IP address`
-
-**Script uit de repo:**
-```bash
-cd /volume1/docker/bunq-dashboard
-sh scripts/register_bunq_ip.sh
-```
-
-**Snelle non-interactieve variant (expliciet target IP):**
-```bash
-cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
-# Voorbeeld:
-# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
-# Optionele cleanup-pass (na validatie):
-# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
-```
-
-Het script doet automatisch:
-- egress publieke IP tonen vanuit de container
-- optioneel target IPv4 vragen (leeg = huidige egress IP)
-- auth-mode detectie (`USE_VAULTWARDEN=true/false`)
-- Bunq API allowlist updaten via API calls (ACTIVE op target IP)
-- bij directe key-flow: `bunq_api_key` secret valideren (64 hex chars)
-- oude Bunq context verwijderen
-- bij directe key-flow: nieuwe `ApiContext` maken (installation + device registration)
-- service forceren te herstarten
-- relevante Bunq logs tonen
-- egress-IP match checken tegen actieve Bunq whitelist (mismatch = duidelijke fout + herstelcommando)
-
-Daarnaast probeert de backend bij startup/reinit automatisch hetzelfde te doen
-als `AUTO_SET_BUNQ_WHITELIST_IP=true` in `.env`.
-
-**Als het script nog steeds `Incorrect API key or IP address` toont:**
-1. Open bunq app en controleer API key status/IP-restrictie.
-2. Whitelist het egress IP dat het script toont.
-3. Run het script opnieuw.
-
----
-
-## 🔒 Deel 4: Security Hardening
-
-### Stap 4.1: Firewall Rules
-
-```
-Control Panel → Security → Firewall → Edit Rules
-
-Create Rule:
-├── Ports: Custom → 5000,9000
-├── Source IP: 192.168.0.0/16 (lokaal netwerk)
-└── Action: Allow
-
-All other IPs: Deny
-```
-
-### Stap 4.2: Reverse Proxy met HTTPS (Aanbevolen)
-
-```
-Control Panel → Login Portal → Advanced → Reverse Proxy
-
-Create:
-├── Reverse Proxy Name: bunq-dashboard
-├── Protocol: HTTPS
-├── Hostname: bunq.jouw-domein.nl
-├── Port: 443
-├── Enable HSTS ✓
-├── Backend Server: localhost
-├── Port: 5000
-└── Apply
-```
-
-Verkrijg SSL cert via Let's Encrypt:
-```
-Control Panel → Security → Certificate
-└── Add → Let's Encrypt (volg wizard)
-```
-
-### Stap 4.3: Regular Backups
-
-Via Hyper Backup:
-```
-Backup:
-├── /volume1/docker/vaultwarden (Vaultwarden data)
-└── /volume1/docker/bunq-dashboard (Dashboard config)
-
-Schedule: Daily, 2:00 AM
-Retention: 30 days
-```
-
-### Stap 4.4: Update Notifications
-
-```
-Package Center → Container Manager → Settings
-└── Enable update notifications ✓
-```
-
----
-
-## 🔧 Deel 5: Maintenance
-
-### Updates
-
-Snelle update (aanbevolen):
-```bash
-cd /volume1/docker/bunq-dashboard
-sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
-```
-
-Handmatig:
-```bash
-cd /volume1/docker/bunq-dashboard
-
-# Rebuild image
-TAG=$(sudo git rev-parse --short HEAD)
-sudo docker build --no-cache -t bunq-dashboard:$TAG .
-sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
-
-# Redeploy stack
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-
-# Force service restart + startup validation
-sudo sh scripts/restart_bunq_service.sh
-
-# Verify
-sudo docker stack ps bunq
-```
-
-### Backup Vaultwarden
+### Logs
 
 ```bash
-# Create backup
-sudo tar -czf vaultwarden-backup-$(date +%Y%m%d).tar.gz /volume1/docker/vaultwarden
-
-# Move to safe location
-sudo mv vaultwarden-backup-*.tar.gz /volume1/backups/
+sudo docker service logs --since 5m bunq_bunq-dashboard
 ```
 
-### Check Logs
+### Savings account validation
 
 ```bash
-# Dashboard logs
-sudo docker service logs -f bunq_bunq-dashboard
+EXPECTED_ACCOUNTS_JSON='[
+  {"description":"Spaarrekening","currency":"EUR"},
+  {"description":"Spaargeld in ZAR","currency":"ZAR"}
+]'
 
-# Vaultwarden logs
-sudo docker logs vaultwarden
+DASHBOARD_USERNAME="<dashboard-user>" \
+DASHBOARD_PASSWORD="<dashboard-pass>" \
+python3 /volume1/docker/bunq-dashboard/scripts/check_accounts_api.py \
+  --base-url "https://<your-domain>" \
+  --insecure \
+  --expected-json "$EXPECTED_ACCOUNTS_JSON" \
+  --timeout 180
 ```
 
-### Admin onderhoud via Dashboard (P1)
+## 🔧 Operations Notes
 
-In **Settings → Admin Maintenance (P1)** kun je als ingelogde admin:
-- `Check status`: runtime status van Vaultwarden, context file, cookie/CORS instellingen
-- `Check egress IP`: huidig publiek uitgaand IP van de container
-- `Set Bunq API whitelist IP`: veilige 2-staps flow
-  1) activeer doel-IP
-  2) deactiveer overige ACTIVE IPs (na succesvolle stap 1)
-- `Reinit Bunq context`: context verwijderen + opnieuw opbouwen (installation/device registration)
-- `Run maintenance now`: voert in 1 actie de ingestelde onderhoudsopties uit
-- `Show install/update commands`: toont copy-ready terminalstappen voor host-level install/update script
-- `Show restart/validate commands`: toont copy-ready terminalstappen voor restart/startup-validatie
+- Keep `USE_VAULTWARDEN=true` as primary flow
+- Use `register_bunq_ip.sh` when Bunq key or egress IP changes
+- Use `restart_bunq_service.sh` for startup validation after deploy
 
-Standaardopties in het panel:
-- `Set whitelist IP`: altijd actief in maintenance flow
-- `Auto target IP (egress)`: uit (vink aan om egress IP automatisch te bepalen)
-- `Refresh API key`: uit (alleen aanzetten na API key rotatie)
-- `Recreate context`: aan
-- `Clear runtime cache`: aan
-- Veld `IP to set on Bunq API whitelist`: vul handmatig in als auto-target uit staat;
-  zodra je een IP invult gaat auto-target automatisch uit.
-- Handmatig IP moet een publiek extern IPv4-adres zijn (lokale/private ranges worden geweigerd).
+## 📎 More Details
 
-Gebruik `Reinit Bunq context` na:
-- API key rotatie
-- IP whitelist wijziging
-- errors zoals `Incorrect API key or IP address`
-
-### Rotate Bunq API Key
-
-1. Generate new key in Bunq app
-2. Update secret:
-   - bij Vaultwarden-flow: update key in Vaultwarden item
-   - bij directe key-flow (`USE_VAULTWARDEN=false`): update Docker secret `bunq_api_key`
-3. Run (safe non-interactive): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
-   - Optionele cleanup-pass na validatie: `... DEACTIVATE_OTHERS=true ...`
-4. Validatie: `sudo sh scripts/restart_bunq_service.sh`
-
-No code changes needed! ✨
-
----
-
-## 🐛 Troubleshooting (kort)
-
-- Logs: `sudo docker service logs -f bunq_bunq-dashboard` en `sudo docker logs vaultwarden`
-- Connectivity: `sudo docker exec $(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1) ping vaultwarden`
-- Redeploy na .env wijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
-- Alleen herstart (zonder config/secrets wijzigingen): `sudo docker service update --force bunq_bunq-dashboard`
-- Herstart + startup-validatie (aanbevolen): `sudo sh scripts/restart_bunq_service.sh`
-- Bunq IP/device opnieuw registreren (safe): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
-
-Voor uitgebreide oplossingen, zie [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
-
----
-
-## ✅ Verification Checklist
-
-- [ ] Vaultwarden running on port 9000
-- [ ] Vaultwarden accessible via browser
-- [ ] Bunq API Key stored in vault
-- [ ] Vaultwarden signups disabled
-- [ ] Dashboard container running
-- [ ] Dashboard accessible on port 5000
-- [ ] API endpoint responding on port 5000
-- [ ] Logs show no errors
-- [ ] Firewall rules configured
-- [ ] Backups scheduled
-
----
-
-## 📞 Need Help?
-
-- GitHub Issues: [Create Issue](https://github.com/richardvankampen/Bunq-dashboard-web/issues)
-- Synology Forums: [DSM 7 Section](https://community.synology.com/enu/forum/1)
-- Vaultwarden: [GitHub Discussions](https://github.com/dani-garcia/vaultwarden/discussions)
-
----
-
-**Installation complete! Enjoy your secure Bunq Dashboard! 🎉**
+For the full Dutch deep-dive version (all original details):
+- [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)

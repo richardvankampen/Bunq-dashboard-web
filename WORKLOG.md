@@ -151,6 +151,22 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - Validatie:
   - lokale JS syntax-check via `node --check` kon niet worden uitgevoerd in deze omgeving (`node`/`nodejs` niet aanwezig).
 
+### User-documentatie: EN/NL splitsing
+
+- User-facing markdown-documentatie opgesplitst naar taal:
+  - Engelse hoofdversies blijven op standaardnamen:
+    - `README.md`
+    - `SECURITY.md`
+    - `SYNOLOGY_INSTALL.md`
+    - `TROUBLESHOOTING.md`
+  - Nederlandse versies staan nu naast de hoofdversies met `-NL` suffix:
+    - `README-NL.md`
+    - `SECURITY-NL.md`
+    - `SYNOLOGY_INSTALL-NL.md`
+    - `TROUBLESHOOTING-NL.md`
+- `README.md` bevat nu expliciete taalkeuze (EN/NL) zodat gebruikers direct tussen beide readme-varianten kunnen kiezen.
+- Links in NL-documentatie zijn aangepast naar `*-NL.md` targets zodat de NL-flow intern consistent blijft.
+
 ## 2026-02-28
 
 ### Opgeleverd
