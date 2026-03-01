@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt)
 
 ## Canonieke status
 
@@ -43,12 +43,22 @@ Dit bestand is de actuele bron voor overdracht.
 - Kolommen in de transactieview:
   - `Datum`
   - `Tijd`
+  - `Eigen Bunq rekening`
   - `Tegenrekening / merchant`
+  - `Omschrijving`
   - `Bedrag`
 - Performance/UX:
+  - dubbele oude individuele opsomming verwijderd bij detailviews met second-view transactietabel (geen dubbeling meer).
   - modal rendert transacties in batches (`Toon meer`) i.p.v. alles in 1 keer om UI-lag bij grote periodes te beperken.
-  - client-side zoekveld toegevoegd (merchant/tegenrekening/datum/bedrag).
+  - client-side zoekveld toegevoegd (eigen rekening, merchant/tegenrekening, omschrijving, datum, bedrag).
   - client-side sortering toegevoegd (datum, bedrag, naam).
+
+## Internal transfer filtering (actueel)
+
+- `exclude_internal=true` filtering is aangescherpt:
+  - backend markeert internal transfers lijst-gebaseerd op eigen account-id/IBAN/naam (afgeleid uit de volledige opgehaalde rekeninglijst).
+  - deze detectie wordt toegepast in zowel `/api/transactions` als `/api/statistics`.
+  - frontend bevat extra fallback-filtering op tegenrekening/merchant-naam vs eigen rekeningnamen wanneer backend-flagging in een runtimevariant onvolledig is.
 
 ## Savings-incident status
 

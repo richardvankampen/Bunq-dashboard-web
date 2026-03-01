@@ -6,6 +6,17 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Frontend second-view feedback verwerkt:
+  - dubbele oude individuele opsomming verwijderd in detailmodals waar de nieuwe transactietabel actief is (inkomsten/uitgaven/spaarmutaties).
+  - transactietabel uitgebreid met extra velden:
+    - `Eigen Bunq rekening`
+    - `Omschrijving`
+  - zoekfunctie in detailtabel uitgebreid met deze nieuwe velden.
+- Internal transfer filtering aangescherpt in backend:
+  - internal-transfer detectie nu lijst-gebaseerd op volledige eigen rekeninglijst (account-id/IBAN/naam), zodat overboekingen tussen eigen rekeningen als intern worden gemarkeerd.
+  - toegepast in zowel `/api/transactions` als `/api/statistics`.
+  - frontend `exclude internal` kreeg daarnaast een extra fallback-filter op tegenrekening/merchant-naam vs eigen rekeningnamen voor runtimegevallen waar backend-flagging niet volledig is.
+
 - SDK-first cleanup na succesvolle live validatie:
   - savings-ophaalpad nu expliciet gebaseerd op officiële Bunq SDK endpoints:
     - `MonetaryAccount(ApiObject)`

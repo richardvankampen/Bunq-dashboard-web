@@ -1432,7 +1432,29 @@ function applyClientFilters(data, options = {}) {
     let filtered = [...data];
     const excludeInternalTransfers = options.excludeInternalTransfers ?? CONFIG.excludeInternalTransfers;
     if (excludeInternalTransfers) {
-        filtered = filtered.filter(t => !t.is_internal_transfer);
+        const ownAccountNames = new Set(
+            (accountsList || [])
+                .map((account) => String(account?.description || account?.display_name || '').trim().toLocaleLowerCase('nl-NL'))
+                .filter(Boolean)
+        );
+        const normalizeText = (value) => String(value || '')
+            .trim()
+            .toLocaleLowerCase('nl-NL')
+            .replace(/\s+/g, ' ');
+        filtered = filtered.filter((transaction) => {
+            if (transaction?.is_internal_transfer) return false;
+            if (ownAccountNames.size <= 0) return true;
+
+            const counterpartyCandidates = [
+                normalizeText(transaction?.counterparty),
+                normalizeText(transaction?.merchant)
+            ].filter(Boolean);
+            if (counterpartyCandidates.some((candidate) => ownAccountNames.has(candidate))) {
+                // Extra UI-side fallback for runtime variants where backend internal detection misses this transfer.
+                return false;
+            }
+            return true;
+        });
     }
     if (accountsList.length && selectedAccountIds.size > 0 && selectedAccountIds.size < accountsList.length) {
         const allowed = new Set(Array.from(selectedAccountIds).map(String));
@@ -1983,7 +2005,9 @@ function getFilteredAndSortedDetailTransactionsRows() {
             const haystack = [
                 row.date,
                 row.time,
+                row.ownAccount,
                 row.counterparty,
+                row.description,
                 row.amount
             ]
                 .map((value) => String(value || '').toLocaleLowerCase('nl-NL'))
@@ -2043,7 +2067,7 @@ function renderMoreDetailTransactions(options = {}) {
     const totalAll = detailTransactionsState.rows.length;
     const totalFiltered = detailTransactionsState.filteredRows.length;
     if (totalFiltered <= 0) {
-        bodyEl.innerHTML = `<tr><td class="balance-detail-transactions-empty" colspan="4">${
+        bodyEl.innerHTML = `<tr><td class="balance-detail-transactions-empty" colspan="6">${
             detailTransactionsState.query ? 'Geen transacties gevonden voor deze zoekopdracht.' : 'Geen individuele transacties beschikbaar.'
         }</td></tr>`;
         if (metaEl) metaEl.textContent = '';
@@ -2061,7 +2085,9 @@ function renderMoreDetailTransactions(options = {}) {
             <tr>
                 <td>${escapeHtml(row.date)}</td>
                 <td>${escapeHtml(row.time)}</td>
-                <td>${escapeHtml(row.counterparty)}</td>
+                <td class="own-account">${escapeHtml(row.ownAccount)}</td>
+                <td class="counterparty">${escapeHtml(row.counterparty)}</td>
+                <td class="description">${escapeHtml(row.description)}</td>
                 <td class="amount ${escapeHtml(row.amountClass)}">${escapeHtml(row.amount)}</td>
             </tr>
         `).join('');
@@ -2124,12 +2150,19 @@ function openDetailModal({ title, summary, rows, chart, transactionRows = null, 
 
     titleEl.innerHTML = title || '<i class="fas fa-chart-bar"></i> Detail';
     summaryEl.textContent = summary || '';
-    listEl.innerHTML = (rows || []).map((row) => `
-        <div class="balance-detail-row">
-            <span class="balance-detail-row-name">${escapeHtml(row.label)}</span>
-            <span class="balance-detail-row-value">${escapeHtml(row.value)}</span>
-        </div>
-    `).join('');
+    const detailRows = Array.isArray(rows) ? rows : [];
+    if (detailRows.length > 0) {
+        listEl.innerHTML = detailRows.map((row) => `
+            <div class="balance-detail-row">
+                <span class="balance-detail-row-name">${escapeHtml(row.label)}</span>
+                <span class="balance-detail-row-value">${escapeHtml(row.value)}</span>
+            </div>
+        `).join('');
+        listEl.style.display = 'grid';
+    } else {
+        listEl.innerHTML = '';
+        listEl.style.display = 'none';
+    }
 
     if (chart && window.Plotly) {
         const traces = Array.isArray(chart.trace) ? chart.trace : [chart.trace];
@@ -2184,43 +2217,38 @@ function getCurrentNormalizedTransactions(options = {}) {
     return normalizeTransactions(filtered);
 }
 
-function buildTransactionRows(transactions, options = {}) {
-    const { limit = 200, includeAccount = true } = options;
-    const accountById = new Map((accountsList || []).map((account) => [String(account.id), account]));
-    return [...transactions]
-        .sort((a, b) => b.date - a.date)
-        .slice(0, limit)
-        .map((transaction) => {
-            const account = accountById.get(String(transaction.account_id));
-            const accountLabel = includeAccount
-                ? ` · ${account?.description || `Rekening ${transaction.account_id}`}`
-                : '';
-            const label = `${transaction.date.toLocaleDateString('nl-NL')} · ${resolveMerchantLabel(transaction)}${accountLabel}`;
-            return {
-                label,
-                value: formatCurrency(transaction.amount)
-            };
-        });
-}
-
 function buildTransactionTableRows(transactions, options = {}) {
     const { limit = 0 } = options;
     let ordered = [...transactions].sort((a, b) => b.date - a.date);
     if (Number.isFinite(limit) && limit > 0) {
         ordered = ordered.slice(0, limit);
     }
+    const accountById = new Map((accountsList || []).map((account) => [String(account.id), account]));
 
     return ordered.map((transaction) => {
         const txDate = transaction?.date instanceof Date ? transaction.date : new Date(transaction?.date);
         const hasValidDate = txDate instanceof Date && !Number.isNaN(txDate.getTime());
         const counterparty = resolveMerchantLabel(transaction);
+        const account = accountById.get(String(transaction?.account_id));
+        const ownAccount = (
+            String(transaction?.account_name || '').trim()
+            || String(account?.description || account?.display_name || '').trim()
+            || (transaction?.account_id != null ? `Rekening ${transaction.account_id}` : '-')
+        );
+        const description = (
+            typeof transaction?.description === 'string' && transaction.description.trim()
+                ? transaction.description.trim()
+                : '-'
+        );
         const amountValue = Number(transaction.amount) || 0;
         return {
             date: hasValidDate ? txDate.toLocaleDateString('nl-NL') : '-',
             time: hasValidDate
                 ? txDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
                 : '-',
+            ownAccount,
             counterparty,
+            description,
             amount: formatCurrency(amountValue),
             amountClass: amountValue >= 0 ? 'positive' : 'negative',
             _timestamp: hasValidDate ? txDate.getTime() : 0,
@@ -2283,7 +2311,7 @@ function showTransactionDetail(detailType) {
         openDetailModal({
             title: `<i class="fas ${isIncome ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i> ${isIncome ? 'Inkomsten' : 'Uitgaven'} - geselecteerde periode`,
             summary: `${subset.length} transacties · totaal ${formatCurrency(total)}`,
-            rows: buildTransactionRows(subset),
+            rows: [],
             chart: { trace, layout },
             transactionRows,
             transactionsTitle: `Individuele ${isIncome ? 'inkomsten' : 'uitgaven'} (${transactionRows.length})`
@@ -2322,7 +2350,7 @@ function showTransactionDetail(detailType) {
         openDetailModal({
             title: '<i class="fas fa-piggy-bank"></i> Spaarrekening mutaties',
             summary: `${subset.length} mutaties · stortingen ${formatCurrency(deposits)} · opnames ${formatCurrency(withdrawals)}`,
-            rows: buildTransactionRows(subset),
+            rows: [],
             chart: { trace, layout },
             transactionRows,
             transactionsTitle: `Individuele spaarrekening-mutaties (${transactionRows.length})`

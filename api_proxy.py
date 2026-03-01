@@ -3063,6 +3063,38 @@ def extract_own_ibans(accounts):
                 ibans.add(alias_iban)
     return ibans
 
+def normalize_party_name(value):
+    """Normalize account/party names for case-insensitive matching."""
+    if value is None:
+        return ''
+    return re.sub(r'\s+', ' ', str(value)).strip().casefold()
+
+def extract_own_account_names(accounts):
+    """Extract own account and alias names for internal transfer detection fallback."""
+    names = set()
+    for account in accounts:
+        primary_name = get_obj_field(account, 'description', 'display_name', 'name')
+        primary_name_normalized = normalize_party_name(primary_name)
+        if primary_name_normalized:
+            names.add(primary_name_normalized)
+
+        aliases = get_obj_field(account, 'alias') or []
+        for alias in aliases:
+            alias_name = get_obj_field(alias, 'display_name', 'name')
+            alias_name_normalized = normalize_party_name(alias_name)
+            if alias_name_normalized:
+                names.add(alias_name_normalized)
+    return names
+
+def extract_own_account_ids(accounts):
+    """Extract own monetary-account ids for deterministic internal transfer matching."""
+    ids = set()
+    for account in accounts:
+        account_id = get_obj_field(account, 'id_', 'id')
+        if account_id is not None:
+            ids.add(str(account_id))
+    return ids
+
 def _normalize_account_type_text(value):
     if value is None:
         return ''
@@ -4969,7 +5001,9 @@ def get_transactions():
             acc_id = get_obj_field(acc, 'id_', 'id')
             if acc_id is not None:
                 accounts_by_id[str(acc_id)] = acc
+        own_account_ids = extract_own_account_ids(accounts)
         own_ibans = extract_own_ibans(accounts)
+        own_account_names = extract_own_account_names(accounts)
         
         target_ids = None
         if account_id:
@@ -4987,11 +5021,13 @@ def get_transactions():
         for account in selected_accounts:
             account_id_value = get_obj_field(account, 'id_', 'id')
             transactions, tx_meta = get_account_transactions(
-                account_id_value,
-                cutoff_date,
-                sort_desc,
-                own_ibans,
-                get_obj_field(account, 'description', 'display_name'),
+                account_id=account_id_value,
+                cutoff_date=cutoff_date,
+                sort_desc=sort_desc,
+                own_account_ids=own_account_ids,
+                own_ibans=own_ibans,
+                own_account_names=own_account_names,
+                account_name=get_obj_field(account, 'description', 'display_name'),
                 return_meta=True
             )
             all_transactions.extend(transactions)
@@ -5049,7 +5085,16 @@ def get_transactions():
             'error': str(e)
         }), 500
 
-def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_ibans=None, account_name=None, return_meta=False):
+def get_account_transactions(
+    account_id,
+    cutoff_date=None,
+    sort_desc=True,
+    own_account_ids=None,
+    own_ibans=None,
+    own_account_names=None,
+    account_name=None,
+    return_meta=False
+):
     """Get transactions for specific account."""
     payments, payment_meta = list_payments_for_account(account_id, cutoff_date=cutoff_date, return_meta=True)
 
@@ -5079,7 +5124,9 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
     entries = [('payment', item) for item in payments] + [('card_payment', item) for item in card_payments]
 
     transactions = []
+    own_account_ids = own_account_ids or set()
     own_ibans = own_ibans or set()
+    own_account_names = own_account_names or set()
     seen_transaction_keys = set()
 
     for source_name, payment in entries:
@@ -5101,9 +5148,22 @@ def get_account_transactions(account_id, cutoff_date=None, sort_desc=True, own_i
 
         is_internal_transfer = False
         counterparty_alias = get_obj_field(payment, 'counterparty_alias', 'counterparty')
+        counterparty_monetary_account = get_obj_field(payment, 'monetary_account_counterparty')
+        counterparty_account_id = (
+            get_obj_field(counterparty_monetary_account, 'id_', 'id', 'monetary_account_id')
+            or get_obj_field(counterparty_alias, 'monetary_account_id', 'id_', 'id')
+        )
+        counterparty_account_id = str(counterparty_account_id) if counterparty_account_id is not None else None
         counterparty_name = extract_counterparty_name(counterparty_alias)
+        counterparty_name_normalized = normalize_party_name(counterparty_name)
         counterparty_iban = extract_alias_iban(counterparty_alias)
-        if counterparty_iban and counterparty_iban in own_ibans:
+        if counterparty_account_id and counterparty_account_id in own_account_ids:
+            # Deterministic: transfer between known own monetary accounts.
+            is_internal_transfer = True
+        elif counterparty_iban and counterparty_iban in own_ibans:
+            is_internal_transfer = True
+        elif counterparty_name_normalized and counterparty_name_normalized in own_account_names:
+            # Fallback for runtime variants where internal transfers lack a usable IBAN.
             is_internal_transfer = True
 
         description = get_obj_field(payment, 'description', 'label', default='') or ''
@@ -5318,17 +5378,21 @@ def get_statistics():
                 return jsonify(cached)
         
         accounts = list_monetary_accounts()
+        own_account_ids = extract_own_account_ids(accounts)
         own_ibans = extract_own_ibans(accounts)
+        own_account_names = extract_own_account_names(accounts)
         all_transactions = []
         
         for account in accounts:
             account_id_value = get_obj_field(account, 'id_', 'id')
             transactions = get_account_transactions(
-                account_id_value,
-                cutoff_date,
-                True,
-                own_ibans,
-                get_obj_field(account, 'description', 'display_name')
+                account_id=account_id_value,
+                cutoff_date=cutoff_date,
+                sort_desc=True,
+                own_account_ids=own_account_ids,
+                own_ibans=own_ibans,
+                own_account_names=own_account_names,
+                account_name=get_obj_field(account, 'description', 'display_name')
             )
             all_transactions.extend(transactions)
         

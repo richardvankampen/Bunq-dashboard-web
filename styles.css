@@ -1427,7 +1427,7 @@ body.reduce-animations .play-btn:hover {
 
 .balance-detail-transactions-table {
     width: 100%;
-    min-width: 560px;
+    min-width: 940px;
     border-collapse: collapse;
 }
 
@@ -1450,6 +1450,12 @@ body.reduce-animations .play-btn:hover {
 
 .balance-detail-transactions-table td {
     color: var(--text-primary);
+}
+
+.balance-detail-transactions-table td.own-account,
+.balance-detail-transactions-table td.counterparty,
+.balance-detail-transactions-table td.description {
+    overflow-wrap: anywhere;
 }
 
 .balance-detail-transactions-table td.amount {
