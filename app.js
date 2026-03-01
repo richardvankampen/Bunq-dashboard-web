@@ -1475,6 +1475,7 @@ function applyClientFilters(data, options = {}) {
     const excludeInternalTransfers = options.excludeInternalTransfers ?? CONFIG.excludeInternalTransfers;
     if (excludeInternalTransfers) {
         const { ownIds: ownAccountIds, ownNames: ownAccountNames } = getOwnBunqAccountIdentitySets();
+        const ownAccountNameList = Array.from(ownAccountNames).filter((name) => name.length >= 4);
         filtered = filtered.filter((transaction) => {
             if (transaction?.is_internal_transfer) return false;
 
@@ -1495,6 +1496,15 @@ function applyClientFilters(data, options = {}) {
             ].filter(Boolean);
             if (counterpartyCandidates.some((candidate) => ownAccountNames.has(candidate))) {
                 // Extra UI-side fallback for runtime variants where backend internal detection misses this transfer.
+                return false;
+            }
+
+            // Last-resort UI fallback when backend metadata on counterparty is incomplete.
+            const descriptionNormalized = normalizePartyNameForMatch(transaction?.description);
+            if (
+                descriptionNormalized
+                && ownAccountNameList.some((name) => descriptionNormalized.includes(name))
+            ) {
                 return false;
             }
             return true;

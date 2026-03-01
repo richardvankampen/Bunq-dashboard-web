@@ -2948,6 +2948,23 @@ def extract_alias_iban(alias):
 
     return None
 
+def extract_alias_account_id(alias):
+    """Extract monetary-account id from alias-like objects across SDK variants."""
+    if alias is None:
+        return None
+
+    for candidate in iter_alias_nodes(alias):
+        account_id = get_obj_field(
+            candidate,
+            'monetary_account_id',
+            'monetary_account_id_',
+            'counterparty_monetary_account_id',
+        )
+        if account_id is not None:
+            return str(account_id)
+
+    return None
+
 def extract_counterparty_name(counterparty_alias):
     """Extract a readable counterparty name for different alias object types."""
     if counterparty_alias is None:
@@ -3114,6 +3131,24 @@ def extract_own_account_ids(accounts):
         if account_id is not None:
             ids.add(str(account_id))
     return ids
+
+def description_mentions_own_account(description, own_account_names):
+    """
+    Fallback signal for internal transfers when alias/account-id metadata is incomplete.
+    Matches configured own Bunq account names in transaction description text.
+    """
+    if not description or not own_account_names:
+        return False
+    description_normalized = normalize_party_name(description)
+    if not description_normalized:
+        return False
+
+    for own_name in own_account_names:
+        if len(own_name) < 4:
+            continue
+        if own_name in description_normalized:
+            return True
+    return False
 
 def _normalize_account_type_text(value):
     if value is None:
@@ -5151,6 +5186,7 @@ def get_account_transactions(
 
     for source_name, payment in entries:
         payment_id = get_obj_field(payment, 'id_', 'id', default='unknown')
+        description = get_obj_field(payment, 'description', 'label', default='') or ''
         created_raw = get_obj_field(payment, 'created', 'created_at', 'date')
         if not created_raw:
             logger.warning(f"⚠️ Payment {payment_id} missing created timestamp; skipping")
@@ -5172,6 +5208,7 @@ def get_account_transactions(
         counterparty_account_id = (
             get_obj_field(counterparty_monetary_account, 'id_', 'id', 'monetary_account_id')
             or get_obj_field(counterparty_alias, 'monetary_account_id', 'id_', 'id')
+            or extract_alias_account_id(counterparty_alias)
         )
         counterparty_account_id = str(counterparty_account_id) if counterparty_account_id is not None else None
         counterparty_name = extract_counterparty_name(counterparty_alias)
@@ -5185,8 +5222,9 @@ def get_account_transactions(
         elif counterparty_name_normalized and counterparty_name_normalized in own_account_names:
             # Fallback for runtime variants where internal transfers lack a usable IBAN.
             is_internal_transfer = True
-
-        description = get_obj_field(payment, 'description', 'label', default='') or ''
+        elif not counterparty_account_id and not counterparty_iban and description_mentions_own_account(description, own_account_names):
+            # Last-resort fallback: description mentions one of the own Bunq accounts.
+            is_internal_transfer = True
         amount_value, amount_currency = parse_monetary_value(
             get_obj_field(payment, 'amount', 'monetary_value'),
             context=f"payment {payment_id} amount"
