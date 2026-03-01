@@ -2,6 +2,20 @@
 
 Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies geen impact heeft.
 
+## 2026-03-01
+
+### Opgeleverd
+
+- Installatie-instructies aangescherpt op Synology:
+  - `scripts/install_or_update_synology.sh` expliciet als root laten uitvoeren (`sudo sh ...`).
+  - `NO_CACHE` overrides nu gedocumenteerd via root-shell variant (`sudo sh -c 'NO_CACHE=... sh ...'`) om sudo-env valkuilen te vermijden.
+- Documentatie geüpdatet:
+  - `README.md`
+  - `SYNOLOGY_INSTALL.md`
+  - `CONTEXT_HANDOVER.md`
+- Operationele les vastgelegd:
+  - Als install/update als normale user wordt gedraaid, kan deploy op compose-defaults terugvallen (`*.jouwdomein.nl`) ondanks correcte `.env`, met Vaultwarden `ENOTFOUND` en demo mode als gevolg.
+
 ## 2026-02-28
 
 ### Opgeleverd

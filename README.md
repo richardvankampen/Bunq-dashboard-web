@@ -57,11 +57,13 @@ Meer details: [SECURITY.md](SECURITY.md)
 5. Gebruik `VAULTWARDEN_ACCESS_METHOD=cli` + secret `bunq_vaultwarden_master_password`
    - Zet `VAULTWARDEN_URL` op een **HTTPS** URL (reverse proxy/domein met geldig certificaat)
 6. Gebruik directe `bunq_api_key` alleen als nood-fallback (`USE_VAULTWARDEN=false`)
-7. Voor install/update op Synology: run `sh scripts/install_or_update_synology.sh` (guided, veilig; geen automatische secret-rotatie)
+7. Voor install/update op Synology: run altijd als root:
+   - `sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh`
+   - Niet als normale user uitvoeren.
 8. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh`
    - Veilige non-interactive default: `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
    - Optionele cleanup-pass daarna: `... DEACTIVATE_OTHERS=true ...`
-9. Na deploy/herstart kun je startup-validatie doen met `scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
+9. Na deploy/herstart kun je startup-validatie doen met `sudo sh scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
 10. Build/deploy controleert ook egress-IP vs actieve Bunq whitelist en geeft direct herstelcommando bij mismatch
 
 Health endpoints:
@@ -81,7 +83,7 @@ TAG=$(sudo git rev-parse --short HEAD)
 sudo docker build --no-cache -t bunq-dashboard:$TAG .
 sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-sh scripts/restart_bunq_service.sh
+sudo sh scripts/restart_bunq_service.sh
 
 # Handmatige fallback:
 sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
@@ -102,12 +104,16 @@ sudo git pull
 sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
 
+Belangrijk (Synology):
+- Run het install/update script altijd met `sudo sh ...`.
+- Als je het als normale user draait, kan `docker stack deploy` met default-waarden starten (`*.jouwdomein.nl`) i.p.v. je `.env` waarden.
+
 Het script vraagt standaard:
 - `Use clean Docker build (--no-cache)? [Y/n]`
 
 Handige overrides:
-- `NO_CACHE=false sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh` (sneller, cached build)
-- `NO_CACHE=true sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh` (volledig schone build)
+- `sudo sh -c 'NO_CACHE=false sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'` (sneller, cached build)
+- `sudo sh -c 'NO_CACHE=true sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'` (volledig schone build)
 - In non-interactive runs blijft veilige default `NO_CACHE=true` actief.
 
 Wanneer `NO_CACHE=false` gebruiken:

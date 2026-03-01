@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-02-28 (savings-account incident, extra fallback-hardening)
+Laatste update: 2026-03-01 (savings-account incident + Synology deploy les)
 
 ## Canonieke status
 
@@ -40,6 +40,10 @@ Dit bestand is de actuele bron voor overdracht.
   - Conclusie: multi-user mismatch is niet de primaire oorzaak.
 - Raw fallback faalt in runtime met:
   - `Raw Bunq monetary-account fallback failed: bunq-sdk api_client unavailable`
+- Belangrijke operationele les (bevestigd):
+  - `install_or_update_synology.sh` moet als root worden uitgevoerd (`sudo sh ...`).
+  - Run als normale user kan bij `docker stack deploy` leiden tot fallback op compose-defaults zoals `vault.jouwdomein.nl` / `bunq.jouwdomein.nl`, ondanks correcte `.env`.
+  - Symptoom in logs: `Vaultwarden CLI error ... ENOTFOUND vault.jouwdomein.nl` + demo mode.
 
 ## Wat recent is aangepast (code)
 
@@ -77,6 +81,10 @@ sudo docker build --no-cache -t bunq-dashboard:$TAG -t bunq-dashboard:local .
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
 sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 ```
+
+Synology deploy-regel:
+- Gebruik voor install/update altijd: `sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh`
+- Voor handmatige redeploy: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
 
 Controle 1 (nieuwe runtime-code aanwezig):
 

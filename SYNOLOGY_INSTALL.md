@@ -583,8 +583,12 @@ De `api_proxy.py` bevat standaard Vaultwarden-integratie. Zorg dat je:
 **Snelle route (aanbevolen):**
 ```bash
 cd /volume1/docker/bunq-dashboard
-sh scripts/install_or_update_synology.sh
+sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
+
+Belangrijk:
+- Voer dit script altijd uit met `sudo sh ...` (root).
+- Run je het als normale user, dan kan `docker stack deploy` defaults uit `docker-compose.yml` gebruiken (`*.jouwdomein.nl`) i.p.v. je `.env` waarden.
 
 Tijdens de run vraagt het script:
 - `Use clean Docker build (--no-cache)? [Y/n]`
@@ -592,10 +596,10 @@ Tijdens de run vraagt het script:
 Je kunt dit vooraf forceren:
 ```bash
 # Sneller (cached build)
-NO_CACHE=false sh scripts/install_or_update_synology.sh
+sudo sh -c 'NO_CACHE=false sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'
 
 # Volledig schone build
-NO_CACHE=true sh scripts/install_or_update_synology.sh
+sudo sh -c 'NO_CACHE=true sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'
 ```
 
 Dit script doet:
@@ -627,7 +631,7 @@ sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
 
 # Force service restart + startup check (script gebruikt standaard git-tag)
-sh scripts/restart_bunq_service.sh
+sudo sh scripts/restart_bunq_service.sh
 
 # Check logs
 sudo docker service logs -f bunq_bunq-dashboard
@@ -768,7 +772,7 @@ Package Center → Container Manager → Settings
 Snelle update (aanbevolen):
 ```bash
 cd /volume1/docker/bunq-dashboard
-sh scripts/install_or_update_synology.sh
+sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
 
 Handmatig:
@@ -784,7 +788,7 @@ sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
 
 # Force service restart + startup validation
-sh scripts/restart_bunq_service.sh
+sudo sh scripts/restart_bunq_service.sh
 
 # Verify
 sudo docker stack ps bunq
@@ -846,7 +850,7 @@ Gebruik `Reinit Bunq context` na:
    - bij directe key-flow (`USE_VAULTWARDEN=false`): update Docker secret `bunq_api_key`
 3. Run (safe non-interactive): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
    - Optionele cleanup-pass na validatie: `... DEACTIVATE_OTHERS=true ...`
-4. Validatie: `sh scripts/restart_bunq_service.sh`
+4. Validatie: `sudo sh scripts/restart_bunq_service.sh`
 
 No code changes needed! ✨
 
@@ -858,7 +862,7 @@ No code changes needed! ✨
 - Connectivity: `sudo docker exec $(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1) ping vaultwarden`
 - Redeploy na .env wijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
 - Alleen herstart (zonder config/secrets wijzigingen): `sudo docker service update --force bunq_bunq-dashboard`
-- Herstart + startup-validatie (aanbevolen): `sh scripts/restart_bunq_service.sh`
+- Herstart + startup-validatie (aanbevolen): `sudo sh scripts/restart_bunq_service.sh`
 - Bunq IP/device opnieuw registreren (safe): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
 
 Voor uitgebreide oplossingen, zie [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
