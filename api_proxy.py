@@ -978,11 +978,40 @@ def _raw_monetary_attempt_plan(user_id):
         {},
     )
 
+    # Some sdk clients implicitly scope requests to the active user, so we also
+    # probe context-scoped paths without explicit /user/{id}.
+    context_prefixes = (
+        '/v1',
+        '',
+        '/',
+    )
+
+    def _join_path(prefix, *parts):
+        cleaned_prefix = str(prefix or '').strip()
+        cleaned_parts = [str(part).strip('/') for part in parts if str(part or '').strip('/')]
+        if cleaned_prefix in ('', '/'):
+            base = '' if cleaned_prefix == '' else '/'
+        else:
+            base = cleaned_prefix.rstrip('/')
+        if not cleaned_parts:
+            return base or '/'
+        suffix = '/'.join(cleaned_parts)
+        if base in ('', '/'):
+            return f"/{suffix}" if base == '/' or cleaned_prefix == '/' else suffix
+        return f"{base}/{suffix}"
+
     attempts = []
     seen = set()
-    for prefix in prefixes:
-        for suffix in route_suffixes:
-            path = f"{prefix}/{user_id}/{suffix}"
+    for suffix in route_suffixes:
+        candidate_paths = []
+        # Explicit user-scoped routes.
+        for prefix in prefixes:
+            candidate_paths.append(_join_path(prefix, user_id, suffix))
+        # Context-scoped routes (user can be injected by sdk client internals).
+        for prefix in context_prefixes:
+            candidate_paths.append(_join_path(prefix, suffix))
+
+        for path in candidate_paths:
             for params in params_variants:
                 # Dedupe by path + sorted params for stable probing.
                 signature = (path, tuple(sorted(params.items())))

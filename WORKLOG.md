@@ -53,6 +53,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - brede `display_name`-achtige matches zonder accountkenmerken worden niet meer als account geteld.
   - debugscript toont nu per route ook `first_account=<id>|<description>|<currency>|<type>` zodat `MAX_ROWS=0` toch bruikbare identificatie geeft.
 - `scripts/check_accounts_api.py` default timeout verhoogd naar 120s (was 20s) vanwege langzamere `/api/accounts` runs tijdens uitgebreide raw probing.
+- Raw route-probing verder verbreed voor SDK-contextinjectie:
+  - naast expliciete `/user/{id}/...` paden probeert `_raw_monetary_attempt_plan(...)` nu ook context-scoped routes zonder user-id:
+    - `/v1/monetary-account*`
+    - `/monetary-account*`
+    - `monetary-account*`
+  - doel: sdk-varianten opvangen die user-scope intern toevoegen en daardoor met expliciete user-id lege/non-JSON responses geven.
 - Volgende-sessie checklist expliciet vastgelegd in `CONTEXT_HANDOVER.md`:
   - redeploy met `.env` geladen;
   - raw debug rerun + grep met `first_account=...`;

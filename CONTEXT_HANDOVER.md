@@ -66,6 +66,11 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
     - prefixes: `/v1/user`, `/user`, `user`
     - suffixes: `monetary-account`, `monetary-account-bank`, `monetary-account-savings`, `monetary-account-external-savings`, `monetary-account-external`, `monetary-account-joint`, `monetary-account-card`
     - params-varianten per route: `{'status':'ACTIVE','count':N}`, `{'count':N}`, `{}`
+  - Extra routevariant toegevoegd voor sdk-contextinjectie:
+    - ook context-scoped paden zonder expliciete user-id worden geprobed:
+      - `/v1/monetary-account*`
+      - `/monetary-account*`
+      - `monetary-account*`
   - Raw fallback heeft cooldown op herhaalde failures:
     - `BUNQ_RAW_FALLBACK_COOLDOWN_SECONDS` (default `120`).
   - SDK endpoint-discovery staat standaard in strikte modus:
