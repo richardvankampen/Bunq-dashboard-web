@@ -47,7 +47,7 @@ const chartRegistry = {
 };
 let racingData = null;
 let racingPlayInterval = null;
-const RACING_ANIMATION_FPS = 10;
+const RACING_ANIMATION_FPS = 2;
 const DETAIL_TRANSACTIONS_PAGE_SIZE = 200;
 const DETAIL_TRANSACTIONS_DEFAULT_SORT = 'date_desc';
 const detailTransactionsState = {

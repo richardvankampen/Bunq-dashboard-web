@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2)
 
 ## Canonieke status
 
@@ -93,7 +93,7 @@ Dit bestand is de actuele bron voor overdracht.
 
 - Widgetnaam is `Categorie-race`.
 - Raceframes zijn nu dag-gebaseerd (i.p.v. maand-gebaseerd), met cumulatieve uitgaven per categorie per dag.
-- Playback draait op `10 fps` (`RACING_ANIMATION_FPS=10`), zodat ~90 dagen ongeveer 9 seconden animatie geven.
+- Playback draait op `2 fps` (`RACING_ANIMATION_FPS=2`), zodat ~90 dagen ongeveer 45 seconden animatie geven.
 - Slider/label tonen dagframes (datum) in plaats van maandlabels.
 
 ## Savings-incident status

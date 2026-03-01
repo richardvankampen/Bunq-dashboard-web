@@ -6,6 +6,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Categorie-race frame-rate aangepast:
+  - `RACING_ANIMATION_FPS` gewijzigd van 10 naar 2.
+  - gevolg: daganimatie speelt rustiger af (~45s bij ~90 frames).
+
 - Geldstromen detailweergave klikfix:
   - klikafhandeling op categorie-rijen robuust gemaakt voor browservarianten met non-Element `event.target`.
   - interactieve rijstijl toegevoegd (`.balance-detail-row-action`) zodat klikbare categorieën duidelijk zichtbaar en focusable zijn.
