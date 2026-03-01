@@ -2067,6 +2067,7 @@ function getFilteredAndSortedDetailTransactionsRows() {
                 row.time,
                 row.ownAccount,
                 row.counterparty,
+                row.counterpartyAccountRef,
                 row.description,
                 row.category,
                 row.amount
@@ -2147,7 +2148,10 @@ function renderMoreDetailTransactions(options = {}) {
                 <td>${escapeHtml(row.date)}</td>
                 <td>${escapeHtml(row.time)}</td>
                 <td class="own-account">${escapeHtml(row.ownAccount)}</td>
-                <td class="counterparty">${escapeHtml(row.counterparty)}</td>
+                <td class="counterparty">
+                    <div class="counterparty-main">${escapeHtml(row.counterparty)}</div>
+                    ${row.counterpartyAccountRef ? `<div class="counterparty-ref">${escapeHtml(row.counterpartyAccountRef)}</div>` : ''}
+                </td>
                 <td class="description">${escapeHtml(row.description)}</td>
                 <td class="amount ${escapeHtml(row.amountClass)}">${escapeHtml(row.amount)}</td>
             </tr>
@@ -2354,6 +2358,15 @@ function buildTransactionTableRows(transactions, options = {}) {
                 ? transaction.description.trim()
                 : '-'
         );
+        const counterpartyAccountRef = (
+            typeof transaction?.counterparty_iban === 'string' && transaction.counterparty_iban.trim()
+                ? transaction.counterparty_iban.trim()
+                : (
+                    transaction?.counterparty_account_id != null
+                        ? `ID ${String(transaction.counterparty_account_id).trim()}`
+                        : ''
+                )
+        );
         const category = resolveCategoryLabel(transaction);
         const amountValue = Number(transaction.amount) || 0;
         return {
@@ -2363,6 +2376,7 @@ function buildTransactionTableRows(transactions, options = {}) {
                 : '-',
             ownAccount,
             counterparty,
+            counterpartyAccountRef,
             description,
             category,
             amount: formatCurrency(amountValue),

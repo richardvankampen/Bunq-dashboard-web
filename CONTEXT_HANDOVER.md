@@ -45,7 +45,7 @@ Dit bestand is de actuele bron voor overdracht.
   - `Datum`
   - `Tijd`
   - `Eigen Bunq rekening`
-  - `Tegenrekening / merchant`
+  - `Tegenrekening / merchant + rekeningnummer` (IBAN of account-id indien beschikbaar)
   - `Omschrijving`
   - `Bedrag`
 - Performance/UX:

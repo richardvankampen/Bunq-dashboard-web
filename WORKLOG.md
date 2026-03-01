@@ -6,6 +6,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Detailtransactietabel uitgebreid:
+  - kolom `Tegenrekening / merchant` toont nu ook rekeningnummer (voorkeur: `counterparty_iban`, fallback: `counterparty_account_id`);
+  - zoekveld doorzoekt nu ook het rekeningnummer;
+  - kolomtitel en placeholdertekst geüpdatet naar `... + rekeningnummer`.
+
 - Widgetfiltering aangescherpt:
   - `Top tegenrekeningen` en `Verdeling in categorieën` gebruiken nu extra widgetfilter op interne/eigen tegenrekeningen.
   - filtering gebruikt `is_internal_transfer` + deterministische checks op eigen account-id, eigen IBAN en eigen Bunq-rekeningnaam.

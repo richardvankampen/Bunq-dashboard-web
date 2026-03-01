@@ -1473,6 +1473,18 @@ body.reduce-animations .play-btn:hover {
     overflow-wrap: anywhere;
 }
 
+.balance-detail-transactions-table td.counterparty .counterparty-main {
+    font-weight: 600;
+    color: #dbeafe;
+}
+
+.balance-detail-transactions-table td.counterparty .counterparty-ref {
+    margin-top: 2px;
+    font-size: 0.78rem;
+    color: #93c5fd;
+    word-break: break-all;
+}
+
 .balance-detail-transactions-table td.amount {
     text-align: right;
     font-variant-numeric: tabular-nums;
