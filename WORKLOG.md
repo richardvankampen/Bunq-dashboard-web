@@ -6,6 +6,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Safari tooltip-compatibiliteit voor inzichttegels toegevoegd:
+  - native/psuedo hover-tooltip aangevuld met JS-gedreven floating tooltipcomponent (`#insightHoverTooltip`).
+  - actieve kaart toont tooltip bij `mouseenter`/`focus` met viewport-aware positionering (boven of onder de kaart).
+  - pseudo-tooltips worden uitgeschakeld zodra JS-tooltips actief zijn (`body.js-insight-tooltips`) om dubbele weergave te voorkomen.
+  - reden: Safari in gemaximaliseerd/fullscreen venster toonde tooltip niet consistent.
+
 - Stilistische widgetfixes:
   - `Top tegenrekeningen` en `Categorie-race` renderen nu met transparante plotachtergrond (`plot_bgcolor`) zodat de tegelachtergrond zichtbaar blijft (geen witte chart-vlakken).
   - `Budget discipline` en `Categorie-race` hebben niet langer de aparte featured-card rand; ze gebruiken nu dezelfde standaard randstijl als andere widgets.

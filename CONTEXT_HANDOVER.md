@@ -101,6 +101,10 @@ Dit bestand is de actuele bron voor overdracht.
 - Op `Cashflow (tijdslijn)` is de downloadknop verwijderd; detailview opent via de detailactieknop.
 - `Top tegenrekeningen` en `Categorie-race` gebruiken nu transparante Plotly-plotachtergrond (`plot_bgcolor`) zodat geen witte chart-achtergrond meer zichtbaar is binnen de tegel.
 - `Budget discipline` en `Categorie-race` gebruiken nu dezelfde standaard tegelrand als andere widgets (featured-card rand verwijderd).
+- Safari hover-fix inzichttegels:
+  - JS-gestuurde floating tooltip toegevoegd (`.insight-hover-tooltip`) die op `mouseenter/focus` op inzichttegels toont.
+  - CSS pseudo-tooltips worden automatisch uitgeschakeld wanneer JS-tooltip actief is (`body.js-insight-tooltips`) om dubbele tooltips te voorkomen.
+  - doel: ook in Safari (maximized/fullscreen) consistente tooltipweergave.
 
 ## Detailmodal styling (actueel)
 

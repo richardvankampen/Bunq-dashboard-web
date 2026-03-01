@@ -871,6 +871,7 @@ function setupEventListeners() {
     });
 
     syncInsightCardTooltips();
+    setupInsightHoverTooltips();
 
     document.getElementById('moneyFlowCard')?.addEventListener('click', (event) => {
         if (event.target.closest('.action-btn')) return;
@@ -908,6 +909,115 @@ function syncInsightCardTooltips() {
             card.setAttribute('aria-label', tooltip);
         }
     });
+}
+
+const insightHoverTooltipState = {
+    element: null,
+    activeCard: null,
+    listenersBound: false
+};
+
+function ensureInsightHoverTooltipElement() {
+    if (insightHoverTooltipState.element) return insightHoverTooltipState.element;
+    const tooltip = document.createElement('div');
+    tooltip.id = 'insightHoverTooltip';
+    tooltip.className = 'insight-hover-tooltip';
+    tooltip.setAttribute('role', 'tooltip');
+    tooltip.setAttribute('data-visible', 'false');
+    tooltip.setAttribute('data-placement', 'top');
+    tooltip.hidden = true;
+    document.body.appendChild(tooltip);
+    insightHoverTooltipState.element = tooltip;
+    return tooltip;
+}
+
+function positionInsightHoverTooltip(card) {
+    const tooltip = ensureInsightHoverTooltipElement();
+    const rect = card.getBoundingClientRect();
+    const viewportPadding = 8;
+    const tooltipMargin = 10;
+    const maxWidth = Math.max(220, Math.min(360, window.innerWidth - 2 * viewportPadding));
+    tooltip.style.maxWidth = `${maxWidth}px`;
+
+    const tooltipWidth = tooltip.offsetWidth || Math.min(maxWidth, 320);
+    const tooltipHeight = tooltip.offsetHeight || 48;
+
+    let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+    left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipWidth - viewportPadding));
+
+    let top = rect.top - tooltipHeight - tooltipMargin;
+    let placement = 'top';
+    if (top < viewportPadding) {
+        top = rect.bottom + tooltipMargin;
+        placement = 'bottom';
+    }
+
+    tooltip.style.left = `${Math.round(left)}px`;
+    tooltip.style.top = `${Math.round(top)}px`;
+    tooltip.setAttribute('data-placement', placement);
+}
+
+function showInsightHoverTooltip(card) {
+    const tooltipText = String(card.getAttribute('data-tooltip') || card.getAttribute('title') || '').trim();
+    if (!tooltipText) return;
+
+    const tooltip = ensureInsightHoverTooltipElement();
+    tooltip.textContent = tooltipText;
+    tooltip.hidden = false;
+    tooltip.setAttribute('data-visible', 'true');
+    insightHoverTooltipState.activeCard = card;
+    card.setAttribute('aria-describedby', 'insightHoverTooltip');
+    positionInsightHoverTooltip(card);
+}
+
+function hideInsightHoverTooltip(card = null) {
+    const tooltip = insightHoverTooltipState.element;
+    if (!tooltip) return;
+    if (card && insightHoverTooltipState.activeCard && card !== insightHoverTooltipState.activeCard) return;
+
+    if (insightHoverTooltipState.activeCard) {
+        insightHoverTooltipState.activeCard.removeAttribute('aria-describedby');
+    }
+    insightHoverTooltipState.activeCard = null;
+    tooltip.setAttribute('data-visible', 'false');
+    tooltip.hidden = true;
+}
+
+function setupInsightHoverTooltips() {
+    const cards = Array.from(document.querySelectorAll('.insight-card'));
+    if (!cards.length) return;
+
+    document.body.classList.add('js-insight-tooltips');
+
+    cards.forEach((card) => {
+        if (card.dataset.tooltipBound === '1') return;
+        card.dataset.tooltipBound = '1';
+
+        card.addEventListener('mouseenter', () => showInsightHoverTooltip(card));
+        card.addEventListener('mousemove', () => {
+            if (insightHoverTooltipState.activeCard === card) {
+                positionInsightHoverTooltip(card);
+            }
+        });
+        card.addEventListener('mouseleave', () => hideInsightHoverTooltip(card));
+        card.addEventListener('focusin', () => showInsightHoverTooltip(card));
+        card.addEventListener('focusout', () => hideInsightHoverTooltip(card));
+        card.addEventListener('blur', () => hideInsightHoverTooltip(card));
+    });
+
+    if (!insightHoverTooltipState.listenersBound) {
+        window.addEventListener('scroll', () => {
+            if (insightHoverTooltipState.activeCard) {
+                positionInsightHoverTooltip(insightHoverTooltipState.activeCard);
+            }
+        }, true);
+        window.addEventListener('resize', () => {
+            if (insightHoverTooltipState.activeCard) {
+                positionInsightHoverTooltip(insightHoverTooltipState.activeCard);
+            }
+        });
+        insightHoverTooltipState.listenersBound = true;
+    }
 }
 
 function getFullscreenElement() {
