@@ -6,6 +6,14 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Root-cause fix voor niet-gefilterde negatieve interne overboekingen:
+  - oorzaak vastgesteld: in bepaalde Bunq SDK responses miste tegenrekeningmetadata op het standaardpad (`counterparty_account_id/IBAN/naam`), waardoor uitgaande interne transacties niet als intern gemarkeerd werden.
+  - backend uitgebreid met:
+    - `extract_alias_account_id(...)` voor geneste aliasvarianten;
+    - description-gebaseerde fallbackmatch op eigen Bunq-rekeningnamen.
+  - frontend fallback uitgebreid met description-match op eigen Bunq-rekeningnamen.
+  - resultaat: negatieve interne overboekingen worden nu ook uitgefilterd bij `exclude internal`.
+
 - Categorie-race verbeterd:
   - widgettitel hernoemd van `Category Race Over Time` naar `Categorie-race`.
   - race-opbouw omgezet van maandframes naar dagframes (cumulatieve uitgaven per categorie).
