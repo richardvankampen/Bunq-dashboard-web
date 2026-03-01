@@ -179,7 +179,7 @@ def main() -> int:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=float(os.getenv("API_TIMEOUT_SECONDS", "20")),
+        default=float(os.getenv("API_TIMEOUT_SECONDS", "120")),
         help="HTTP timeout seconds (default: %(default)s).",
     )
     parser.add_argument(

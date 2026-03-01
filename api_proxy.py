@@ -246,6 +246,31 @@ def unwrap_monetary_account(account):
 
     return account, None
 
+def _is_account_like_mapping(item):
+    if not isinstance(item, dict):
+        return False
+    has_id = any(field in item for field in ('id', 'id_'))
+    if not has_id:
+        return False
+    if 'balance' in item:
+        return True
+    # Accept explicit monetary-account type hints, but avoid broad display-name-only matches.
+    return any(field in item for field in ('sub_type', 'subtype', 'account_type', 'monetary_account_type', 'type_'))
+
+def _is_account_like_object(obj):
+    if obj is None or isinstance(obj, dict):
+        return False
+    account_id = get_obj_field(obj, 'id_', 'id')
+    if account_id is None:
+        return False
+    if get_obj_field(obj, 'balance') is not None:
+        return True
+    class_name = (obj.__class__.__name__ or '').lower()
+    module_name = (getattr(obj, '__module__', '') or '').lower()
+    if 'monetaryaccount' in class_name or 'monetaryaccount' in module_name:
+        return True
+    return False
+
 def _has_zero_required_positional_args(callable_obj):
     try:
         signature = inspect.signature(callable_obj)
@@ -992,12 +1017,9 @@ def _extract_monetary_accounts_from_raw_payload(payload):
                 break
 
         # Some sdk/api variants return direct account dict entries without
-        # MonetaryAccount* wrapper keys. Accept them when they look account-like.
+        # MonetaryAccount* wrapper keys. Accept strict account-like mappings.
         if variant_value is None:
-            has_id = any(field in item for field in ('id', 'id_'))
-            has_balance = 'balance' in item
-            has_descriptor = any(field in item for field in ('description', 'display_name', 'sub_type', 'type', 'type_'))
-            if has_id and (has_balance or has_descriptor):
+            if _is_account_like_mapping(item):
                 normalized = dict(item)
                 normalized.setdefault('_raw_type', 'MonetaryAccountRaw')
                 accounts.append(normalized)
@@ -1035,10 +1057,7 @@ def _extract_monetary_accounts_from_raw_result(raw_result):
                 extracted.extend(wrapped_accounts)
                 continue
 
-            has_id = any(field in item for field in ('id', 'id_'))
-            has_balance = 'balance' in item
-            has_descriptor = any(field in item for field in ('description', 'display_name', 'sub_type', 'type', 'type_'))
-            if has_id and (has_balance or has_descriptor):
+            if _is_account_like_mapping(item):
                 normalized = dict(item)
                 normalized.setdefault('_raw_type', 'MonetaryAccountRawResult')
                 extracted.append(normalized)
@@ -1050,6 +1069,8 @@ def _extract_monetary_accounts_from_raw_result(raw_result):
         if resolved_account is None:
             continue
         if isinstance(resolved_account, dict):
+            if not _is_account_like_mapping(resolved_account):
+                continue
             normalized = dict(resolved_account)
             if embedded_hint == 'savings':
                 normalized.setdefault('_raw_type', 'MonetaryAccountSavings')
@@ -1058,6 +1079,8 @@ def _extract_monetary_accounts_from_raw_result(raw_result):
             else:
                 normalized.setdefault('_raw_type', item.__class__.__name__)
             extracted.append(normalized)
+            continue
+        if not _is_account_like_object(resolved_account):
             continue
         extracted.append(resolved_account)
 

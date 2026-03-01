@@ -69,18 +69,55 @@ for path, params in plan:
         accounts, payload = api_proxy._extract_monetary_accounts_from_raw_result(result)
         print("parsed_accounts=" + str(len(accounts)))
         print("payload_type=" + (type(payload).__name__ if payload is not None else "NoneType"))
-        for account in accounts[:limit]:
-            balance = account.get("balance") or {}
+        if accounts:
+            first = accounts[0]
+            if isinstance(first, dict):
+                first_balance = first.get("balance") or {}
+                first_id = first.get("id", first.get("id_"))
+                first_desc = first.get("description", first.get("display_name"))
+                first_currency = first_balance.get("currency")
+                first_raw_type = first.get("_raw_type", "dict")
+            else:
+                first_balance = api_proxy.get_obj_field(first, "balance") or {}
+                first_id = api_proxy.get_obj_field(first, "id_", "id")
+                first_desc = api_proxy.get_obj_field(first, "description", "display_name")
+                first_currency = api_proxy.get_obj_field(first_balance, "currency", default=None)
+                first_raw_type = first.__class__.__name__
             print(
-                str(account.get("id"))
+                "first_account="
+                + str(first_id)
+                + "|"
+                + str(first_desc)
+                + "|"
+                + str(first_currency)
+                + "|"
+                + str(first_raw_type)
+            )
+        for account in accounts[:limit]:
+            if isinstance(account, dict):
+                balance = account.get("balance") or {}
+                account_id = account.get("id", account.get("id_"))
+                account_desc = account.get("description", account.get("display_name"))
+                account_value = balance.get("value")
+                account_currency = balance.get("currency")
+                raw_type = account.get("_raw_type")
+            else:
+                balance = api_proxy.get_obj_field(account, "balance") or {}
+                account_id = api_proxy.get_obj_field(account, "id_", "id")
+                account_desc = api_proxy.get_obj_field(account, "description", "display_name")
+                account_value = api_proxy.get_obj_field(balance, "value", default=None)
+                account_currency = api_proxy.get_obj_field(balance, "currency", default=None)
+                raw_type = account.__class__.__name__
+            print(
+                str(account_id)
                 + "\t"
-                + str(account.get("description"))
+                + str(account_desc)
                 + "\t"
-                + str(balance.get("value"))
+                + str(account_value)
                 + "\t"
-                + str(balance.get("currency"))
+                + str(account_currency)
                 + "\t"
-                + str(account.get("_raw_type"))
+                + str(raw_type)
             )
     except Exception as exc:  # noqa: BLE001
         print("error=" + str(exc))

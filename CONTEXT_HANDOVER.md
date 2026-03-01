@@ -80,6 +80,8 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
     - `_extract_json_payload(...)` leest eerst `raw_body/raw_response/...` en pas later `.value`, zodat lege sdk-wrapperwaarden de echte JSON-body niet overschrijven.
     - `_extract_monetary_accounts_from_raw_payload(...)` accepteert ook directe account-dicts zonder `MonetaryAccount*` wrapper key.
     - `_extract_monetary_accounts_from_raw_result(...)` verwerkt ook sdk model-object responses uit raw client calls (dus niet alleen JSON payloads).
+    - account-extractie is aangescherpt om false positives te reduceren:
+      - alleen account-like mappings/objecten (o.a. `id` + `balance` of monetary-account class-hint) worden meegenomen.
 
 Status: incident nog open; focus ligt nu op:
 - valideren welke route-variant in de matrix echt data teruggeeft op deze Bunq/SDK runtime;
@@ -159,6 +161,7 @@ Let op:
 - Losse `docker exec python3 -c ...` debugcalls moeten eerst `init_bunq(...)` doen; anders krijg je `ApiContext has not been loaded`.
 - Het script streamt output live; bij redirect naar bestand (`> file 2>&1`) blijft voortgang zichtbaar via `tail -f file`.
 - Het script toont nu ook `attempt_count=<n>` en gebruikt ongebufferde Python-output (`python3 -u`) voor directe voortgang.
+- Het script toont nu ook `first_account=...` per route, ook bij `MAX_ROWS=0`.
 - Als `MAX_ROWS` via `sudo` niet doorkomt, gebruik de 2e script-parameter (`...sh <service> <max_rows>`) of `sudo env MAX_ROWS=...`.
 
 ## Als savings nog steeds ontbreken
