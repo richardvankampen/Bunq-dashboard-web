@@ -46,6 +46,8 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `_extract_json_payload(...)` prioriteert nu `raw_body/raw_response/...` boven `.value` en valt pas terug op lege payloads als er niets beters is.
   - voorkomt scenario waarin een lege sdk-wrapper `.value` de echte JSON-body maskeert.
   - `_extract_monetary_accounts_from_raw_payload(...)` accepteert nu ook directe account-dicts zonder `MonetaryAccount*` wrapper key.
+  - nieuw: `_extract_monetary_accounts_from_raw_result(...)` parseert ook sdk model-object resultaten (niet-JSON) uit raw client calls.
+  - `list_monetary_accounts_raw_api(...)` en `scripts/debug_raw_monetary_accounts.sh` gebruiken nu deze gecombineerde extractor.
 - Installatie-instructies aangescherpt op Synology:
   - `scripts/install_or_update_synology.sh` expliciet als root laten uitvoeren (`sudo sh ...`).
   - `NO_CACHE` overrides nu gedocumenteerd via root-shell variant (`sudo sh -c 'NO_CACHE=... sh ...'`) om sudo-env valkuilen te vermijden.

@@ -66,8 +66,7 @@ for path, params in plan:
     print("== " + path + " params=" + str(params) + " ==")
     try:
         result = api_proxy._call_api_client_get(client, path, params=params)
-        payload = api_proxy._extract_json_payload(result)
-        accounts = api_proxy._extract_monetary_accounts_from_raw_payload(payload)
+        accounts, payload = api_proxy._extract_monetary_accounts_from_raw_result(result)
         print("parsed_accounts=" + str(len(accounts)))
         print("payload_type=" + (type(payload).__name__ if payload is not None else "NoneType"))
         for account in accounts[:limit]:

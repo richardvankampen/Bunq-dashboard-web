@@ -79,6 +79,7 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
   - Raw payload extractie/parsing is extra gehard:
     - `_extract_json_payload(...)` leest eerst `raw_body/raw_response/...` en pas later `.value`, zodat lege sdk-wrapperwaarden de echte JSON-body niet overschrijven.
     - `_extract_monetary_accounts_from_raw_payload(...)` accepteert ook directe account-dicts zonder `MonetaryAccount*` wrapper key.
+    - `_extract_monetary_accounts_from_raw_result(...)` verwerkt ook sdk model-object responses uit raw client calls (dus niet alleen JSON payloads).
 
 Status: incident nog open; focus ligt nu op:
 - valideren welke route-variant in de matrix echt data teruggeeft op deze Bunq/SDK runtime;

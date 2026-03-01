@@ -1014,6 +1014,55 @@ def _extract_monetary_accounts_from_raw_payload(payload):
 
     return accounts
 
+def _extract_monetary_accounts_from_raw_result(raw_result):
+    """
+    Parse monetary accounts from a raw API-client response.
+    Supports both JSON-like payloads and sdk model-object lists.
+    """
+    payload = _extract_json_payload(raw_result)
+    accounts = _extract_monetary_accounts_from_raw_payload(payload)
+    if accounts:
+        return accounts, payload
+
+    extracted = []
+    for item in _unwrap_endpoint_result(raw_result):
+        if item is None:
+            continue
+
+        if isinstance(item, dict):
+            wrapped_accounts = _extract_monetary_accounts_from_raw_payload([item])
+            if wrapped_accounts:
+                extracted.extend(wrapped_accounts)
+                continue
+
+            has_id = any(field in item for field in ('id', 'id_'))
+            has_balance = 'balance' in item
+            has_descriptor = any(field in item for field in ('description', 'display_name', 'sub_type', 'type', 'type_'))
+            if has_id and (has_balance or has_descriptor):
+                normalized = dict(item)
+                normalized.setdefault('_raw_type', 'MonetaryAccountRawResult')
+                extracted.append(normalized)
+                continue
+
+            continue
+
+        resolved_account, embedded_hint = unwrap_monetary_account(item)
+        if resolved_account is None:
+            continue
+        if isinstance(resolved_account, dict):
+            normalized = dict(resolved_account)
+            if embedded_hint == 'savings':
+                normalized.setdefault('_raw_type', 'MonetaryAccountSavings')
+            elif embedded_hint == 'investment':
+                normalized.setdefault('_raw_type', 'MonetaryAccountInvestment')
+            else:
+                normalized.setdefault('_raw_type', item.__class__.__name__)
+            extracted.append(normalized)
+            continue
+        extracted.append(resolved_account)
+
+    return extracted, payload
+
 def list_monetary_accounts_raw_api(user_id, soft_fail=False):
     """
     Fallback path: retrieve monetary accounts via raw API client payload.
@@ -1043,8 +1092,7 @@ def list_monetary_accounts_raw_api(user_id, soft_fail=False):
         try:
             raw_result = _call_api_client_get(api_client, path, params=params)
             had_successful_response = True
-            payload = _extract_json_payload(raw_result)
-            accounts = _extract_monetary_accounts_from_raw_payload(payload)
+            accounts, payload = _extract_monetary_accounts_from_raw_result(raw_result)
             if accounts:
                 added = 0
                 for account in accounts:
