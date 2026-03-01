@@ -6,6 +6,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Tooltipdekking inzichttegels hard gemaakt:
+  - op elke `.insight-card` is nu direct een `title`-attribuut gezet in `index.html`;
+  - hierdoor werkt mouse-over uitleg per inzichttegel ook als JS-tooltip-sync niet draait.
+
 - KPI/tooltip correcties:
   - `Savings Rate` gebruikt nu dezelfde gecorrigeerde `Sparen`-netto als de spaarmutatie-view (negatieve mutaties tellen dus mee).
   - inzicht-tegel tooltips worden nu op de hele kaart gezet (`.insight-card`), niet alleen op de kopregel.
