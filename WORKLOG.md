@@ -6,6 +6,15 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Stilistische widgetfixes:
+  - `Top tegenrekeningen` en `Categorie-race` renderen nu met transparante plotachtergrond (`plot_bgcolor`) zodat de tegelachtergrond zichtbaar blijft (geen witte chart-vlakken).
+  - `Budget discipline` en `Categorie-race` hebben niet langer de aparte featured-card rand; ze gebruiken nu dezelfde standaard randstijl als andere widgets.
+
+- `Action plan` detailweergave leesbaarheidsfix:
+  - detailmodal ondersteunt nu optionele lijstklasse per widget (`listClassName` in `openDetailModal`).
+  - voor `action-plan` wordt `balance-detail-list-stacked` gebruikt, waardoor koptekst + toelichting horizontaal onder elkaar staan i.p.v. ingedrukt naast elkaar.
+  - y-as labels in de action-plan impactgrafiek gefixeerd op horizontale tickhoek (`tickangle: 0`).
+
 - Tooltip/hover-fix inzichttegels robuuster gemaakt:
   - `syncInsightCardTooltips()` zet nu naast `title` ook `data-tooltip` op elke `.insight-card`.
   - nieuwe CSS-tooltiplaag toegevoegd (`::before/::after` op `.insight-card[data-tooltip]`) zodat hover-uitleg zichtbaar blijft in browsers waar native `title` op `div` onbetrouwbaar is.

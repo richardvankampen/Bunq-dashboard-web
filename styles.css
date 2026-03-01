@@ -1455,6 +1455,15 @@ body.reduce-animations .play-btn:hover {
     font-variant-numeric: tabular-nums;
 }
 
+.balance-detail-list-stacked .balance-detail-row {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.balance-detail-list-stacked .balance-detail-row-value {
+    justify-self: start;
+    overflow-wrap: anywhere;
+}
+
 .balance-detail-transactions-section {
     margin-top: var(--spacing-lg);
     padding-top: var(--spacing-md);

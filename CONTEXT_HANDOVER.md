@@ -99,6 +99,12 @@ Dit bestand is de actuele bron voor overdracht.
   - tooltips zijn nu ook statisch in de HTML op elke inzichttegel gezet (`title` op elk `.insight-card`) en daarnaast als custom CSS-tooltip (`data-tooltip`) gerenderd voor consistente hover-weergave in browsers die `title` op `div` beperkt tonen.
 - `Geldstromen` samenvattingstekst (`In · Uit · Netto`) staat nu als HTML-balk boven de Sankey i.p.v. als Plotly-annotatie; dit voorkomt render-artifacts in fullscreen (tekst werd een dunne onleesbare lijn).
 - Op `Cashflow (tijdslijn)` is de downloadknop verwijderd; detailview opent via de detailactieknop.
+- `Top tegenrekeningen` en `Categorie-race` gebruiken nu transparante Plotly-plotachtergrond (`plot_bgcolor`) zodat geen witte chart-achtergrond meer zichtbaar is binnen de tegel.
+- `Budget discipline` en `Categorie-race` gebruiken nu dezelfde standaard tegelrand als andere widgets (featured-card rand verwijderd).
+
+## Detailmodal styling (actueel)
+
+- `Action plan` detail gebruikt nu een gestapelde rijweergave voor tekstregels (`balance-detail-list-stacked`) zodat kopteksten/inhoud horizontaal leesbaar blijven (geen verticaal “ingedrukte” tekstblokken).
 
 ## Categorie-race (actueel)
 

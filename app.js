@@ -2263,7 +2263,8 @@ function openDetailModal({
     transactionRows = null,
     transactionsTitle = '',
     rowActionMap = null,
-    transactionsCollapsedByDefault = false
+    transactionsCollapsedByDefault = false,
+    listClassName = ''
 }) {
     const titleEl = document.getElementById('balanceDetailTitle');
     const summaryEl = document.getElementById('balanceDetailSummary');
@@ -2278,6 +2279,19 @@ function openDetailModal({
     const transactionsToggleEl = document.getElementById('balanceDetailTransactionsToggle');
     const modalEl = document.getElementById('balanceDetailModal');
     if (!titleEl || !summaryEl || !listEl || !chartEl || !modalEl) return;
+
+    const previousListClasses = String(listEl.dataset.extraClasses || '')
+        .split(/\s+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    previousListClasses.forEach((className) => listEl.classList.remove(className));
+    const nextListClasses = String(listClassName || '')
+        .split(/\s+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((className) => className !== 'balance-detail-list');
+    nextListClasses.forEach((className) => listEl.classList.add(className));
+    listEl.dataset.extraClasses = nextListClasses.join(' ');
 
     titleEl.innerHTML = title || '<i class="fas fa-chart-bar"></i> Detail';
     summaryEl.textContent = summary || '';
@@ -3092,7 +3106,7 @@ function showTransactionDetail(detailType) {
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 font: { color: '#cbd5f5' },
                 xaxis: { gridcolor: 'rgba(255,255,255,0.08)', title: 'EUR potentieel' },
-                yaxis: { automargin: true }
+                yaxis: { automargin: true, tickangle: 0 }
             }
         } : null;
 
@@ -3105,7 +3119,8 @@ function showTransactionDetail(detailType) {
                 label: `P${action.priority} · ${action.title}`,
                 value: `${action.summary}${(Number(action.impact) || 0) > 0.01 ? ` · Impact ${formatCurrency(action.impact)}` : ''} · Confidence ${Math.round((Number(action.confidence) || 0.75) * 100)}%${action.playbook ? ` · Actie: ${action.playbook}` : ''}`
             })),
-            chart
+            chart,
+            listClassName: 'balance-detail-list-stacked'
         });
         return;
     }
@@ -3859,6 +3874,7 @@ function renderMerchantsChart(data) {
     const layout = {
         margin: { t: 10, r: 10, l: 100, b: 30 },
         paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#cbd5f5' },
         xaxis: { gridcolor: 'rgba(255,255,255,0.05)' },
         yaxis: { gridcolor: 'rgba(255,255,255,0.05)' }
@@ -3995,6 +4011,7 @@ function updateRacingChart(frameIndex) {
     const layout = {
         margin: { t: 20, r: 20, l: 80, b: 30 },
         paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#cbd5f5' },
         xaxis: { gridcolor: 'rgba(255,255,255,0.05)' },
         yaxis: { gridcolor: 'rgba(255,255,255,0.05)' }
