@@ -25,7 +25,9 @@ Dit bestand is de actuele bron voor overdracht.
   - `SYNOLOGY_INSTALL.md` (EN) / `SYNOLOGY_INSTALL-NL.md` (NL)
   - `TROUBLESHOOTING.md` (EN) / `TROUBLESHOOTING-NL.md` (NL)
 - `README.md` bevat expliciete taalkeuze zodat gebruikers EN/NL direct kunnen kiezen.
-- Korte release-samenvatting voor docs-updates staat in `RELEASE_NOTES.md`.
+- Korte release-samenvatting voor docs-updates is nu tweetalig beschikbaar:
+  - `RELEASE_NOTES.md` (EN)
+  - `RELEASE_NOTES-NL.md` (NL)
 
 ## Frontend detailweergave (actueel)
 

@@ -173,6 +173,9 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `TROUBLESHOOTING-NL.md`
 - Korte changelogtekst toegevoegd aan nieuwe release-notes file:
   - `RELEASE_NOTES.md`
+- Release notes nu ook tweetalig gemaakt met taal-links:
+  - `RELEASE_NOTES.md` (EN)
+  - `RELEASE_NOTES-NL.md` (NL)
 
 ## 2026-02-28
 

@@ -1,5 +1,10 @@
 # Release Notes
 
+## 🌐 Language
+
+- English (this file): [RELEASE_NOTES.md](RELEASE_NOTES.md)
+- Dutch: [RELEASE_NOTES-NL.md](RELEASE_NOTES-NL.md)
+
 ## 2026-03-01
 
 ### Documentation
@@ -10,4 +15,3 @@
   - `SYNOLOGY_INSTALL-NL.md`
   - `TROUBLESHOOTING-NL.md`
 - No runtime or API behavior changes in this update.
-
