@@ -171,6 +171,8 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `SECURITY-NL.md`
   - `SYNOLOGY_INSTALL-NL.md`
   - `TROUBLESHOOTING-NL.md`
+- Korte changelogtekst toegevoegd aan nieuwe release-notes file:
+  - `RELEASE_NOTES.md`
 
 ## 2026-02-28
 
