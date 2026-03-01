@@ -47,6 +47,7 @@ const chartRegistry = {
 };
 let racingData = null;
 let racingPlayInterval = null;
+const RACING_ANIMATION_FPS = 10;
 const DETAIL_TRANSACTIONS_PAGE_SIZE = 200;
 const DETAIL_TRANSACTIONS_DEFAULT_SORT = 'date_desc';
 const detailTransactionsState = {
@@ -56,6 +57,35 @@ const detailTransactionsState = {
     query: '',
     sortKey: DETAIL_TRANSACTIONS_DEFAULT_SORT
 };
+const detailModalState = {
+    rowActionMap: null,
+    transactionsCollapsed: false
+};
+
+function isOwnBunqAccount(account) {
+    const className = String(account?.account_class || '').toLowerCase();
+    if (!className) return true;
+    // Keep Bunq external-savings as own Bunq accounts, but exclude linked external accounts (e.g. Triodos).
+    if (className.includes('monetaryaccountexternal') && !className.includes('externalsavings')) {
+        return false;
+    }
+    return true;
+}
+
+function getOwnBunqAccountIdentitySets() {
+    const ownAccounts = (accountsList || []).filter((account) => isOwnBunqAccount(account));
+    const ownIds = new Set(
+        ownAccounts
+            .map((account) => String(account?.id || '').trim())
+            .filter(Boolean)
+    );
+    const ownNames = new Set(
+        ownAccounts
+            .map((account) => normalizePartyNameForMatch(account?.description || account?.display_name || ''))
+            .filter(Boolean)
+    );
+    return { ownIds, ownNames };
+}
 
 function loadSelectedAccountIds() {
     try {
@@ -706,6 +736,18 @@ function setupEventListeners() {
         detailTransactionsState.sortKey = String(event?.target?.value || DETAIL_TRANSACTIONS_DEFAULT_SORT);
         updateDetailTransactionsView({ reset: true });
     });
+    document.getElementById('balanceDetailTransactionsToggle')?.addEventListener('click', () => {
+        setDetailTransactionsCollapsed(!detailModalState.transactionsCollapsed);
+    });
+    document.getElementById('balanceDetailList')?.addEventListener('click', (event) => {
+        const target = event.target.closest('[data-row-action-key]');
+        if (!target || !detailModalState.rowActionMap) return;
+        const actionKey = String(target.getAttribute('data-row-action-key') || '');
+        const handler = detailModalState.rowActionMap[actionKey];
+        if (typeof handler === 'function') {
+            handler();
+        }
+    });
     document.getElementById('adminLoadStatus')?.addEventListener('click', loadAdminStatus);
     document.getElementById('adminCheckEgressIp')?.addEventListener('click', checkAdminEgressIp);
     document.getElementById('adminSetWhitelistIp')?.addEventListener('click', setBunqWhitelistIp);
@@ -1003,7 +1045,7 @@ async function loadRealData() {
         const truncatedAccounts = new Map();
         
         const accountParam = buildAccountFilterParam();
-        const excludeParam = `&exclude_internal=${CONFIG.excludeInternalTransfers}`;
+        const excludeParam = '&exclude_internal=false';
         
         while (page <= hardPageCap) {
             const url = `${CONFIG.apiEndpoint}/transactions?days=${CONFIG.timeRange}&page=${page}&page_size=${pageSize}${accountParam}${excludeParam}`;
@@ -1233,7 +1275,7 @@ function collectDateRangeKeys(transactions) {
 
 function calculateBalanceMetrics(transactions, accounts, historyData = null) {
     const validAccounts = (accounts || [])
-        .filter((acc) => acc && acc.balance && typeof acc.balance.value !== 'undefined')
+        .filter((acc) => acc && acc.balance && typeof acc.balance.value !== 'undefined' && isOwnBunqAccount(acc))
         .map((acc) => ({
             ...acc,
             id: String(acc.id),
@@ -1432,22 +1474,24 @@ function applyClientFilters(data, options = {}) {
     let filtered = [...data];
     const excludeInternalTransfers = options.excludeInternalTransfers ?? CONFIG.excludeInternalTransfers;
     if (excludeInternalTransfers) {
-        const ownAccountNames = new Set(
-            (accountsList || [])
-                .map((account) => String(account?.description || account?.display_name || '').trim().toLocaleLowerCase('nl-NL'))
-                .filter(Boolean)
-        );
-        const normalizeText = (value) => String(value || '')
-            .trim()
-            .toLocaleLowerCase('nl-NL')
-            .replace(/\s+/g, ' ');
+        const { ownIds: ownAccountIds, ownNames: ownAccountNames } = getOwnBunqAccountIdentitySets();
         filtered = filtered.filter((transaction) => {
             if (transaction?.is_internal_transfer) return false;
+
+            if (ownAccountIds.size > 0) {
+                const counterpartyAccountId = transaction?.counterparty_account_id != null
+                    ? String(transaction.counterparty_account_id).trim()
+                    : '';
+                if (counterpartyAccountId && ownAccountIds.has(counterpartyAccountId)) {
+                    return false;
+                }
+            }
+
             if (ownAccountNames.size <= 0) return true;
 
             const counterpartyCandidates = [
-                normalizeText(transaction?.counterparty),
-                normalizeText(transaction?.merchant)
+                normalizePartyNameForMatch(transaction?.counterparty),
+                normalizePartyNameForMatch(transaction?.merchant)
             ].filter(Boolean);
             if (counterpartyCandidates.some((candidate) => ownAccountNames.has(candidate))) {
                 // Extra UI-side fallback for runtime variants where backend internal detection misses this transfer.
@@ -1926,7 +1970,9 @@ function showBalanceDetail(type) {
         investment: 'Beleggingen / Crypto'
     };
     const label = labels[type] || 'Rekeningen';
-    const accounts = [...(balanceMetrics.grouped[type] || [])].sort((a, b) => {
+    const accounts = [...(balanceMetrics.grouped[type] || [])]
+        .filter((account) => isOwnBunqAccount(account))
+        .sort((a, b) => {
         const aName = (a.description || `Account ${a.id}`).toLocaleLowerCase('nl-NL');
         const bName = (b.description || `Account ${b.id}`).toLocaleLowerCase('nl-NL');
         return aName.localeCompare(bName, 'nl-NL');
@@ -1936,14 +1982,7 @@ function showBalanceDetail(type) {
         ? ` (${balanceMetrics.missingFxCount} non-EUR rekening(en) zonder FX-rate)`
         : '';
 
-    const rows = accounts.length
-        ? accounts.map((acc) => ({
-            label: acc.description || `Account ${acc.id}`,
-            value: acc.balanceEurValue === null
-                ? `${formatCurrencyWithCode(acc.balanceValue, acc.balanceCurrency)} (niet omgerekend)`
-                : `${formatCurrency(acc.balanceEurValue)}${acc.balanceCurrency !== 'EUR' ? ` (${formatCurrencyWithCode(acc.balanceValue, acc.balanceCurrency)})` : ''}`
-        }))
-        : [{ label: 'Geen rekeningen beschikbaar.', value: '' }];
+    const rows = [];
 
     let chartConfig = null;
     if (accounts.length) {
@@ -1964,7 +2003,8 @@ function showBalanceDetail(type) {
                     ? `${formatCurrencyWithCode(acc.balanceValue, acc.balanceCurrency)}`
                     : formatCurrency(acc.balanceEurValue)
             )).reverse(),
-            textposition: 'auto',
+            textposition: 'outside',
+            texttemplate: '%{text}',
             cliponaxis: false,
             hovertemplate: '%{y}<br>%{x:.2f} EUR<extra></extra>'
         };
@@ -2008,6 +2048,7 @@ function getFilteredAndSortedDetailTransactionsRows() {
                 row.ownAccount,
                 row.counterparty,
                 row.description,
+                row.category,
                 row.amount
             ]
                 .map((value) => String(value || '').toLocaleLowerCase('nl-NL'))
@@ -2116,6 +2157,8 @@ function closeBalanceDetail() {
     const searchEl = document.getElementById('balanceDetailTransactionsSearch');
     const sortEl = document.getElementById('balanceDetailTransactionsSort');
 
+    detailModalState.rowActionMap = null;
+    detailModalState.transactionsCollapsed = false;
     resetDetailTransactionsState();
     if (bodyEl) bodyEl.innerHTML = '';
     if (metaEl) metaEl.textContent = '';
@@ -2134,7 +2177,34 @@ function closeBalanceDetail() {
     if (modal) modal.classList.remove('active');
 }
 
-function openDetailModal({ title, summary, rows, chart, transactionRows = null, transactionsTitle = '' }) {
+function setDetailTransactionsCollapsed(collapsed) {
+    const controlsEl = document.querySelector('#balanceDetailTransactionsSection .balance-detail-transactions-controls');
+    const tableWrapEl = document.querySelector('#balanceDetailTransactionsSection .balance-detail-transactions-table-wrap');
+    const footerEl = document.querySelector('#balanceDetailTransactionsSection .balance-detail-transactions-footer');
+    const toggleBtnEl = document.getElementById('balanceDetailTransactionsToggle');
+
+    detailModalState.transactionsCollapsed = Boolean(collapsed);
+    const display = detailModalState.transactionsCollapsed ? 'none' : '';
+    if (controlsEl) controlsEl.style.display = display;
+    if (tableWrapEl) tableWrapEl.style.display = display;
+    if (footerEl) footerEl.style.display = display;
+    if (toggleBtnEl) {
+        toggleBtnEl.textContent = detailModalState.transactionsCollapsed
+            ? 'Toon transacties'
+            : 'Verberg transacties';
+    }
+}
+
+function openDetailModal({
+    title,
+    summary,
+    rows,
+    chart,
+    transactionRows = null,
+    transactionsTitle = '',
+    rowActionMap = null,
+    transactionsCollapsedByDefault = false
+}) {
     const titleEl = document.getElementById('balanceDetailTitle');
     const summaryEl = document.getElementById('balanceDetailSummary');
     const listEl = document.getElementById('balanceDetailList');
@@ -2145,19 +2215,33 @@ function openDetailModal({ title, summary, rows, chart, transactionRows = null, 
     const transactionsMoreEl = document.getElementById('balanceDetailTransactionsMore');
     const transactionsSearchEl = document.getElementById('balanceDetailTransactionsSearch');
     const transactionsSortEl = document.getElementById('balanceDetailTransactionsSort');
+    const transactionsToggleEl = document.getElementById('balanceDetailTransactionsToggle');
     const modalEl = document.getElementById('balanceDetailModal');
     if (!titleEl || !summaryEl || !listEl || !chartEl || !modalEl) return;
 
     titleEl.innerHTML = title || '<i class="fas fa-chart-bar"></i> Detail';
     summaryEl.textContent = summary || '';
     const detailRows = Array.isArray(rows) ? rows : [];
+    detailModalState.rowActionMap = rowActionMap && typeof rowActionMap === 'object' ? rowActionMap : null;
     if (detailRows.length > 0) {
-        listEl.innerHTML = detailRows.map((row) => `
-            <div class="balance-detail-row">
-                <span class="balance-detail-row-name">${escapeHtml(row.label)}</span>
-                <span class="balance-detail-row-value">${escapeHtml(row.value)}</span>
-            </div>
-        `).join('');
+        listEl.innerHTML = detailRows.map((row) => {
+            const actionKey = String(row?.actionKey || '');
+            const isAction = Boolean(detailModalState.rowActionMap && actionKey && detailModalState.rowActionMap[actionKey]);
+            if (isAction) {
+                return `
+                    <button type="button" class="balance-detail-row balance-detail-row-action" data-row-action-key="${escapeHtml(actionKey)}">
+                        <span class="balance-detail-row-name">${escapeHtml(row.label)}</span>
+                        <span class="balance-detail-row-value">${escapeHtml(row.value)}</span>
+                    </button>
+                `;
+            }
+            return `
+                <div class="balance-detail-row">
+                    <span class="balance-detail-row-name">${escapeHtml(row.label)}</span>
+                    <span class="balance-detail-row-value">${escapeHtml(row.value)}</span>
+                </div>
+            `;
+        }).join('');
         listEl.style.display = 'grid';
     } else {
         listEl.innerHTML = '';
@@ -2187,10 +2271,16 @@ function openDetailModal({ title, summary, rows, chart, transactionRows = null, 
             transactionsSortEl.disabled = false;
             transactionsSortEl.value = DETAIL_TRANSACTIONS_DEFAULT_SORT;
         }
+        if (transactionsToggleEl) {
+            transactionsToggleEl.style.display = 'inline-flex';
+        }
         updateDetailTransactionsView({ reset: true });
+        setDetailTransactionsCollapsed(Boolean(transactionsCollapsedByDefault));
         transactionsSectionEl.style.display = 'block';
     } else if (transactionsSectionEl) {
         resetDetailTransactionsState();
+        detailModalState.rowActionMap = null;
+        detailModalState.transactionsCollapsed = false;
         if (transactionsTitleEl) transactionsTitleEl.textContent = 'Individuele transacties';
         if (transactionsMetaEl) transactionsMetaEl.textContent = '';
         if (transactionsMoreEl) {
@@ -2204,6 +2294,10 @@ function openDetailModal({ title, summary, rows, chart, transactionRows = null, 
         if (transactionsSortEl) {
             transactionsSortEl.disabled = true;
             transactionsSortEl.value = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+        }
+        if (transactionsToggleEl) {
+            transactionsToggleEl.style.display = 'none';
+            transactionsToggleEl.textContent = 'Toon transacties';
         }
         transactionsSectionEl.style.display = 'none';
     }
@@ -2240,6 +2334,7 @@ function buildTransactionTableRows(transactions, options = {}) {
                 ? transaction.description.trim()
                 : '-'
         );
+        const category = resolveCategoryLabel(transaction);
         const amountValue = Number(transaction.amount) || 0;
         return {
             date: hasValidDate ? txDate.toLocaleDateString('nl-NL') : '-',
@@ -2249,6 +2344,7 @@ function buildTransactionTableRows(transactions, options = {}) {
             ownAccount,
             counterparty,
             description,
+            category,
             amount: formatCurrency(amountValue),
             amountClass: amountValue >= 0 ? 'positive' : 'negative',
             _timestamp: hasValidDate ? txDate.getTime() : 0,
@@ -2268,10 +2364,49 @@ function buildDailySeries(transactions, pickValue) {
         .map(([date, value]) => ({ date: new Date(`${date}T00:00:00`), value }));
 }
 
+function normalizePartyNameForMatch(value) {
+    return String(value || '')
+        .trim()
+        .toLocaleLowerCase('nl-NL')
+        .replace(/\s+/g, ' ');
+}
+
+function getSavingsAccountSets() {
+    const savingsAccounts = (accountsList || []).filter((account) => classifyAccountType(account) === 'savings');
+    const savingsIds = new Set(savingsAccounts.map((account) => String(account.id)));
+    const savingsNames = new Set(
+        savingsAccounts
+            .map((account) => normalizePartyNameForMatch(account?.description || account?.display_name || ''))
+            .filter(Boolean)
+    );
+    return { savingsIds, savingsNames };
+}
+
+function isInternalSavingsToSavingsTransfer(transaction, savingsIds, savingsNames) {
+    if (!transaction?.is_internal_transfer) return false;
+
+    const sourceSavings = savingsIds.has(String(transaction?.account_id || ''));
+    const counterpartyAccountId = transaction?.counterparty_account_id != null
+        ? String(transaction.counterparty_account_id)
+        : '';
+    const targetSavingsById = counterpartyAccountId && savingsIds.has(counterpartyAccountId);
+
+    const counterpartyCandidates = [
+        normalizePartyNameForMatch(transaction?.counterparty),
+        normalizePartyNameForMatch(transaction?.merchant)
+    ].filter(Boolean);
+    const targetSavingsByName = counterpartyCandidates.some((candidate) => savingsNames.has(candidate));
+
+    return sourceSavings && (targetSavingsById || targetSavingsByName);
+}
+
 function showTransactionDetail(detailType) {
-    const transactions = detailType === 'savings-transfers'
-        ? getCurrentNormalizedTransactions({ excludeInternalTransfers: false })
-        : getCurrentNormalizedTransactions();
+    let transactions = getCurrentNormalizedTransactions();
+    if (detailType === 'savings-transfers') {
+        transactions = getCurrentNormalizedTransactions({ excludeInternalTransfers: false });
+        const { savingsIds, savingsNames } = getSavingsAccountSets();
+        transactions = transactions.filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsIds, savingsNames));
+    }
 
     if (!transactions.length) {
         openDetailModal({
@@ -2320,11 +2455,7 @@ function showTransactionDetail(detailType) {
     }
 
     if (detailType === 'savings-transfers') {
-        const savingsIds = new Set(
-            (accountsList || [])
-                .filter((account) => classifyAccountType(account) === 'savings')
-                .map((account) => String(account.id))
-        );
+        const { savingsIds } = getSavingsAccountSets();
         const subset = transactions.filter((transaction) => savingsIds.has(String(transaction.account_id)));
         const deposits = subset.filter((transaction) => transaction.amount > 0).reduce((sum, transaction) => sum + transaction.amount, 0);
         const withdrawals = Math.abs(subset.filter((transaction) => transaction.amount < 0).reduce((sum, transaction) => sum + transaction.amount, 0));
@@ -2563,6 +2694,71 @@ function showTransactionDetail(detailType) {
         return;
     }
 
+    if (detailType === 'cashflow') {
+        const daily = buildDailyTotals(transactions);
+        const incomeTotal = transactions
+            .filter((transaction) => (transaction.amount || 0) > 0)
+            .reduce((sum, transaction) => sum + (transaction.amount || 0), 0);
+        const expenseTotal = Math.abs(
+            transactions
+                .filter((transaction) => (transaction.amount || 0) < 0)
+                .reduce((sum, transaction) => sum + (transaction.amount || 0), 0)
+        );
+        const netTotal = incomeTotal - expenseTotal;
+        const transactionRows = buildTransactionTableRows(transactions);
+
+        const traces = [
+            {
+                x: daily.map((point) => point.date),
+                y: daily.map((point) => point.net),
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Netto',
+                line: { color: '#8b5cf6', width: 3 },
+                fill: 'tozeroy',
+                fillcolor: 'rgba(139, 92, 246, 0.15)',
+                hovertemplate: '%{x|%d-%m-%Y}<br>Netto: %{y:.2f} EUR<extra></extra>'
+            },
+            {
+                x: daily.map((point) => point.date),
+                y: daily.map((point) => point.income),
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Inkomsten',
+                line: { color: '#22c55e', width: 2 },
+                hovertemplate: '%{x|%d-%m-%Y}<br>Inkomsten: %{y:.2f} EUR<extra></extra>'
+            },
+            {
+                x: daily.map((point) => point.date),
+                y: daily.map((point) => -point.expenses),
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Uitgaven',
+                line: { color: '#ef4444', width: 2 },
+                hovertemplate: '%{x|%d-%m-%Y}<br>Uitgaven: %{y:.2f} EUR<extra></extra>'
+            }
+        ];
+        const layout = {
+            margin: { t: 20, r: 20, l: 40, b: 40 },
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { color: '#cbd5f5' },
+            xaxis: { showgrid: false },
+            yaxis: { zeroline: true, gridcolor: 'rgba(255,255,255,0.05)' },
+            legend: { orientation: 'h', y: -0.2 }
+        };
+
+        openDetailModal({
+            title: '<i class="fas fa-chart-line"></i> Cashflow (tijdslijn)',
+            summary: `${transactions.length} transacties · inkomsten ${formatCurrency(incomeTotal)} · uitgaven ${formatCurrency(expenseTotal)} · netto ${formatCurrency(netTotal)}`,
+            rows: [],
+            chart: { trace: traces, layout },
+            transactionRows,
+            transactionsTitle: `Alle bij- en afschrijvingen (${transactionRows.length})`
+        });
+        return;
+    }
+
     if (detailType === 'money-flow') {
         const flowByCategory = new Map();
         transactions.forEach((transaction) => {
@@ -2583,7 +2779,39 @@ function showTransactionDetail(detailType) {
                 net: values.income - values.expense
             }))
             .sort((a, b) => (b.expense + b.income) - (a.expense + a.income));
-        const transactionRows = buildTransactionTableRows(transactions);
+        const transactionRowsAll = buildTransactionTableRows(transactions);
+        const rowActionMap = {
+            __all__: () => {
+                detailTransactionsState.rows = transactionRowsAll;
+                detailTransactionsState.query = '';
+                detailTransactionsState.sortKey = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+                const titleEl = document.getElementById('balanceDetailTransactionsTitle');
+                if (titleEl) titleEl.textContent = `Alle transacties in periode (${transactionRowsAll.length})`;
+                const searchEl = document.getElementById('balanceDetailTransactionsSearch');
+                if (searchEl) searchEl.value = '';
+                const sortEl = document.getElementById('balanceDetailTransactionsSort');
+                if (sortEl) sortEl.value = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+                updateDetailTransactionsView({ reset: true });
+                setDetailTransactionsCollapsed(false);
+            }
+        };
+        rows.forEach((row) => {
+            const key = `cat:${row.category}`;
+            rowActionMap[key] = () => {
+                const scoped = transactionRowsAll.filter((tx) => String(tx.category || '') === String(row.category || ''));
+                detailTransactionsState.rows = scoped;
+                detailTransactionsState.query = '';
+                detailTransactionsState.sortKey = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+                const titleEl = document.getElementById('balanceDetailTransactionsTitle');
+                if (titleEl) titleEl.textContent = `Transacties categorie: ${row.category} (${scoped.length})`;
+                const searchEl = document.getElementById('balanceDetailTransactionsSearch');
+                if (searchEl) searchEl.value = '';
+                const sortEl = document.getElementById('balanceDetailTransactionsSort');
+                if (sortEl) sortEl.value = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+                updateDetailTransactionsView({ reset: true });
+                setDetailTransactionsCollapsed(false);
+            };
+        });
 
         const trace = {
             type: 'bar',
@@ -2602,15 +2830,25 @@ function showTransactionDetail(detailType) {
         };
 
         openDetailModal({
-            title: '<i class="fas fa-project-diagram"></i> Money Flow detail',
+            title: '<i class="fas fa-project-diagram"></i> Geldstromen detail',
             summary: `Categorieën: ${rows.length}`,
-            rows: rows.map((row) => ({
-                label: `${row.category} · In ${formatCurrency(row.income)} · Uit ${formatCurrency(row.expense)}`,
-                value: `Net ${formatCurrency(row.net)}`
-            })),
+            rows: [
+                {
+                    label: 'Alle transacties in de periode',
+                    value: `${transactionRowsAll.length} transacties`,
+                    actionKey: '__all__'
+                },
+                ...rows.map((row) => ({
+                    label: `${row.category} · In ${formatCurrency(row.income)} · Uit ${formatCurrency(row.expense)}`,
+                    value: `Net ${formatCurrency(row.net)}`,
+                    actionKey: `cat:${row.category}`
+                }))
+            ],
             chart: { trace, layout },
-            transactionRows,
-            transactionsTitle: `Alle transacties in periode (${transactionRows.length})`
+            transactionRows: transactionRowsAll,
+            transactionsTitle: `Alle transacties in periode (${transactionRowsAll.length})`,
+            rowActionMap,
+            transactionsCollapsedByDefault: true
         });
         return;
     }
@@ -3550,26 +3788,54 @@ function renderRidgePlot(data) {
     });
 }
 
-function buildMonthlyCategoryTotals(data) {
-    const byMonth = {};
-    data.forEach(t => {
-        if (t.amount >= 0) return;
-        const month = `${t.date.getFullYear()}-${String(t.date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = {};
-        byMonth[month][t.category] = (byMonth[month][t.category] || 0) + Math.abs(t.amount);
-    });
-    
-    const months = Object.keys(byMonth).sort();
+function buildDailyCategoryTotals(data) {
+    const expenses = (data || []).filter((transaction) => (
+        (transaction.amount || 0) < 0
+        && transaction.date instanceof Date
+        && !Number.isNaN(transaction.date.getTime())
+    ));
+    if (!expenses.length) {
+        return { frames: [], categories: [], byFrame: {} };
+    }
+
+    const byDayDelta = {};
     const categories = new Set();
-    months.forEach(m => Object.keys(byMonth[m]).forEach(c => categories.add(c)));
-    
-    return { months, categories: Array.from(categories), byMonth };
+    let minDate = null;
+    let maxDate = null;
+
+    expenses.forEach((transaction) => {
+        const dateKey = toDateKey(transaction.date);
+        const category = transaction.category || 'Overig';
+        const amount = Math.abs(Number(transaction.amount) || 0);
+        if (!byDayDelta[dateKey]) byDayDelta[dateKey] = {};
+        byDayDelta[dateKey][category] = (byDayDelta[dateKey][category] || 0) + amount;
+        categories.add(category);
+
+        const dayStart = new Date(`${dateKey}T00:00:00`);
+        if (!minDate || dayStart < minDate) minDate = dayStart;
+        if (!maxDate || dayStart > maxDate) maxDate = dayStart;
+    });
+
+    const frames = [];
+    const byFrame = {};
+    const runningTotals = {};
+    for (let d = new Date(minDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
+        const frameKey = toDateKey(d);
+        const deltas = byDayDelta[frameKey] || {};
+        Object.entries(deltas).forEach(([category, value]) => {
+            runningTotals[category] = (runningTotals[category] || 0) + value;
+        });
+        frames.push(frameKey);
+        byFrame[frameKey] = { ...runningTotals };
+    }
+
+    return { frames, categories: Array.from(categories), byFrame };
 }
 
-function updateRacingChart(monthIndex) {
-    if (!racingData || !racingData.months.length) return;
-    const month = racingData.months[monthIndex];
-    const totals = racingData.byMonth[month] || {};
+function updateRacingChart(frameIndex) {
+    if (!racingData || !racingData.frames.length) return;
+    const frameKey = racingData.frames[frameIndex];
+    const totals = racingData.byFrame[frameKey] || {};
     const items = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 12);
     const labels = items.map(([cat]) => cat);
     const values = items.map(([, value]) => value);
@@ -3598,20 +3864,27 @@ function updateRacingChart(monthIndex) {
     Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
     
     const raceMonth = document.getElementById('raceMonth');
-    if (raceMonth) raceMonth.textContent = month;
+    if (raceMonth) {
+        const frameDate = new Date(`${frameKey}T00:00:00`);
+        raceMonth.textContent = frameDate.toLocaleDateString('nl-NL', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+        });
+    }
 }
 
 function renderRacingChart(data) {
     const slider = document.getElementById('raceSlider');
-    racingData = buildMonthlyCategoryTotals(data);
-    if (!racingData.months.length) return;
+    racingData = buildDailyCategoryTotals(data);
+    if (!racingData.frames.length) return;
     
     if (slider) {
-        slider.max = racingData.months.length - 1;
-        slider.value = racingData.months.length - 1;
+        slider.max = racingData.frames.length - 1;
+        slider.value = racingData.frames.length - 1;
     }
     
-    updateRacingChart(racingData.months.length - 1);
+    updateRacingChart(racingData.frames.length - 1);
 }
 
 const ESSENTIAL_CATEGORIES = new Set([
@@ -5038,7 +5311,7 @@ function initializeParticles() {
 function playRacingAnimation() {
     const slider = document.getElementById('raceSlider');
     const button = document.getElementById('playRace');
-    if (!slider || !racingData) return;
+    if (!slider || !racingData || !racingData.frames || racingData.frames.length <= 0) return;
     
     if (racingPlayInterval) {
         clearInterval(racingPlayInterval);
@@ -5046,19 +5319,27 @@ function playRacingAnimation() {
         button?.classList.remove('active');
         return;
     }
+
+    let current = parseInt(slider.value, 10);
+    const maxFrame = parseInt(slider.max, 10);
+    if (current >= maxFrame) {
+        current = 0;
+        slider.value = '0';
+        updateRacingChart(0);
+    }
     
     button?.classList.add('active');
     racingPlayInterval = setInterval(() => {
-        let current = parseInt(slider.value, 10);
-        if (current >= parseInt(slider.max, 10)) {
+        const currentFrame = parseInt(slider.value, 10);
+        if (currentFrame >= maxFrame) {
             clearInterval(racingPlayInterval);
             racingPlayInterval = null;
             button?.classList.remove('active');
             return;
         }
-        slider.value = current + 1;
-        updateRacingChart(current + 1);
-    }, 700);
+        slider.value = String(currentFrame + 1);
+        updateRacingChart(currentFrame + 1);
+    }, Math.round(1000 / RACING_ANIMATION_FPS));
 }
 
 console.log('✅ Bunq Dashboard Ready (Session Auth - No localStorage credentials)!');

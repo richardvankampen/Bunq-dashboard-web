@@ -3056,6 +3056,8 @@ def extract_own_ibans(accounts):
     """Extract own IBANs from Bunq accounts for internal transfer detection."""
     ibans = set()
     for account in accounts:
+        if not is_own_bunq_account(account):
+            continue
         aliases = getattr(account, 'alias', None) or []
         for alias in aliases:
             alias_iban = extract_alias_iban(alias)
@@ -3069,10 +3071,26 @@ def normalize_party_name(value):
         return ''
     return re.sub(r'\s+', ' ', str(value)).strip().casefold()
 
+def is_own_bunq_account(account):
+    """
+    Internal transfer detection should only treat Bunq-owned monetary accounts
+    as internal. Linked external accounts (e.g. Triodos) must remain external.
+    """
+    class_name = _normalize_account_type_text(
+        get_obj_field(account, '_raw_type', default=(account.__class__.__name__ if account is not None else ''))
+    )
+    if not class_name:
+        return True
+    if 'monetaryaccountexternal' in class_name and 'externalsavings' not in class_name:
+        return False
+    return True
+
 def extract_own_account_names(accounts):
     """Extract own account and alias names for internal transfer detection fallback."""
     names = set()
     for account in accounts:
+        if not is_own_bunq_account(account):
+            continue
         primary_name = get_obj_field(account, 'description', 'display_name', 'name')
         primary_name_normalized = normalize_party_name(primary_name)
         if primary_name_normalized:
@@ -3090,6 +3108,8 @@ def extract_own_account_ids(accounts):
     """Extract own monetary-account ids for deterministic internal transfer matching."""
     ids = set()
     for account in accounts:
+        if not is_own_bunq_account(account):
+            continue
         account_id = get_obj_field(account, 'id_', 'id')
         if account_id is not None:
             ids.add(str(account_id))
@@ -5225,6 +5245,8 @@ def get_account_transactions(
             'fx_converted': fx_converted,
             'description': description,
             'counterparty': counterparty_name,
+            'counterparty_account_id': counterparty_account_id,
+            'counterparty_iban': counterparty_iban,
             'merchant': merchant_label,
             'category': category,
             'type': get_obj_field(payment, 'type_', 'type'),

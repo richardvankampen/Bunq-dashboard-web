@@ -6,6 +6,34 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Categorie-race verbeterd:
+  - widgettitel hernoemd van `Category Race Over Time` naar `Categorie-race`.
+  - race-opbouw omgezet van maandframes naar dagframes (cumulatieve uitgaven per categorie).
+  - afspeelsnelheid ingesteld op 10 fps (`RACING_ANIMATION_FPS`), waardoor een periode van ~90 dagen ~9 seconden animatie geeft.
+  - frame-label naast slider toont nu datum i.p.v. maand.
+- Kleine widgets rond de race-sectie vertaald en voorzien van hover-uitleg:
+  - `Day Pattern` -> `Dagpatroon`
+  - `Monthly Distribution` -> `Maandverdeling`
+  - `Top Merchants` -> `Top tegenrekeningen`
+  - korte tooltip-uitleg toegevoegd op titel (`title`).
+- Insights-sectie ook naar Nederlands gebracht met tooltip-uitleg:
+  - o.a. `Recurring Costs` -> `Terugkerende kosten`
+  - `Next Best Action` -> `Volgende beste actie`
+  - daarnaast ook overige insighttitels vertaald (incl. `Datakwaliteit`, `Verwacht netto per maand`, `Aandeel top-tegenrekening`).
+
+- Tweede feedbackronde voor widgets/detailviews doorgevoerd:
+  - KPI-labels hernoemd naar `Inkomsten`, `Uitgaven`, `Sparen`.
+  - visualisatiekoppen hernoemd naar `Cashflow (tijdslijn)`, `Geldstromen`, `Verdeling in categorieën`.
+  - download-icoon verwijderd van `Cashflow (tijdslijn)`; detailview toegevoegd via actieknop.
+  - nieuwe `cashflow` second-view toont individuele bij-/afschrijvingen met dezelfde sorteer/zoektabel.
+- Internal-transfer filtering verder gecorrigeerd voor externe rekeningen:
+  - backend detectie behandelt alleen eigen Bunq-rekeningen als intern; `MonetaryAccountExternal` (zoals Triodos) wordt expliciet extern gehouden.
+  - frontend fallback filter gebruikt nu ook `counterparty_account_id` naast naammatching.
+  - gevolg: interne overboekingen worden consistenter weggefilterd bij uitgaven/inkomsten, terwijl Triodos-transacties extern blijven.
+- Balansweergave opgeschoond:
+  - `Betaalrekeningen (totaal)`/`Spaarrekeningen (totaal)` detail blijft grafiek-only (geen dubbele tekstopsomming).
+  - berekening voor balans-KPI’s gebruikt alleen eigen Bunq-rekeningen (Triodos buiten de Bunq checking/savings widgets).
+
 - Frontend second-view feedback verwerkt:
   - dubbele oude individuele opsomming verwijderd in detailmodals waar de nieuwe transactietabel actief is (inkomsten/uitgaven/spaarmutaties).
   - transactietabel uitgebreid met extra velden:

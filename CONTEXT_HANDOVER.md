@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL)
 
 ## Canonieke status
 
@@ -36,6 +36,7 @@ Dit bestand is de actuele bron voor overdracht.
   - `Inkomsten`
   - `Uitgaven`
   - `Spaarrekening mutaties`
+  - `Cashflow (tijdslijn)`
   - `Needs vs Wants`
   - `Merchant concentration`
   - `Expense momentum` (laatste 30 dagen)
@@ -52,13 +53,41 @@ Dit bestand is de actuele bron voor overdracht.
   - modal rendert transacties in batches (`Toon meer`) i.p.v. alles in 1 keer om UI-lag bij grote periodes te beperken.
   - client-side zoekveld toegevoegd (eigen rekening, merchant/tegenrekening, omschrijving, datum, bedrag).
   - client-side sortering toegevoegd (datum, bedrag, naam).
+  - `Money Flow` detail ondersteunt klikbare categorie-rijen met gefilterde transactietabel en standaard ingeklapte sectie `Alle transacties in de periode`.
 
 ## Internal transfer filtering (actueel)
 
 - `exclude_internal=true` filtering is aangescherpt:
-  - backend markeert internal transfers lijst-gebaseerd op eigen account-id/IBAN/naam (afgeleid uit de volledige opgehaalde rekeninglijst).
+  - backend markeert internal transfers lijst-gebaseerd op eigen account-id/IBAN/naam (afgeleid uit de volledige opgehaalde Bunq-rekeninglijst).
+  - linked external accounts (zoals Triodos `MonetaryAccountExternal`) tellen expliciet niet als intern; Bunq `ExternalSavings` blijft wel intern.
   - deze detectie wordt toegepast in zowel `/api/transactions` als `/api/statistics`.
-  - frontend bevat extra fallback-filtering op tegenrekening/merchant-naam vs eigen rekeningnamen wanneer backend-flagging in een runtimevariant onvolledig is.
+  - frontend bevat extra fallback-filtering op tegenrekening-account-id en tegenrekening/merchant-naam vs eigen Bunq-rekeningen wanneer backend-flagging in een runtimevariant onvolledig is.
+  - balanswidgets voor betaal/spaar gebruiken nu alleen eigen Bunq-rekeningen (Triodos valt buiten `Betaalrekeningen (totaal)`).
+
+## Widgetteksten (actueel)
+
+- KPI labels:
+  - `Inkomsten`
+  - `Uitgaven`
+  - `Sparen`
+- Visualisatie labels:
+  - `Cashflow (tijdslijn)`
+  - `Geldstromen`
+  - `Verdeling in categorieën`
+- Kleine widgets onder de race-sectie zijn vertaald:
+  - `Dagpatroon`
+  - `Top tegenrekeningen`
+  - `Maandverdeling`
+- Bovenstaande widgettitels hebben korte hover-uitleg (native tooltip via `title`).
+- Insights-kaarten (o.a. `Terugkerende kosten`, `Volgende beste actie`, `Datakwaliteit`) zijn ook vertaald naar Nederlands en voorzien van korte hover-uitleg.
+- Op `Cashflow (tijdslijn)` is de downloadknop verwijderd; detailview opent via de detailactieknop.
+
+## Categorie-race (actueel)
+
+- Widgetnaam is `Categorie-race`.
+- Raceframes zijn nu dag-gebaseerd (i.p.v. maand-gebaseerd), met cumulatieve uitgaven per categorie per dag.
+- Playback draait op `10 fps` (`RACING_ANIMATION_FPS=10`), zodat ~90 dagen ongeveer 9 seconden animatie geven.
+- Slider/label tonen dagframes (datum) in plaats van maandlabels.
 
 ## Savings-incident status
 
