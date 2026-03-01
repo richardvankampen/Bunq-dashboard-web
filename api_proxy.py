@@ -1258,10 +1258,18 @@ def list_monetary_accounts():
     if not candidates:
         raise RuntimeError('bunq-sdk missing monetary account endpoint')
 
+    canonical_unified_endpoints = {
+        candidate
+        for candidate in (
+            getattr(endpoint, 'MonetaryAccountApiObject', None),
+            getattr(endpoint, 'MonetaryAccount', None),
+        )
+        if candidate is not None
+    }
+
     merged_accounts = []
     seen_account_ids = set()
     last_exc = None
-    saw_endpoint_failure = False
     discovered_user_ids = None
     for name, account_endpoint, candidate_modes in candidates:
         endpoint_succeeded = False
@@ -1276,6 +1284,7 @@ def list_monetary_accounts():
 
             mode_succeeded = False
             mode_accounts_added = 0
+            mode_signature_error = False
             for mode_user_id in mode_user_ids:
                 try:
                     result = _call_monetary_account_list(account_endpoint, mode_user_id, mode)
@@ -1300,14 +1309,17 @@ def list_monetary_accounts():
                     mode_succeeded = True
                 except TypeError as exc:
                     last_exc = exc
+                    mode_signature_error = True
                     mode_succeeded = False
                     mode_accounts_added = 0
                     break
                 except Exception as exc:
                     last_exc = exc
-                    saw_endpoint_failure = True
                     logger.warning(f"⚠️ Bunq endpoint {name} ({mode}) failed: {exc}")
                     continue
+
+            if mode_signature_error:
+                continue
 
             if mode_succeeded:
                 if _MONETARY_ACCOUNT_ENDPOINT is not account_endpoint or _MONETARY_ACCOUNT_LIST_MODE != mode:
@@ -1320,10 +1332,20 @@ def list_monetary_accounts():
         if not endpoint_succeeded:
             continue
 
+        # If the canonical unified endpoint returned savings already, extra
+        # subtype calls are usually redundant and only add latency.
+        if account_endpoint in canonical_unified_endpoints:
+            has_savings_after_unified = any(
+                classify_account_type(account) == 'savings'
+                for account in merged_accounts
+            )
+            if has_savings_after_unified:
+                break
+
     # SDK parsing can fail on savings variants in some SDK/runtime combinations.
-    # If sdk results miss savings or any endpoint failed, merge minimal raw fallback.
+    # Only merge raw fallback when savings are missing from sdk results.
     has_savings = any(classify_account_type(account) == 'savings' for account in merged_accounts)
-    if merged_accounts and (saw_endpoint_failure or not has_savings):
+    if merged_accounts and not has_savings:
         if discovered_user_ids is None:
             discovered_user_ids = discover_bunq_user_ids()
         for user_id in (discovered_user_ids or []):
@@ -2786,17 +2808,26 @@ def make_cache_key(prefix):
 
 def parse_pagination():
     """Parse pagination parameters from query string."""
+    def _safe_int_arg(name, default):
+        raw_value = request.args.get(name)
+        if raw_value is None:
+            return default
+        try:
+            return int(str(raw_value).strip())
+        except (TypeError, ValueError):
+            return default
+
     if 'limit' in request.args or 'offset' in request.args:
-        limit = min(int(request.args.get('limit', DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
-        offset = max(int(request.args.get('offset', 0)), 0)
+        limit = min(max(_safe_int_arg('limit', DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE)
+        offset = max(_safe_int_arg('offset', 0), 0)
         page = offset // limit + 1 if limit > 0 else 1
     else:
-        page = max(int(request.args.get('page', 1)), 1)
-        page_size = min(int(request.args.get('page_size', DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
+        page = max(_safe_int_arg('page', 1), 1)
+        page_size = min(max(_safe_int_arg('page_size', DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE)
         limit = page_size
         offset = (page - 1) * page_size
     
-    sort = request.args.get('sort', 'desc').lower()
+    sort = str(request.args.get('sort', 'desc')).lower()
     if sort not in ('asc', 'desc'):
         sort = 'desc'
     

@@ -38,6 +38,7 @@ Bronleidraad: officiële Bunq SDK/API documentatie.
 - `MonetaryAccountApiObject` / `MonetaryAccount`
 - `MonetaryAccountSavingsApiObject` / `MonetaryAccountSavings`
 - `MonetaryAccountExternalSavingsApiObject` / `MonetaryAccountExternalSavings`
+- efficiëntie-optimalisatie: als het canonieke unified endpoint al savings bevat, stopt verdere subtype-probing vroegtijdig.
 
 2. Minimalistische raw fallback (alleen bij SDK parse issues):
 - uitsluitend gedocumenteerde user-routes:
@@ -48,10 +49,14 @@ Bronleidraad: officiële Bunq SDK/API documentatie.
   - `{'status': 'ACTIVE', 'count': <page_size>}`
   - `{'count': <page_size>}`
 - brede route-matrix/probe-combinaties zijn verwijderd.
+- raw fallback merge draait nu alleen wanneer SDK-resultaat geen savings bevat.
 
 3. Raw payload extractor:
 - ondersteunt nu `BunqResponseRaw` accessors (`get_*`) en private `__dict__` payloadvelden.
 - ondersteunt `Response[]` én single-object payloads plus nested `value/data/result`.
+
+4. API robustness:
+- `parse_pagination()` is gehard tegen ongeldige/negatieve querywaarden en voorkomt 500s door `int(...)` parsefouten.
 
 ## Deploystrategie op Synology
 

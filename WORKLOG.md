@@ -12,6 +12,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - `MonetaryAccountSavings(ApiObject)`
     - `MonetaryAccountExternalSavings(ApiObject)`
   - brede endpoint-discovery/probe-logica voor monetary accounts verwijderd.
+- Kritische correctness/performance fixes in `api_proxy.py`:
+  - `parse_pagination()` is nu robuust tegen ongeldige/negatieve querywaarden (`limit/page/page_size/offset`) en voorkomt 500s op `int(...)` parsefouten.
+  - `list_monetary_accounts()` stopt nu eerder wanneer het canonieke unified endpoint al savings bevat (minder onnodige endpoint-calls).
+  - raw savings fallback wordt nu alleen nog gestart als SDK-resultaat daadwerkelijk geen savings bevat (niet meer bij elke partiële endpoint-fout).
+  - mode-fallback in `list_monetary_accounts()` is explicieter gemaakt (`mode_signature_error`) voor leesbaarheid en onderhoudbaarheid.
 - Raw fallback sterk vereenvoudigd:
   - routeplan teruggebracht naar alleen gedocumenteerde `/user/{id}/monetary-account*` routes.
   - context-scoped en niet-gedocumenteerde route-varianten verwijderd.
