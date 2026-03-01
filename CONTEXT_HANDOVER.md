@@ -68,6 +68,10 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
     - traversal-diepte verhoogd van 2 naar 3 om interne SDK context-objecten te bereiken.
   - Nieuwe fallback-laag toegevoegd:
     - SDK HTTP client wordt nu ook direct geconstrueerd vanuit `ApiContext` via bekende SDK-klassen/factories (`bunq.sdk.http.api_client*`) met signature-gebaseerde argumentmapping.
+  - Runtime-observatie + fix:
+    - client-resolutie werkt nu (`Resolved Bunq HTTP client via bunq.sdk.http.api_client.ApiClient.__init__`),
+    - maar `ApiClient.get(...)` verwacht verplichte `params` en `custom_headers`.
+    - `_call_api_client_get(...)` ondersteunt nu expliciet Bunq `get/request/execute` signaturen met verplichte positional args en lege `custom_headers`.
 
 Status: incident nog open; volgende validatie richt zich op:
 - of `count`-param direct extra accounts (incl. savings) teruggeeft;

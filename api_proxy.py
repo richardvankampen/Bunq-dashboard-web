@@ -359,11 +359,21 @@ def _extract_json_payload(candidate):
     return None
 
 def _call_api_client_get(api_client, path, params=None):
+    params_payload = params if isinstance(params, dict) else ({} if params is None else params)
+    headers_empty = {}
     calls = []
     get_fn = getattr(api_client, 'get', None)
     if callable(get_fn):
         calls.extend((
+            # Bunq ApiClient.get(uri, params, custom_headers) variants.
+            lambda: get_fn(path, params_payload, headers_empty),
+            lambda: get_fn(path, params_payload, None),
+            lambda: get_fn(path, params_payload),
+            lambda: get_fn(path, params_payload, headers_empty, None),
+            lambda: get_fn(path, params_payload, headers_empty, False),
             lambda: get_fn(path, params=params),
+            lambda: get_fn(path, params=params_payload, custom_headers=headers_empty),
+            lambda: get_fn(path, params=params_payload, custom_headers=None),
             lambda: get_fn(path, params),
             lambda: get_fn(path, params, None),
             lambda: get_fn(path),
@@ -372,7 +382,11 @@ def _call_api_client_get(api_client, path, params=None):
     request_fn = getattr(api_client, 'request', None)
     if callable(request_fn):
         calls.extend((
+            lambda: request_fn('GET', path, params_payload, headers_empty),
+            lambda: request_fn('GET', path, params_payload, None),
+            lambda: request_fn('GET', path, params_payload),
             lambda: request_fn('GET', path, params=params),
+            lambda: request_fn('GET', path, params=params_payload, custom_headers=headers_empty),
             lambda: request_fn('GET', path, params),
             lambda: request_fn(path, 'GET', params=params),
             lambda: request_fn(path, 'GET', params),
@@ -382,6 +396,9 @@ def _call_api_client_get(api_client, path, params=None):
     execute_fn = getattr(api_client, 'execute', None)
     if callable(execute_fn):
         calls.extend((
+            lambda: execute_fn('GET', path, params_payload, headers_empty),
+            lambda: execute_fn('GET', path, params_payload, None),
+            lambda: execute_fn('GET', path, params_payload),
             lambda: execute_fn('GET', path, params=params),
             lambda: execute_fn('GET', path, params),
             lambda: execute_fn('GET', path),

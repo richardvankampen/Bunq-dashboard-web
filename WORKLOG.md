@@ -16,6 +16,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `AGENTS.md` (vaste startup-instructies voor nieuwe sessies)
 - Operationele les vastgelegd:
   - Als install/update als normale user wordt gedraaid, kan deploy op compose-defaults terugvallen (`*.jouwdomein.nl`) ondanks correcte `.env`, met Vaultwarden `ENOTFOUND` en demo mode als gevolg.
+- Savings-debug vervolg:
+  - raw fallback resolveert nu daadwerkelijk een SDK client (`ApiClient.__init__`), maar call-signatuur mismatch vastgesteld:
+    - `ApiClient.get() missing 2 required positional arguments: 'params' and 'custom_headers'`.
+  - `_call_api_client_get(...)` uitgebreid met Bunq-compatibele `get/request/execute` callvarianten met verplichte positional args en lege headers.
 
 ## 2026-02-28
 
