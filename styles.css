@@ -1378,6 +1378,131 @@ body.reduce-animations .play-btn:hover {
     font-variant-numeric: tabular-nums;
 }
 
+.balance-detail-transactions-section {
+    margin-top: var(--spacing-lg);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--glass-border);
+}
+
+.balance-detail-transactions-title {
+    margin: 0 0 var(--spacing-sm);
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.balance-detail-transactions-controls {
+    margin-bottom: var(--spacing-sm);
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto;
+    gap: var(--spacing-sm);
+}
+
+.balance-detail-transactions-search,
+.balance-detail-transactions-sort {
+    border: 1px solid var(--glass-border);
+    background: rgba(15, 23, 42, 0.35);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    font-size: 0.86rem;
+}
+
+.balance-detail-transactions-search::placeholder {
+    color: var(--text-muted);
+}
+
+.balance-detail-transactions-search:disabled,
+.balance-detail-transactions-sort:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.balance-detail-transactions-table-wrap {
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    overflow: auto;
+    background: rgba(15, 23, 42, 0.22);
+}
+
+.balance-detail-transactions-table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: collapse;
+}
+
+.balance-detail-transactions-table th,
+.balance-detail-transactions-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    font-size: 0.88rem;
+    vertical-align: top;
+}
+
+.balance-detail-transactions-table th {
+    position: sticky;
+    top: 0;
+    background: rgba(15, 23, 42, 0.88);
+    color: var(--text-secondary);
+    text-align: left;
+    z-index: 1;
+}
+
+.balance-detail-transactions-table td {
+    color: var(--text-primary);
+}
+
+.balance-detail-transactions-table td.amount {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.balance-detail-transactions-table td.amount.positive {
+    color: #22c55e;
+}
+
+.balance-detail-transactions-table td.amount.negative {
+    color: #f87171;
+}
+
+.balance-detail-transactions-empty {
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.balance-detail-transactions-footer {
+    margin-top: var(--spacing-sm);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+}
+
+.balance-detail-transactions-meta {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.balance-detail-transactions-more {
+    border: 1px solid var(--glass-border);
+    background: rgba(59, 130, 246, 0.14);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+
+.balance-detail-transactions-more:hover {
+    background: rgba(59, 130, 246, 0.24);
+}
+
+.balance-detail-transactions-more:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .btn-primary {
     width: 100%;
     padding: var(--spacing-md);
@@ -1464,6 +1589,19 @@ body.reduce-animations .play-btn:hover {
     .admin-status-row {
         grid-template-columns: 1fr;
         gap: 0.2rem;
+    }
+
+    .balance-detail-transactions-table {
+        min-width: 500px;
+    }
+
+    .balance-detail-transactions-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .balance-detail-transactions-footer {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }
 

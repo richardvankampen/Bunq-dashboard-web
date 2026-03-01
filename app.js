@@ -47,6 +47,15 @@ const chartRegistry = {
 };
 let racingData = null;
 let racingPlayInterval = null;
+const DETAIL_TRANSACTIONS_PAGE_SIZE = 200;
+const DETAIL_TRANSACTIONS_DEFAULT_SORT = 'date_desc';
+const detailTransactionsState = {
+    rows: [],
+    filteredRows: [],
+    renderedCount: 0,
+    query: '',
+    sortKey: DETAIL_TRANSACTIONS_DEFAULT_SORT
+};
 
 function loadSelectedAccountIds() {
     try {
@@ -686,6 +695,17 @@ function setupEventListeners() {
     document.getElementById('closeSettings')?.addEventListener('click', closeSettings);
     document.getElementById('saveSettings')?.addEventListener('click', saveSettings);
     document.getElementById('closeBalanceDetail')?.addEventListener('click', closeBalanceDetail);
+    document.getElementById('balanceDetailTransactionsMore')?.addEventListener('click', () => {
+        renderMoreDetailTransactions();
+    });
+    document.getElementById('balanceDetailTransactionsSearch')?.addEventListener('input', (event) => {
+        detailTransactionsState.query = String(event?.target?.value || '').trim();
+        updateDetailTransactionsView({ reset: true });
+    });
+    document.getElementById('balanceDetailTransactionsSort')?.addEventListener('change', (event) => {
+        detailTransactionsState.sortKey = String(event?.target?.value || DETAIL_TRANSACTIONS_DEFAULT_SORT);
+        updateDetailTransactionsView({ reset: true });
+    });
     document.getElementById('adminLoadStatus')?.addEventListener('click', loadAdminStatus);
     document.getElementById('adminCheckEgressIp')?.addEventListener('click', checkAdminEgressIp);
     document.getElementById('adminSetWhitelistIp')?.addEventListener('click', setBunqWhitelistIp);
@@ -1945,16 +1965,160 @@ function showBalanceDetail(type) {
     });
 }
 
+function resetDetailTransactionsState() {
+    detailTransactionsState.rows = [];
+    detailTransactionsState.filteredRows = [];
+    detailTransactionsState.renderedCount = 0;
+    detailTransactionsState.query = '';
+    detailTransactionsState.sortKey = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+}
+
+function getFilteredAndSortedDetailTransactionsRows() {
+    const query = String(detailTransactionsState.query || '').trim().toLocaleLowerCase('nl-NL');
+    const sortKey = String(detailTransactionsState.sortKey || DETAIL_TRANSACTIONS_DEFAULT_SORT);
+    let rows = [...detailTransactionsState.rows];
+
+    if (query) {
+        rows = rows.filter((row) => {
+            const haystack = [
+                row.date,
+                row.time,
+                row.counterparty,
+                row.amount
+            ]
+                .map((value) => String(value || '').toLocaleLowerCase('nl-NL'))
+                .join(' ');
+            return haystack.includes(query);
+        });
+    }
+
+    rows.sort((a, b) => {
+        const aTimestamp = Number(a._timestamp) || 0;
+        const bTimestamp = Number(b._timestamp) || 0;
+        const aAmount = Number(a._amountValue) || 0;
+        const bAmount = Number(b._amountValue) || 0;
+        const aAmountAbs = Math.abs(aAmount);
+        const bAmountAbs = Math.abs(bAmount);
+        const aCounterparty = String(a.counterparty || '');
+        const bCounterparty = String(b.counterparty || '');
+
+        switch (sortKey) {
+            case 'date_asc':
+                return aTimestamp - bTimestamp;
+            case 'amount_desc':
+                return bAmountAbs - aAmountAbs;
+            case 'amount_asc':
+                return aAmountAbs - bAmountAbs;
+            case 'name_asc':
+                return aCounterparty.localeCompare(bCounterparty, 'nl-NL');
+            case 'name_desc':
+                return bCounterparty.localeCompare(aCounterparty, 'nl-NL');
+            case 'date_desc':
+            default:
+                return bTimestamp - aTimestamp;
+        }
+    });
+
+    return rows;
+}
+
+function updateDetailTransactionsView(options = {}) {
+    const { reset = true } = options;
+    detailTransactionsState.filteredRows = getFilteredAndSortedDetailTransactionsRows();
+    renderMoreDetailTransactions({ reset });
+}
+
+function renderMoreDetailTransactions(options = {}) {
+    const { reset = false } = options;
+    const bodyEl = document.getElementById('balanceDetailTransactionsBody');
+    const metaEl = document.getElementById('balanceDetailTransactionsMeta');
+    const moreBtnEl = document.getElementById('balanceDetailTransactionsMore');
+    if (!bodyEl) return;
+
+    if (reset) {
+        bodyEl.innerHTML = '';
+        detailTransactionsState.renderedCount = 0;
+    }
+
+    const totalAll = detailTransactionsState.rows.length;
+    const totalFiltered = detailTransactionsState.filteredRows.length;
+    if (totalFiltered <= 0) {
+        bodyEl.innerHTML = `<tr><td class="balance-detail-transactions-empty" colspan="4">${
+            detailTransactionsState.query ? 'Geen transacties gevonden voor deze zoekopdracht.' : 'Geen individuele transacties beschikbaar.'
+        }</td></tr>`;
+        if (metaEl) metaEl.textContent = '';
+        if (moreBtnEl) {
+            moreBtnEl.style.display = 'none';
+            moreBtnEl.disabled = true;
+        }
+        return;
+    }
+
+    const start = detailTransactionsState.renderedCount;
+    const nextRows = detailTransactionsState.filteredRows.slice(start, start + DETAIL_TRANSACTIONS_PAGE_SIZE);
+    if (nextRows.length > 0) {
+        const rowsHtml = nextRows.map((row) => `
+            <tr>
+                <td>${escapeHtml(row.date)}</td>
+                <td>${escapeHtml(row.time)}</td>
+                <td>${escapeHtml(row.counterparty)}</td>
+                <td class="amount ${escapeHtml(row.amountClass)}">${escapeHtml(row.amount)}</td>
+            </tr>
+        `).join('');
+        if (reset) bodyEl.innerHTML = rowsHtml;
+        else bodyEl.insertAdjacentHTML('beforeend', rowsHtml);
+        detailTransactionsState.renderedCount += nextRows.length;
+    }
+
+    if (metaEl) {
+        metaEl.textContent = totalFiltered === totalAll
+            ? `${detailTransactionsState.renderedCount} van ${totalFiltered} transacties`
+            : `${detailTransactionsState.renderedCount} van ${totalFiltered} transacties (gefilterd uit ${totalAll})`;
+    }
+    if (moreBtnEl) {
+        const hasMore = detailTransactionsState.renderedCount < totalFiltered;
+        moreBtnEl.style.display = hasMore ? 'inline-flex' : 'none';
+        moreBtnEl.disabled = !hasMore;
+    }
+}
+
 function closeBalanceDetail() {
     const modal = document.getElementById('balanceDetailModal');
+    const bodyEl = document.getElementById('balanceDetailTransactionsBody');
+    const metaEl = document.getElementById('balanceDetailTransactionsMeta');
+    const moreBtnEl = document.getElementById('balanceDetailTransactionsMore');
+    const searchEl = document.getElementById('balanceDetailTransactionsSearch');
+    const sortEl = document.getElementById('balanceDetailTransactionsSort');
+
+    resetDetailTransactionsState();
+    if (bodyEl) bodyEl.innerHTML = '';
+    if (metaEl) metaEl.textContent = '';
+    if (moreBtnEl) {
+        moreBtnEl.style.display = 'none';
+        moreBtnEl.disabled = true;
+    }
+    if (searchEl) {
+        searchEl.value = '';
+        searchEl.disabled = true;
+    }
+    if (sortEl) {
+        sortEl.value = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+        sortEl.disabled = true;
+    }
     if (modal) modal.classList.remove('active');
 }
 
-function openDetailModal({ title, summary, rows, chart }) {
+function openDetailModal({ title, summary, rows, chart, transactionRows = null, transactionsTitle = '' }) {
     const titleEl = document.getElementById('balanceDetailTitle');
     const summaryEl = document.getElementById('balanceDetailSummary');
     const listEl = document.getElementById('balanceDetailList');
     const chartEl = document.getElementById('balanceDetailChart');
+    const transactionsSectionEl = document.getElementById('balanceDetailTransactionsSection');
+    const transactionsTitleEl = document.getElementById('balanceDetailTransactionsTitle');
+    const transactionsMetaEl = document.getElementById('balanceDetailTransactionsMeta');
+    const transactionsMoreEl = document.getElementById('balanceDetailTransactionsMore');
+    const transactionsSearchEl = document.getElementById('balanceDetailTransactionsSearch');
+    const transactionsSortEl = document.getElementById('balanceDetailTransactionsSort');
     const modalEl = document.getElementById('balanceDetailModal');
     if (!titleEl || !summaryEl || !listEl || !chartEl || !modalEl) return;
 
@@ -1962,8 +2126,8 @@ function openDetailModal({ title, summary, rows, chart }) {
     summaryEl.textContent = summary || '';
     listEl.innerHTML = (rows || []).map((row) => `
         <div class="balance-detail-row">
-            <span class="balance-detail-row-name">${row.label}</span>
-            <span class="balance-detail-row-value">${row.value}</span>
+            <span class="balance-detail-row-name">${escapeHtml(row.label)}</span>
+            <span class="balance-detail-row-value">${escapeHtml(row.value)}</span>
         </div>
     `).join('');
 
@@ -1974,6 +2138,41 @@ function openDetailModal({ title, summary, rows, chart }) {
     } else if (window.Plotly) {
         Plotly.purge(chartEl);
         chartEl.style.display = 'none';
+    }
+
+    if (transactionsSectionEl && transactionsTitleEl && Array.isArray(transactionRows) && transactionRows.length > 0) {
+        transactionsTitleEl.textContent = transactionsTitle || `Individuele transacties (${transactionRows.length})`;
+        detailTransactionsState.rows = transactionRows;
+        detailTransactionsState.query = '';
+        detailTransactionsState.sortKey = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+        detailTransactionsState.renderedCount = 0;
+        if (transactionsSearchEl) {
+            transactionsSearchEl.disabled = false;
+            transactionsSearchEl.value = '';
+        }
+        if (transactionsSortEl) {
+            transactionsSortEl.disabled = false;
+            transactionsSortEl.value = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+        }
+        updateDetailTransactionsView({ reset: true });
+        transactionsSectionEl.style.display = 'block';
+    } else if (transactionsSectionEl) {
+        resetDetailTransactionsState();
+        if (transactionsTitleEl) transactionsTitleEl.textContent = 'Individuele transacties';
+        if (transactionsMetaEl) transactionsMetaEl.textContent = '';
+        if (transactionsMoreEl) {
+            transactionsMoreEl.style.display = 'none';
+            transactionsMoreEl.disabled = true;
+        }
+        if (transactionsSearchEl) {
+            transactionsSearchEl.disabled = true;
+            transactionsSearchEl.value = '';
+        }
+        if (transactionsSortEl) {
+            transactionsSortEl.disabled = true;
+            transactionsSortEl.value = DETAIL_TRANSACTIONS_DEFAULT_SORT;
+        }
+        transactionsSectionEl.style.display = 'none';
     }
 
     modalEl.classList.add('active');
@@ -2002,6 +2201,32 @@ function buildTransactionRows(transactions, options = {}) {
                 value: formatCurrency(transaction.amount)
             };
         });
+}
+
+function buildTransactionTableRows(transactions, options = {}) {
+    const { limit = 0 } = options;
+    let ordered = [...transactions].sort((a, b) => b.date - a.date);
+    if (Number.isFinite(limit) && limit > 0) {
+        ordered = ordered.slice(0, limit);
+    }
+
+    return ordered.map((transaction) => {
+        const txDate = transaction?.date instanceof Date ? transaction.date : new Date(transaction?.date);
+        const hasValidDate = txDate instanceof Date && !Number.isNaN(txDate.getTime());
+        const counterparty = resolveMerchantLabel(transaction);
+        const amountValue = Number(transaction.amount) || 0;
+        return {
+            date: hasValidDate ? txDate.toLocaleDateString('nl-NL') : '-',
+            time: hasValidDate
+                ? txDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+                : '-',
+            counterparty,
+            amount: formatCurrency(amountValue),
+            amountClass: amountValue >= 0 ? 'positive' : 'negative',
+            _timestamp: hasValidDate ? txDate.getTime() : 0,
+            _amountValue: amountValue
+        };
+    });
 }
 
 function buildDailySeries(transactions, pickValue) {
@@ -2035,6 +2260,7 @@ function showTransactionDetail(detailType) {
         const subset = transactions.filter((transaction) => isIncome ? transaction.amount > 0 : transaction.amount < 0);
         const total = subset.reduce((sum, transaction) => sum + (isIncome ? transaction.amount : Math.abs(transaction.amount)), 0);
         const daily = buildDailySeries(subset, (transaction) => isIncome ? transaction.amount : Math.abs(transaction.amount));
+        const transactionRows = buildTransactionTableRows(subset);
         const trace = {
             type: 'scatter',
             mode: 'lines+markers',
@@ -2058,7 +2284,9 @@ function showTransactionDetail(detailType) {
             title: `<i class="fas ${isIncome ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i> ${isIncome ? 'Inkomsten' : 'Uitgaven'} - geselecteerde periode`,
             summary: `${subset.length} transacties · totaal ${formatCurrency(total)}`,
             rows: buildTransactionRows(subset),
-            chart: { trace, layout }
+            chart: { trace, layout },
+            transactionRows,
+            transactionsTitle: `Individuele ${isIncome ? 'inkomsten' : 'uitgaven'} (${transactionRows.length})`
         });
         return;
     }
@@ -2073,6 +2301,7 @@ function showTransactionDetail(detailType) {
         const deposits = subset.filter((transaction) => transaction.amount > 0).reduce((sum, transaction) => sum + transaction.amount, 0);
         const withdrawals = Math.abs(subset.filter((transaction) => transaction.amount < 0).reduce((sum, transaction) => sum + transaction.amount, 0));
         const daily = buildDailySeries(subset, (transaction) => transaction.amount);
+        const transactionRows = buildTransactionTableRows(subset);
 
         const trace = {
             type: 'bar',
@@ -2094,7 +2323,9 @@ function showTransactionDetail(detailType) {
             title: '<i class="fas fa-piggy-bank"></i> Spaarrekening mutaties',
             summary: `${subset.length} mutaties · stortingen ${formatCurrency(deposits)} · opnames ${formatCurrency(withdrawals)}`,
             rows: buildTransactionRows(subset),
-            chart: { trace, layout }
+            chart: { trace, layout },
+            transactionRows,
+            transactionsTitle: `Individuele spaarrekening-mutaties (${transactionRows.length})`
         });
         return;
     }
@@ -2111,6 +2342,8 @@ function showTransactionDetail(detailType) {
             });
             return;
         }
+        const expenseTransactions = transactions.filter((transaction) => (transaction.amount || 0) < 0);
+        const transactionRows = buildTransactionTableRows(expenseTransactions);
 
         const topEssential = Object.entries(summary.essentialByCategory)
             .sort((a, b) => b[1] - a[1])
@@ -2158,18 +2391,21 @@ function showTransactionDetail(detailType) {
             title: '<i class="fas fa-scale-balanced"></i> Needs vs Wants',
             summary: `Totaal uitgaven: ${formatCurrency(total)}`,
             rows,
-            chart: { trace, layout }
+            chart: { trace, layout },
+            transactionRows,
+            transactionsTitle: `Individuele uitgaven (${transactionRows.length})`
         });
         return;
     }
 
     if (detailType === 'merchant-concentration') {
         const merchantTotals = new Map();
-        transactions.forEach((transaction) => {
-            if ((transaction.amount || 0) >= 0) return;
+        const expenseTransactions = transactions.filter((transaction) => (transaction.amount || 0) < 0);
+        expenseTransactions.forEach((transaction) => {
             const merchant = resolveMerchantLabel(transaction);
             merchantTotals.set(merchant, (merchantTotals.get(merchant) || 0) + Math.abs(transaction.amount || 0));
         });
+        const transactionRows = buildTransactionTableRows(expenseTransactions);
 
         const rows = Array.from(merchantTotals.entries())
             .map(([merchant, amount]) => ({ merchant, amount }))
@@ -2216,13 +2452,17 @@ function showTransactionDetail(detailType) {
                 label: row.merchant,
                 value: `${formatCurrency(row.amount)} (${((row.amount / totalExpenses) * 100).toFixed(1)}%)`
             })),
-            chart: { trace, layout }
+            chart: { trace, layout },
+            transactionRows,
+            transactionsTitle: `Individuele uitgaven (${transactionRows.length})`
         });
         return;
     }
 
     if (detailType === 'expense-momentum') {
         const windows = splitRollingWindows(transactions, 30);
+        const recentExpenseTransactions = windows.recent.filter((transaction) => (transaction.amount || 0) < 0);
+        const transactionRows = buildTransactionTableRows(recentExpenseTransactions);
         const recentByCategory = buildExpenseByCategory(windows.recent);
         const priorByCategory = buildExpenseByCategory(windows.prior);
         const categories = new Set([...Object.keys(recentByCategory), ...Object.keys(priorByCategory)]);
@@ -2288,7 +2528,9 @@ function showTransactionDetail(detailType) {
                 label: row.category,
                 value: `${formatCurrency(row.recent)} vs ${formatCurrency(row.prior)} (Δ ${formatCurrency(row.delta)}, ${row.deltaPct.toFixed(1)}%)`
             })),
-            chart: { trace: traces, layout }
+            chart: { trace: traces, layout },
+            transactionRows,
+            transactionsTitle: `Individuele uitgaven laatste 30 dagen (${transactionRows.length})`
         });
         return;
     }
@@ -2313,6 +2555,7 @@ function showTransactionDetail(detailType) {
                 net: values.income - values.expense
             }))
             .sort((a, b) => (b.expense + b.income) - (a.expense + a.income));
+        const transactionRows = buildTransactionTableRows(transactions);
 
         const trace = {
             type: 'bar',
@@ -2337,7 +2580,9 @@ function showTransactionDetail(detailType) {
                 label: `${row.category} · In ${formatCurrency(row.income)} · Uit ${formatCurrency(row.expense)}`,
                 value: `Net ${formatCurrency(row.net)}`
             })),
-            chart: { trace, layout }
+            chart: { trace, layout },
+            transactionRows,
+            transactionsTitle: `Alle transacties in periode (${transactionRows.length})`
         });
         return;
     }

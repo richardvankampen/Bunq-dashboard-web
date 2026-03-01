@@ -121,6 +121,36 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - brede pad/probe-combinaties verwijderd; logregel verduidelijkt naar `Using documented raw Bunq monetary-account endpoint`.
   - cooldown blijft actief om herhaalde mislukte raw-pogingen te dempen (`BUNQ_RAW_FALLBACK_COOLDOWN_SECONDS`, default 120s).
 
+### Frontend detailmodal: individuele transacties als second view
+
+- Vraag uit gebruikersflow opgepakt: naast totalen in detailkaarten nu ook individuele transacties zichtbaar.
+- `index.html`:
+  - nieuwe sectie in `#balanceDetailModal` toegevoegd met transactietabel (`Datum`, `Tijd`, `Tegenrekening / merchant`, `Bedrag`).
+- `styles.css`:
+  - styling toegevoegd voor de nieuwe transactiesectie incl. scrollable tabel en kleurcodering van bedragen.
+- `app.js`:
+  - `openDetailModal(...)` uitgebreid met `transactionRows` + `transactionsTitle`.
+  - rendering toegevoegd voor transactietabel in de modal.
+  - transactietabel rendering geoptimaliseerd voor grote datasets:
+    - batchgrootte `200` rijen per stap;
+    - `Toon meer` knop + teller (`x van y transacties`);
+    - voorkomt zware DOM-render in één keer.
+  - transactietabel interactie uitgebreid:
+    - zoekveld (merchant/tegenrekening/datum/bedrag);
+    - sortering (datum nieuw/oud, bedrag op grootte, naam A-Z/Z-A).
+  - `showTransactionDetail(...)` aangesloten voor:
+    - `income`
+    - `expenses`
+    - `savings-transfers`
+    - `needs-vs-wants`
+    - `merchant-concentration`
+    - `expense-momentum` (laatste 30d uitgaven)
+    - `money-flow`
+- Resultaat:
+  - gebruiker ziet nu in dezelfde detailweergave zowel samenvatting/grafiek als individuele transactieregels voor de gekozen context/periode.
+- Validatie:
+  - lokale JS syntax-check via `node --check` kon niet worden uitgevoerd in deze omgeving (`node`/`nodejs` niet aanwezig).
+
 ## 2026-02-28
 
 ### Opgeleverd

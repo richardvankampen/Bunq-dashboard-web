@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal)
 
 ## Canonieke status
 
@@ -14,6 +14,27 @@ Dit bestand is de actuele bron voor overdracht.
 - Bunq context init werkt op productie.
 - Session-auth met secure cookies werkt.
 - Dashboard draait via Synology + Docker Swarm + Gunicorn.
+
+## Frontend detailweergave (actueel)
+
+- In de bestaande detailmodal staat nu een tweede sectie met individuele transacties.
+- Deze sectie is aangesloten voor:
+  - `Inkomsten`
+  - `Uitgaven`
+  - `Spaarrekening mutaties`
+  - `Needs vs Wants`
+  - `Merchant concentration`
+  - `Expense momentum` (laatste 30 dagen)
+  - `Money Flow`
+- Kolommen in de transactieview:
+  - `Datum`
+  - `Tijd`
+  - `Tegenrekening / merchant`
+  - `Bedrag`
+- Performance/UX:
+  - modal rendert transacties in batches (`Toon meer`) i.p.v. alles in 1 keer om UI-lag bij grote periodes te beperken.
+  - client-side zoekveld toegevoegd (merchant/tegenrekening/datum/bedrag).
+  - client-side sortering toegevoegd (datum, bedrag, naam).
 
 ## Savings-incident status
 

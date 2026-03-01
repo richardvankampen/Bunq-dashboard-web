@@ -516,6 +516,47 @@
                 <p id="balanceDetailSummary" class="balance-detail-summary"></p>
                 <div id="balanceDetailChart" class="balance-detail-chart"></div>
                 <div id="balanceDetailList" class="balance-detail-list"></div>
+                <section id="balanceDetailTransactionsSection" class="balance-detail-transactions-section" style="display: none;">
+                    <h3 id="balanceDetailTransactionsTitle" class="balance-detail-transactions-title">
+                        Individuele transacties
+                    </h3>
+                    <div class="balance-detail-transactions-controls">
+                        <input
+                            id="balanceDetailTransactionsSearch"
+                            class="balance-detail-transactions-search"
+                            type="search"
+                            placeholder="Zoek op merchant, tegenrekening, datum of bedrag"
+                            disabled
+                        >
+                        <select id="balanceDetailTransactionsSort" class="balance-detail-transactions-sort" disabled>
+                            <option value="date_desc" selected>Nieuwste eerst</option>
+                            <option value="date_asc">Oudste eerst</option>
+                            <option value="amount_desc">Bedrag hoog naar laag</option>
+                            <option value="amount_asc">Bedrag laag naar hoog</option>
+                            <option value="name_asc">Naam A-Z</option>
+                            <option value="name_desc">Naam Z-A</option>
+                        </select>
+                    </div>
+                    <div class="balance-detail-transactions-table-wrap">
+                        <table class="balance-detail-transactions-table">
+                            <thead>
+                                <tr>
+                                    <th>Datum</th>
+                                    <th>Tijd</th>
+                                    <th>Tegenrekening / merchant</th>
+                                    <th>Bedrag</th>
+                                </tr>
+                            </thead>
+                            <tbody id="balanceDetailTransactionsBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="balance-detail-transactions-footer">
+                        <span id="balanceDetailTransactionsMeta" class="balance-detail-transactions-meta"></span>
+                        <button id="balanceDetailTransactionsMore" type="button" class="balance-detail-transactions-more" style="display: none;">
+                            Toon meer
+                        </button>
+                    </div>
+                </section>
             </div>
         </div>
     </div>
