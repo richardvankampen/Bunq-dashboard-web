@@ -73,6 +73,8 @@ Dit bestand is de actuele bron voor overdracht.
   - frontend bevat alleen nog deterministische fallback-filtering op tegenrekening-account-id en tegenrekening-IBAN.
   - frontend account-id fallback respecteert nu ook bronrekening-id (zelfde account-id wordt niet automatisch intern weggefilterd).
   - balanswidgets voor betaal/spaar gebruiken nu alleen eigen Bunq-rekeningen (Triodos valt buiten `Betaalrekeningen (totaal)`).
+  - widgetspecifiek:
+    - `Top tegenrekeningen` en `Verdeling in categorieën` filteren nu ook expliciet interne/eigen tegenrekeningen weg op account-id, IBAN en eigen Bunq-rekeningnaam (zodat o.a. `Richard` niet meer verschijnt).
 
 ## Widgetteksten (actueel)
 

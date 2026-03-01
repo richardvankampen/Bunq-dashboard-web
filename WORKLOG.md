@@ -6,6 +6,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Widgetfiltering aangescherpt:
+  - `Top tegenrekeningen` en `Verdeling in categorieën` gebruiken nu extra widgetfilter op interne/eigen tegenrekeningen.
+  - filtering gebruikt `is_internal_transfer` + deterministische checks op eigen account-id, eigen IBAN en eigen Bunq-rekeningnaam.
+  - doel: interne tegenrekeninglabels (zoals `Richard`) uit deze twee widgets verwijderen.
+
 - Persoonsnaam-gebaseerde internal-transfer workarounds verwijderd (deterministische matching):
   - backend internal detectie gebruikt nu alleen account-id en IBAN-signalen (`counterparty_alias`, `monetary_account_counterparty`, `merchant_reference`);
   - naam/omschrijving-fallbacks verwijderd uit backend en frontend;

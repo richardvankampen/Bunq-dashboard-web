@@ -80,7 +80,13 @@ function getOwnBunqAccountIdentitySets() {
             .filter(Boolean)
     );
     const ownIbans = new Set();
+    const ownNames = new Set();
     ownAccounts.forEach((account) => {
+        const baseName = normalizePartyNameForMatch(account?.description || account?.display_name || '');
+        if (baseName.length >= 4) {
+            ownNames.add(baseName);
+        }
+
         const ibans = Array.isArray(account?.ibans) ? account.ibans : [];
         ibans.forEach((iban) => {
             const normalized = normalizeIbanForMatch(iban);
@@ -89,7 +95,7 @@ function getOwnBunqAccountIdentitySets() {
             }
         });
     });
-    return { ownIds, ownIbans };
+    return { ownIds, ownIbans, ownNames };
 }
 
 function loadSelectedAccountIds() {
@@ -2392,6 +2398,49 @@ function normalizeIbanForMatch(value) {
         .replace(/\s+/g, '');
 }
 
+function isOwnAccountNameMatch(value, ownNames) {
+    const normalized = normalizePartyNameForMatch(value);
+    if (!normalized || ownNames.size <= 0) return false;
+    return ownNames.has(normalized);
+}
+
+function isLikelyInternalOwnTransferForWidget(transaction, ownIdentity) {
+    const { ownIds, ownIbans, ownNames } = ownIdentity || {};
+    if (transaction?.is_internal_transfer) return true;
+
+    if (ownIds && ownIds.size > 0) {
+        const sourceAccountId = transaction?.account_id != null
+            ? String(transaction.account_id).trim()
+            : '';
+        const counterpartyAccountId = transaction?.counterparty_account_id != null
+            ? String(transaction.counterparty_account_id).trim()
+            : '';
+        if (
+            counterpartyAccountId
+            && ownIds.has(counterpartyAccountId)
+            && (!sourceAccountId || counterpartyAccountId !== sourceAccountId)
+        ) {
+            return true;
+        }
+    }
+
+    if (ownIbans && ownIbans.size > 0) {
+        const counterpartyIban = normalizeIbanForMatch(transaction?.counterparty_iban);
+        if (counterpartyIban && ownIbans.has(counterpartyIban)) {
+            return true;
+        }
+    }
+
+    if (ownNames && ownNames.size > 0) {
+        if (isOwnAccountNameMatch(transaction?.counterparty_account_name, ownNames)) return true;
+        if (isOwnAccountNameMatch(transaction?.counterparty, ownNames)) return true;
+        if (isOwnAccountNameMatch(transaction?.merchant, ownNames)) return true;
+        if (isOwnAccountNameMatch(transaction?.category, ownNames)) return true;
+    }
+
+    return false;
+}
+
 function getSavingsAccountSets() {
     const savingsAccounts = (accountsList || []).filter((account) => classifyAccountType(account) === 'savings');
     const savingsIds = new Set(savingsAccounts.map((account) => String(account.id)));
@@ -3415,11 +3464,14 @@ function renderSunburstChart(data) {
     const container = document.getElementById('sunburstChart');
     if (!container) return;
 
+    const ownIdentity = getOwnBunqAccountIdentitySets();
+    const widgetData = (data || []).filter((transaction) => !isLikelyInternalOwnTransferForWidget(transaction, ownIdentity));
+
     const incomeByCategory = new Map();
     const expenseByCategory = new Map();
     const merchantByCategory = new Map();
 
-    data.forEach((transaction) => {
+    widgetData.forEach((transaction) => {
         const category = transaction.category || 'Overig';
         const merchant = resolveMerchantLabel(transaction);
         if (transaction.amount >= 0) {
@@ -3713,9 +3765,12 @@ function renderHeatmapChart(data) {
 function renderMerchantsChart(data) {
     const container = document.getElementById('merchantsChart');
     if (!container) return;
-    
+
+    const ownIdentity = getOwnBunqAccountIdentitySets();
+    const widgetData = (data || []).filter((transaction) => !isLikelyInternalOwnTransferForWidget(transaction, ownIdentity));
+
     const totals = {};
-    data.forEach(t => {
+    widgetData.forEach(t => {
         if (t.amount >= 0) return;
         const merchant = resolveMerchantLabel(t);
         totals[merchant] = (totals[merchant] || 0) + Math.abs(t.amount);
