@@ -34,6 +34,8 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - parseert user-id via marker `CODX_USER_ID=...` i.p.v. shellvariabele `UID` (readonly in shell).
     - streamt nu live output tijdens run (geen buffered stilte tot einde).
     - gebruikt nu `python3 -u` (ongebufferde output), toont `attempt_count`, en rapporteert correcte exit-code bij failures.
+    - `python -c` quoting-probleem gefixt door over te stappen op `python3 -u -` met ingebedde multiline scriptinhoud.
+    - script ondersteunt nu ook `MAX_ROWS` als 2e positional argument (`scripts/debug_raw_monetary_accounts.sh <service> <max_rows>`) om sudo-env issues te vermijden.
 - Live NAS-observatie vastgelegd:
   - `/v1/user/{id}/monetary-account*` raw paden geven op deze runtime allemaal `404 Route not found`.
   - hierop is `_raw_monetary_attempt_plan(...)` verbreed naar deterministische route- en param-varianten:
