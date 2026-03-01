@@ -439,6 +439,14 @@ def _is_signature_compat_error(exc):
     )
     return any(fragment in message for fragment in signature_fragments)
 
+def _is_route_not_found_error(exc):
+    message = str(exc).lower()
+    return (
+        'http response code: 404' in message
+        or 'route not found' in message
+        or 'not found' in message
+    )
+
 def _is_http_client_like(obj):
     if obj is None:
         return False
@@ -895,13 +903,42 @@ def _raw_monetary_attempt_plan(user_id):
         page_size = 200
     if page_size > 200:
         page_size = 200
-    # Keep this deterministic and aligned with Bunq API docs:
-    # use explicit monetary-account endpoints instead of broad path probing.
-    return (
-        (f"/v1/user/{user_id}/monetary-account", {'status': 'ACTIVE', 'count': page_size}),
-        (f"/v1/user/{user_id}/monetary-account-savings", {'status': 'ACTIVE', 'count': page_size}),
-        (f"/v1/user/{user_id}/monetary-account-external-savings", {'status': 'ACTIVE', 'count': page_size}),
+    # Keep this deterministic while allowing Bunq SDK/API route-shape variance.
+    # Some sdk variants expect '/user/...', others '/v1/user/...', and some
+    # account subtypes are only exposed via dedicated subtype paths.
+    route_suffixes = (
+        'monetary-account',
+        'monetary-account-bank',
+        'monetary-account-savings',
+        'monetary-account-external-savings',
+        'monetary-account-external',
+        'monetary-account-joint',
+        'monetary-account-card',
     )
+    prefixes = (
+        '/v1/user',
+        '/user',
+        'user',
+    )
+    params_variants = (
+        {'status': 'ACTIVE', 'count': page_size},
+        {'count': page_size},
+        {},
+    )
+
+    attempts = []
+    seen = set()
+    for prefix in prefixes:
+        for suffix in route_suffixes:
+            path = f"{prefix}/{user_id}/{suffix}"
+            for params in params_variants:
+                # Dedupe by path + sorted params for stable probing.
+                signature = (path, tuple(sorted(params.items())))
+                if signature in seen:
+                    continue
+                seen.add(signature)
+                attempts.append((path, params))
+    return tuple(attempts)
 
 def _extract_monetary_accounts_from_raw_payload(payload):
     if payload is None:
@@ -937,7 +974,7 @@ def _extract_monetary_accounts_from_raw_payload(payload):
 
     return accounts
 
-def list_monetary_accounts_raw_api(user_id):
+def list_monetary_accounts_raw_api(user_id, soft_fail=False):
     """
     Fallback path: retrieve monetary accounts via raw API client payload.
     This bypasses SDK model deserialization issues on some account variants.
@@ -959,11 +996,13 @@ def list_monetary_accounts_raw_api(user_id):
             raise RuntimeError(f"raw fallback cooldown active ({remaining}s remaining): {failure_msg}")
 
     last_exc = None
+    had_successful_response = False
     merged_accounts = []
     seen_ids = set()
     for path, params in _raw_monetary_attempt_plan(user_id):
         try:
             raw_result = _call_api_client_get(api_client, path, params=params)
+            had_successful_response = True
             payload = _extract_json_payload(raw_result)
             accounts = _extract_monetary_accounts_from_raw_payload(payload)
             if accounts:
@@ -983,13 +1022,35 @@ def list_monetary_accounts_raw_api(user_id):
                         params if params is not None else '{}',
                         added,
                     )
+                else:
+                    logger.info(
+                        "Raw Bunq endpoint parsed only duplicate accounts: path=%s params=%s",
+                        path,
+                        params if params is not None else '{}',
+                    )
+            else:
+                logger.info(
+                    "Raw Bunq endpoint returned no parsable monetary accounts: path=%s params=%s result_type=%s payload_type=%s",
+                    path,
+                    params if params is not None else '{}',
+                    type(raw_result).__name__,
+                    type(payload).__name__ if payload is not None else 'NoneType',
+                )
         except Exception as exc:
             last_exc = exc
+            if _is_route_not_found_error(exc):
+                logger.info("Raw Bunq endpoint unavailable (skip): path=%s error=%s", path, exc)
+            else:
+                logger.warning("Raw Bunq endpoint call failed: path=%s error=%s", path, exc)
             continue
 
     if merged_accounts:
         _RAW_MONETARY_FALLBACK_FAILURE.pop(user_key, None)
         return merged_accounts
+
+    if soft_fail and had_successful_response:
+        _RAW_MONETARY_FALLBACK_FAILURE.pop(user_key, None)
+        return []
 
     failure_message = str(last_exc) if last_exc is not None else 'no successful fallback response'
     _RAW_MONETARY_FALLBACK_FAILURE[user_key] = (time.time(), failure_message)
@@ -1191,7 +1252,7 @@ def list_monetary_accounts():
             discovered_user_ids = discover_bunq_user_ids()
         for user_id in (discovered_user_ids or []):
             try:
-                raw_accounts = list_monetary_accounts_raw_api(user_id)
+                raw_accounts = list_monetary_accounts_raw_api(user_id, soft_fail=True)
                 added_from_raw = 0
                 for account in raw_accounts:
                     account_id = get_obj_field(account, 'id_', 'id')

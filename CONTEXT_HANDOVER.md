@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-account incident + Synology deploy les)
+Laatste update: 2026-03-01 (savings-account incident + raw-route variant probing)
 
 ## Canonieke status
 
@@ -61,18 +61,27 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
   - `_resolve_bunq_api_client(...)` retourneert nu alleen gevalideerde HTTP-clients en gebruikt standaard een strikte resolve-volgorde:
     - `BUNQ_STRICT_RAW_CLIENT_RESOLUTION=true` (default).
   - `_call_api_client_get(...)` maakt onderscheid tussen signatuurfouten en echte runtime/API-fouten, met duidelijkere foutmelding.
-  - Raw monetary fallback is versmald naar gedocumenteerde Bunq paden i.p.v. brede probing:
-    - `/v1/user/{id}/monetary-account`
-    - `/v1/user/{id}/monetary-account-savings`
-    - `/v1/user/{id}/monetary-account-external-savings`
+  - Live observatie op NAS: alle drie `/v1/user/{id}/monetary-account*` raw routes geven `404 Route not found`.
+  - Raw monetary fallback probeert nu een deterministische route-matrix i.p.v. alleen `/v1/...`:
+    - prefixes: `/v1/user`, `/user`, `user`
+    - suffixes: `monetary-account`, `monetary-account-bank`, `monetary-account-savings`, `monetary-account-external-savings`, `monetary-account-external`, `monetary-account-joint`, `monetary-account-card`
+    - params-varianten per route: `{'status':'ACTIVE','count':N}`, `{'count':N}`, `{}`
   - Raw fallback heeft cooldown op herhaalde failures:
     - `BUNQ_RAW_FALLBACK_COOLDOWN_SECONDS` (default `120`).
   - SDK endpoint-discovery staat standaard in strikte modus:
     - `BUNQ_STRICT_ENDPOINT_DISCOVERY=true` (default), dus eerst alleen canonieke endpoint-klassen/modes.
+  - Raw fallback diagnostiek is uitgebreid:
+    - per raw endpoint expliciete logregels voor:
+      - `Raw Bunq endpoint returned no parsable monetary accounts ...`
+      - `Raw Bunq endpoint parsed only duplicate accounts ...`
+      - `Raw Bunq endpoint unavailable (skip) ...` bij 404/route-not-found
+    - merge-pad (`list_monetary_accounts` met bestaande SDK-accounts) gebruikt nu `soft_fail=True` om partiële raw endpoint failures niet als globale fallback-failure te loggen.
 
 Status: incident nog open; focus ligt nu op:
-- valideren dat de gedocumenteerde raw-paden de ontbrekende savings-account objecten opleveren;
+- valideren welke route-variant in de matrix echt data teruggeeft op deze Bunq/SDK runtime;
 - daarna savings-widget/logica bevestigen op live data.
+- nieuwe deterministische check gebruiken om per deploy te valideren dat bekende savings-accounts (naam + currency + saldo) terugkomen:
+  - `scripts/check_accounts_api.py`
 
 ## Deployment + validatie (volgende stap)
 
@@ -106,8 +115,42 @@ curl -sS -k -b "$COOKIE_JAR" "$BASE_URL/api/accounts?_ts=$(date +%s)" | jq -r '
 
 ```bash
 sudo docker service logs --since 5m bunq_bunq-dashboard | \
-grep -E "Using bunq endpoint class|Resolved Bunq HTTP client via|raw Bunq monetary-account fallback|Merged [0-9]+ account|Retrieved [0-9]+ accounts|MonetaryAccountSavings|api_client unavailable|candidates:|Error fetching accounts"
+grep -E "Using bunq endpoint class|Resolved Bunq HTTP client via|raw Bunq monetary-account fallback|Raw Bunq endpoint returned no parsable|Raw Bunq endpoint parsed only duplicate|Raw Bunq endpoint unavailable|Merged [0-9]+ account|Retrieved [0-9]+ accounts|MonetaryAccountSavings|api_client unavailable|candidates:|Error fetching accounts"
 ```
+
+Controle 3 (deterministische API-asserts op bekende savings-accounts):
+
+```bash
+EXPECTED_ACCOUNTS_JSON='[
+  {"description":"Spaarrekening","currency":"EUR"},
+  {"description":"Spaargeld in ZAR","currency":"ZAR"}
+]'
+
+DASHBOARD_USERNAME="$BASIC_AUTH_USERNAME" \
+DASHBOARD_PASSWORD="$BASIC_AUTH_PASSWORD" \
+python3 /volume1/docker/bunq-dashboard/scripts/check_accounts_api.py \
+  --base-url "$BASE_URL" \
+  --insecure \
+  --expected-json "$EXPECTED_ACCOUNTS_JSON" \
+  --balance-tolerance 0.01
+```
+
+Wil je ook saldo hard afdwingen? Voeg dan per account een `balance` veld toe met de echte live waarde.
+
+Controle 4 (raw endpoint inspectie zonder heredoc):
+
+```bash
+cd /volume1/docker/bunq-dashboard
+sudo sh scripts/debug_raw_monetary_accounts.sh
+```
+
+Optioneel:
+- `USER_ID=<bunq_user_id> sudo sh scripts/debug_raw_monetary_accounts.sh`
+- `MAX_ROWS=50 sudo sh scripts/debug_raw_monetary_accounts.sh`
+
+Let op:
+- Gebruik niet de shellvariabele `UID` voor Bunq user-id (die is readonly in POSIX shells).
+- Losse `docker exec python3 -c ...` debugcalls moeten eerst `init_bunq(...)` doen; anders krijg je `ApiContext has not been loaded`.
 
 ## Als savings nog steeds ontbreken
 - Neem de exacte nieuwe `api_client unavailable (candidates: ...)` logregel over; die bepaalt het volgende concrete resolverpad.

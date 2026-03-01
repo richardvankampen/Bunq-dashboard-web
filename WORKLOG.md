@@ -6,6 +6,38 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Nieuwe deterministische API-validatie voor het savings-incident:
+  - `scripts/check_accounts_api.py` toegevoegd.
+  - Script logt in op dashboard, haalt `/api/accounts` op en valideert verwachtte accounts op:
+    - `description` (rekeningnaam),
+    - `balance.currency`,
+    - `balance.value` (met configureerbare tolerantie).
+  - Verwachtingen zijn mee te geven via `EXPECTED_ACCOUNTS_JSON`, zodat bekende productiegevallen per deploy reproduceerbaar checkbaar zijn.
+- Handover bijgewerkt met vaste verificatiestap na deploy:
+  - `CONTEXT_HANDOVER.md` bevat nu een concrete run van `check_accounts_api.py` voor `Spaarrekening` en `Spaargeld in ZAR`.
+  - voorbeeld-check gebruikt bewust alleen `description` + `currency` (geen placeholder-saldi meer);
+    `balance` is optioneel en alleen voor echte live waarden.
+- Raw monetary-account fallback diagnostiek aangescherpt:
+  - `list_monetary_accounts_raw_api(..., soft_fail=False)` toegevoegd; merge-pad gebruikt nu `soft_fail=True` zodat een partiële raw-fallback niet de hele account-ophaalflow als failure markeert.
+  - Per raw endpoint wordt nu expliciet gelogd:
+    - `no parsable monetary accounts` (incl. result/payload type),
+    - `parsed only duplicate accounts`,
+    - `endpoint unavailable (skip)` bij 404/route-not-found.
+  - Hiermee is direct zichtbaar of savings-data niet geleverd wordt, of wel geleverd maar niet parsebaar is.
+- Nieuw NAS-vriendelijk debugscript toegevoegd voor raw endpoints zonder handmatige heredoc:
+  - `scripts/debug_raw_monetary_accounts.sh`
+  - script detecteert container + user-id, initialiseert Bunq context en test raw monetary routes.
+  - output bevat `parsed_accounts`, `payload_type` en sample accountregels.
+  - script is aangescherpt na live NAS-feedback:
+    - initialiseert eerst `init_bunq(...)` in dezelfde container-exec context (voorkomt `ApiContext has not been loaded`);
+    - draait route-probing in één exec-run (voorkomt herhaalde Vaultwarden decrypt per endpoint);
+    - parseert user-id via marker `CODX_USER_ID=...` i.p.v. shellvariabele `UID` (readonly in shell).
+- Live NAS-observatie vastgelegd:
+  - `/v1/user/{id}/monetary-account*` raw paden geven op deze runtime allemaal `404 Route not found`.
+  - hierop is `_raw_monetary_attempt_plan(...)` verbreed naar deterministische route- en param-varianten:
+    - prefixes `/v1/user`, `/user`, `user`;
+    - suffixes `monetary-account*` inclusief `-bank/-savings/-external/-joint/-card`;
+    - params varianten met/zonder `status` en `count`.
 - Installatie-instructies aangescherpt op Synology:
   - `scripts/install_or_update_synology.sh` expliciet als root laten uitvoeren (`sudo sh ...`).
   - `NO_CACHE` overrides nu gedocumenteerd via root-shell variant (`sudo sh -c 'NO_CACHE=... sh ...'`) om sudo-env valkuilen te vermijden.
