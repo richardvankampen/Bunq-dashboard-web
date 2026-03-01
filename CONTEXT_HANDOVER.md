@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven + deterministische internal detectie op account-id/IBAN + vast/sticky publiek IP advies in docs)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven + deterministische internal detectie op account-id/IBAN + vast/sticky publiek IP advies in docs + particles-achtergrond zichtbaarheidsfix)
 
 ## Canonieke status
 
@@ -140,6 +140,10 @@ Dit bestand is de actuele bron voor overdracht.
   - badge + titel + korte uitleg,
   - custom switch met glow/pulse-animatie wanneer actief.
 - Technisch blijft dezelfde instelling behouden (`id="enableParticles"`), dus bestaande save/load logica in `app.js` is ongewijzigd.
+- Particles-rendering is nu robuuster gemaakt:
+  - particlelaag staat boven de body-achtergrond (`#particles-js` op `z-index: 0`) en vangt geen clicks (`pointer-events: none`);
+  - dashboardcontent staat expliciet erboven (`.dashboard-container` op `z-index: 1`);
+  - init/destroy flow ruimt stale canvassen op en herstelt correcte particles-status bij toggle.
 
 ## Categorie-race (actueel)
 

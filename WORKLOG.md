@@ -6,6 +6,13 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Particles achtergrond zichtbaarheidsfix:
+  - `#particles-js` naar `z-index: 0` gezet en `pointer-events: none` toegevoegd.
+  - `.dashboard-container` op `position: relative; z-index: 1` gezet zodat content boven de particles blijft.
+  - particles init/destroy flow gehard in `app.js`:
+    - stale `pJSDom`/canvas state wordt opgeschoond,
+    - togglen van de setting gebruikt nu centrale `destroyParticles()` helper.
+
 - Supportlink voor het bewegende Bunq-logo aangepast naar:
   - `https://bunq.me/BunqFinancialDashboard/3.50`
   - toegepast op zowel logo-click als tooltip-link in de header.

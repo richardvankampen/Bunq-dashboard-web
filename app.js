@@ -5085,9 +5085,8 @@ function saveSettings() {
     
     if (CONFIG.enableParticles) {
         initializeParticles();
-    } else if (window.pJSDom && window.pJSDom.length > 0) {
-        window.pJSDom[0].pJS.fn.vendors.destroypJS();
-        window.pJSDom = [];
+    } else {
+        destroyParticles();
     }
     
     console.log('✅ Settings saved');
@@ -5592,7 +5591,19 @@ function toggleTheme() {
 
 function initializeParticles() {
     if (!window.particlesJS) return;
-    if (window.pJSDom && window.pJSDom.length > 0) return;
+
+    const container = document.getElementById('particles-js');
+    if (!container) return;
+
+    // If particles.js thinks an instance exists but the canvas is gone, reset stale state.
+    const hasCanvas = Boolean(container.querySelector('canvas'));
+    if (window.pJSDom && window.pJSDom.length > 0 && hasCanvas) return;
+    if (window.pJSDom && window.pJSDom.length > 0 && !hasCanvas) {
+        window.pJSDom = [];
+    }
+
+    // Ensure the container starts clean before creating a new instance.
+    container.innerHTML = '';
     
     particlesJS('particles-js', {
         particles: {
@@ -5611,6 +5622,29 @@ function initializeParticles() {
         },
         retina_detect: true
     });
+
+    document.body.classList.add('particles-active');
+}
+
+function destroyParticles() {
+    const container = document.getElementById('particles-js');
+
+    if (window.pJSDom && window.pJSDom.length > 0) {
+        window.pJSDom.forEach((instance) => {
+            try {
+                instance?.pJS?.fn?.vendors?.destroypJS?.();
+            } catch (error) {
+                console.warn('Particles destroy warning:', error);
+            }
+        });
+        window.pJSDom = [];
+    }
+
+    if (container) {
+        container.innerHTML = '';
+    }
+
+    document.body.classList.remove('particles-active');
 }
 
 function playRacingAnimation() {

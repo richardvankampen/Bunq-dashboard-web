@@ -133,7 +133,8 @@ body.effects-minimal::before {
     height: 100%;
     top: 0;
     left: 0;
-    z-index: -1;
+    z-index: 0;
+    pointer-events: none;
     opacity: 0.3;
 }
 
@@ -144,6 +145,10 @@ body.effects-enhanced #particles-js {
 body.effects-minimal #particles-js {
     opacity: 0;
     pointer-events: none;
+}
+
+#particles-js canvas {
+    display: block;
 }
 
 body.reduce-animations *,
@@ -273,6 +278,8 @@ body.effects-minimal .glass-effect {
     max-width: 1920px;
     margin: 0 auto;
     padding: var(--spacing-lg);
+    position: relative;
+    z-index: 1;
     animation: fadeIn 0.8s ease;
 }
 
