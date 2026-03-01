@@ -147,10 +147,12 @@ sudo sh scripts/debug_raw_monetary_accounts.sh
 Optioneel:
 - `USER_ID=<bunq_user_id> sudo sh scripts/debug_raw_monetary_accounts.sh`
 - `MAX_ROWS=50 sudo sh scripts/debug_raw_monetary_accounts.sh`
+- `MAX_ROWS=0 sudo sh scripts/debug_raw_monetary_accounts.sh` (snelle route-scan zonder accountregels)
 
 Let op:
 - Gebruik niet de shellvariabele `UID` voor Bunq user-id (die is readonly in POSIX shells).
 - Losse `docker exec python3 -c ...` debugcalls moeten eerst `init_bunq(...)` doen; anders krijg je `ApiContext has not been loaded`.
+- Het script streamt output live; bij redirect naar bestand (`> file 2>&1`) blijft voortgang zichtbaar via `tail -f file`.
 
 ## Als savings nog steeds ontbreken
 - Neem de exacte nieuwe `api_client unavailable (candidates: ...)` logregel over; die bepaalt het volgende concrete resolverpad.
