@@ -59,6 +59,9 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - `/monetary-account*`
     - `monetary-account*`
   - doel: sdk-varianten opvangen die user-scope intern toevoegen en daardoor met expliciete user-id lege/non-JSON responses geven.
+- Debugscript introspectie toegevoegd voor lege raw responses:
+  - bij eerste `parsed_accounts=0` toont script nu `result_type` plus type/size van relevante response-attributen (`value`, `raw_body`, `response`, `json`, etc.).
+  - doel: exact bepalen waar de SDK-wrapper de daadwerkelijke payload verbergt.
 - Volgende-sessie checklist expliciet vastgelegd in `CONTEXT_HANDOVER.md`:
   - redeploy met `.env` geladen;
   - raw debug rerun + grep met `first_account=...`;

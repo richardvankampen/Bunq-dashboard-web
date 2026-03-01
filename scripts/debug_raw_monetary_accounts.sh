@@ -60,6 +60,7 @@ client = api_proxy._resolve_bunq_api_client()
 plan = api_proxy._raw_monetary_attempt_plan(uid)
 print("attempt_count=" + str(len(plan)))
 limit = max_rows if max_rows >= 0 else 0
+inspected_empty_once = False
 
 for path, params in plan:
     print("")
@@ -69,6 +70,49 @@ for path, params in plan:
         accounts, payload = api_proxy._extract_monetary_accounts_from_raw_result(result)
         print("parsed_accounts=" + str(len(accounts)))
         print("payload_type=" + (type(payload).__name__ if payload is not None else "NoneType"))
+        if len(accounts) == 0 and not inspected_empty_once:
+            inspected_empty_once = True
+            print("result_type=" + type(result).__name__)
+            probe_attrs = (
+                "value",
+                "raw_body",
+                "raw_response",
+                "body",
+                "response_body",
+                "response",
+                "json",
+                "content",
+                "text",
+                "headers",
+                "status_code",
+            )
+            for attr in probe_attrs:
+                if not hasattr(result, attr):
+                    continue
+                attr_value = getattr(result, attr)
+                if callable(attr_value):
+                    try:
+                        attr_value = attr_value()
+                    except Exception as exc:
+                        print("probe_" + attr + "=call_error:" + str(exc))
+                        continue
+                value_type = type(attr_value).__name__
+                if isinstance(attr_value, (str, bytes, bytearray)):
+                    size = len(attr_value)
+                elif isinstance(attr_value, (list, tuple, dict, set)):
+                    size = len(attr_value)
+                elif attr_value is None:
+                    size = 0
+                else:
+                    size = -1
+                print("probe_" + attr + "_type=" + value_type + " size=" + str(size))
+                if isinstance(attr_value, dict):
+                    keys = list(attr_value.keys())[:8]
+                    print("probe_" + attr + "_keys=" + ",".join(str(k) for k in keys))
+                elif isinstance(attr_value, (list, tuple)) and attr_value:
+                    print("probe_" + attr + "_item0_type=" + type(attr_value[0]).__name__)
+                elif isinstance(attr_value, str) and attr_value:
+                    print("probe_" + attr + "_preview=" + attr_value[:180].replace("\n", "\\n"))
         if accounts:
             first = accounts[0]
             if isinstance(first, dict):

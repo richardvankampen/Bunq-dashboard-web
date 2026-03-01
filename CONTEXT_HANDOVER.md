@@ -167,6 +167,7 @@ Let op:
 - Het script streamt output live; bij redirect naar bestand (`> file 2>&1`) blijft voortgang zichtbaar via `tail -f file`.
 - Het script toont nu ook `attempt_count=<n>` en gebruikt ongebufferde Python-output (`python3 -u`) voor directe voortgang.
 - Het script toont nu ook `first_account=...` per route, ook bij `MAX_ROWS=0`.
+- Bij eerste lege route (`parsed_accounts=0`) toont script nu ook `result_type` en `probe_*` attribuutdiagnostiek om SDK-wrappervelden te identificeren.
 - Als `MAX_ROWS` via `sudo` niet doorkomt, gebruik de 2e script-parameter (`...sh <service> <max_rows>`) of `sudo env MAX_ROWS=...`.
 
 ## Als savings nog steeds ontbreken
