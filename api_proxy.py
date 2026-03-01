@@ -996,71 +996,18 @@ def _raw_monetary_attempt_plan(user_id):
         page_size = 200
     if page_size > 200:
         page_size = 200
-    # Keep this deterministic while allowing Bunq SDK/API route-shape variance.
-    # Some sdk variants expect '/user/...', others '/v1/user/...', and some
-    # account subtypes are only exposed via dedicated subtype paths.
-    route_suffixes = (
-        'monetary-account',
-        'monetary-account-bank',
-        'monetary-account-savings',
-        'monetary-account-external-savings',
-        'monetary-account-external',
-        'monetary-account-joint',
-        'monetary-account-card',
-    )
-    prefixes = (
-        '/v1/user',
-        '/user',
-        'user',
+    # Keep raw fallback aligned with documented Bunq monetary-account routes.
+    # These routes are only used when sdk deserialization fails for savings types.
+    routes = (
+        f"/user/{user_id}/monetary-account",
+        f"/user/{user_id}/monetary-account-savings",
+        f"/user/{user_id}/monetary-account-external-savings",
     )
     params_variants = (
         {'status': 'ACTIVE', 'count': page_size},
         {'count': page_size},
-        {},
     )
-
-    # Some sdk clients implicitly scope requests to the active user, so we also
-    # probe context-scoped paths without explicit /user/{id}.
-    context_prefixes = (
-        '/v1',
-        '',
-        '/',
-    )
-
-    def _join_path(prefix, *parts):
-        cleaned_prefix = str(prefix or '').strip()
-        cleaned_parts = [str(part).strip('/') for part in parts if str(part or '').strip('/')]
-        if cleaned_prefix in ('', '/'):
-            base = '' if cleaned_prefix == '' else '/'
-        else:
-            base = cleaned_prefix.rstrip('/')
-        if not cleaned_parts:
-            return base or '/'
-        suffix = '/'.join(cleaned_parts)
-        if base in ('', '/'):
-            return f"/{suffix}" if base == '/' or cleaned_prefix == '/' else suffix
-        return f"{base}/{suffix}"
-
-    attempts = []
-    seen = set()
-    for suffix in route_suffixes:
-        candidate_paths = []
-        # Explicit user-scoped routes.
-        for prefix in prefixes:
-            candidate_paths.append(_join_path(prefix, user_id, suffix))
-        # Context-scoped routes (user can be injected by sdk client internals).
-        for prefix in context_prefixes:
-            candidate_paths.append(_join_path(prefix, suffix))
-
-        for path in candidate_paths:
-            for params in params_variants:
-                # Dedupe by path + sorted params for stable probing.
-                signature = (path, tuple(sorted(params.items())))
-                if signature in seen:
-                    continue
-                seen.add(signature)
-                attempts.append((path, params))
-    return tuple(attempts)
+    return tuple((path, params) for path in routes for params in params_variants)
 
 def _extract_monetary_accounts_from_raw_payload(payload):
     if payload is None:
@@ -1253,29 +1200,20 @@ def list_monetary_accounts_raw_api(user_id, soft_fail=False):
     raise RuntimeError(f"raw monetary-account fallback failed: {last_exc}")
 
 def discover_monetary_account_endpoints():
-    """Discover monetary-account endpoints ordered by preference.
-    
-    The canonical SDK class is MonetaryAccountApiObject with signature:
-        MonetaryAccountApiObject.list(params=None, custom_headers=None)
-    It returns all account subtypes as a polymorphic list; each item has
-    sub-object fields like .MonetaryAccountBank, .MonetaryAccountSavings etc.
-    Prefer this unified endpoint first, then fall back to subtype-specific ones.
+    """Return official Bunq monetary-account endpoints in deterministic order.
+
+    Source-of-truth: Bunq SDK/API docs.
+    - Prefer unified MonetaryAccount endpoint first.
+    - Add explicit savings endpoints to recover when sdk polymorphic parsing
+      misses savings variants in some runtime combinations.
     """
     direct_candidates = (
-        'MonetaryAccountApiObject',   # SDK canonical unified endpoint
-        'MonetaryAccount',            # Legacy alias
-        'MonetaryAccountBankApiObject',
-        'MonetaryAccountBank',
+        'MonetaryAccountApiObject',
+        'MonetaryAccount',
         'MonetaryAccountSavingsApiObject',
         'MonetaryAccountSavings',
         'MonetaryAccountExternalSavingsApiObject',
         'MonetaryAccountExternalSavings',
-        'MonetaryAccountJointApiObject',
-        'MonetaryAccountJoint',
-        'MonetaryAccountCardApiObject',
-        'MonetaryAccountCard',
-        'MonetaryAccountInvestmentApiObject',
-        'MonetaryAccountInvestment',
     )
     discovered = []
     seen = set()
@@ -1289,81 +1227,24 @@ def discover_monetary_account_endpoints():
         seen.add(candidate_id)
         discovered.append((display_name, candidate_obj))
 
-    # Prefer official direct names first.
     for name in direct_candidates:
         add_candidate(name, name, getattr(endpoint, name, None))
-
-    strict_discovery = get_bool_env('BUNQ_STRICT_ENDPOINT_DISCOVERY', True)
-    if strict_discovery:
-        return discovered
-
-    # Then scan root endpoint exports.
-    for attr_name in dir(endpoint):
-        if attr_name in direct_candidates:
-            continue
-        add_candidate(attr_name, attr_name, getattr(endpoint, attr_name, None))
-
-    # Finally scan endpoint submodules for sdk variants that don't re-export at root.
-    endpoint_path = getattr(endpoint, '__path__', None)
-    if endpoint_path:
-        base_module = endpoint.__name__
-        for module_info in pkgutil.iter_modules(endpoint_path):
-            module_name = module_info.name
-            normalized_module = module_name.lower().replace('_', '')
-            if not normalized_module.startswith('monetaryaccount'):
-                continue
-            try:
-                module = importlib.import_module(f"{base_module}.{module_name}")
-            except Exception:
-                continue
-
-            # Prefer direct names in each module first.
-            for class_name in direct_candidates:
-                add_candidate(
-                    f"{module_name}.{class_name}",
-                    class_name,
-                    getattr(module, class_name, None),
-                )
-            for class_name in dir(module):
-                if class_name in direct_candidates:
-                    continue
-                add_candidate(
-                    f"{module_name}.{class_name}",
-                    class_name,
-                    getattr(module, class_name, None),
-                )
 
     return discovered
 
 def list_monetary_accounts():
-    """Return monetary accounts with bunq-sdk compatibility across versions."""
+    """Return monetary accounts using Bunq SDK official endpoints first."""
     global _MONETARY_ACCOUNT_ENDPOINT, _MONETARY_ACCOUNT_LIST_MODE
 
     # Ensure the Bunq session token is still valid before any SDK call.
     ensure_bunq_session_active()
 
-    strict_discovery = get_bool_env('BUNQ_STRICT_ENDPOINT_DISCOVERY', True)
-    if strict_discovery:
-        # Keep this aligned with Bunq SDK Python usage docs: list(params=..., custom_headers=None).
-        modes = (
-            'kw_params_active',
-            'kw_params_empty',
-            'no_args',
-        )
-    else:
-        modes = (
-            'kw_params_active',
-            'positional_params_active',
-            'no_args',
-            'kw_params_empty',
-            'positional_params_empty',
-            'kw_user_id_params_active',
-            'kw_user_id',
-            'kw_user_id_params_empty',
-            'positional_user_id_params_active',
-            'positional_user_id',
-            'positional_user_id_params_empty',
-        )
+    # Keep this aligned with Bunq SDK Python usage docs: list(params=..., custom_headers=None).
+    modes = (
+        'kw_params_active',
+        'kw_params_empty',
+        'no_args',
+    )
 
     candidates = []
     if _MONETARY_ACCOUNT_ENDPOINT is not None and _MONETARY_ACCOUNT_LIST_MODE is not None:
@@ -1439,9 +1320,8 @@ def list_monetary_accounts():
         if not endpoint_succeeded:
             continue
 
-    # SDK parsing can fail on some monetary account variants (e.g. savings).
-    # When we saw endpoint failures or when no savings accounts were discovered,
-    # try a raw API fallback and merge results.
+    # SDK parsing can fail on savings variants in some SDK/runtime combinations.
+    # If sdk results miss savings or any endpoint failed, merge minimal raw fallback.
     has_savings = any(classify_account_type(account) == 'savings' for account in merged_accounts)
     if merged_accounts and (saw_endpoint_failure or not has_savings):
         if discovered_user_ids is None:

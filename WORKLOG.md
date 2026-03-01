@@ -6,6 +6,20 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- SDK-first cleanup na succesvolle live validatie:
+  - savings-ophaalpad nu expliciet gebaseerd op officiële Bunq SDK endpoints:
+    - `MonetaryAccount(ApiObject)`
+    - `MonetaryAccountSavings(ApiObject)`
+    - `MonetaryAccountExternalSavings(ApiObject)`
+  - brede endpoint-discovery/probe-logica voor monetary accounts verwijderd.
+- Raw fallback sterk vereenvoudigd:
+  - routeplan teruggebracht naar alleen gedocumenteerde `/user/{id}/monetary-account*` routes.
+  - context-scoped en niet-gedocumenteerde route-varianten verwijderd.
+- Incidentstatus bevestigd als opgelost:
+  - live checker geeft `Validation OK` met `Spaarrekening (EUR)` en `Spaargeld in ZAR (ZAR)` in `/api/accounts`.
+- Handover opgeschoond naar actuele waarheid:
+  - `CONTEXT_HANDOVER.md` herschreven zonder verouderde matrix/probe-status.
+
 - Nieuwe deterministische API-validatie voor het savings-incident:
   - `scripts/check_accounts_api.py` toegevoegd.
   - Script logt in op dashboard, haalt `/api/accounts` op en valideert verwachtte accounts op:

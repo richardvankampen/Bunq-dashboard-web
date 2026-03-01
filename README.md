@@ -77,6 +77,16 @@ Transactie-diagnostiek:
   - `amount_eur_missing_count` (non-EUR transacties zonder EUR-conversie)
 - Dashboard toont hiervoor expliciete waarschuwingen i.p.v. stilzwijgende onderrapportage.
 
+Savings-accounts (SDK-first):
+- Accountophaalpad volgt de officiële Bunq SDK-endpoints:
+  - `MonetaryAccount.list(...)` (unified)
+  - `MonetaryAccountSavings.list(...)`
+  - `MonetaryAccountExternalSavings.list(...)`
+- Alleen als SDK-deserialisatie op savings faalt, gebruikt de backend een beperkte raw fallback op:
+  - `/user/{user_id}/monetary-account`
+  - `/user/{user_id}/monetary-account-savings`
+  - `/user/{user_id}/monetary-account-external-savings`
+
 Snelle check na deploy:
 ```bash
 TAG=$(sudo git rev-parse --short HEAD)
