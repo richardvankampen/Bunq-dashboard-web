@@ -48,6 +48,8 @@ Dit bestand is de actuele bron voor overdracht.
   - `Tegenrekening / merchant + rekeningnummer` (IBAN of account-id indien beschikbaar)
   - `Omschrijving`
   - `Bedrag`
+- KPI-afstemming:
+  - `Sparen` gebruikt nu dezelfde datasetlogica als de secondary view `Spaarrekening mutaties` (stortingen minus opnames), inclusief negatieve bedragen.
 - Performance/UX:
   - dubbele oude individuele opsomming verwijderd bij detailviews met second-view transactietabel (geen dubbeling meer).
   - modal rendert transacties in batches (`Toon meer`) i.p.v. alles in 1 keer om UI-lag bij grote periodes te beperken.

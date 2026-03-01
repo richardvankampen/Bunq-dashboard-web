@@ -1459,9 +1459,11 @@ function processAndRenderData(data) {
     
     const filtered = applyClientFilters(data);
     const normalized = normalizeTransactions(filtered);
+    const savingsWidgetNet = calculateSavingsWidgetNet(data);
     balanceMetrics = calculateBalanceMetrics(normalized, accountsList, balanceHistoryData);
     latestDataQualitySummary = computeDataQualitySummary(normalized, accountsList, dataQualitySummary);
     const kpis = calculateKPIs(normalized);
+    kpis.savingsWidgetNet = savingsWidgetNet;
     renderKPIs(kpis, normalized);
     renderBalanceKPIs(balanceMetrics);
 
@@ -1603,6 +1605,17 @@ function calculateKPIs(data) {
     const savingsRate = income > 0 ? (netSavings / income * 100) : 0;
     
     return { income, expenses, netSavings, savingsRate };
+}
+
+function calculateSavingsWidgetNet(rawTransactions) {
+    const normalizedAll = normalizeTransactions(Array.isArray(rawTransactions) ? rawTransactions : []);
+    const { savingsIds, savingsNames } = getSavingsAccountSets();
+    if (!savingsIds.size) return 0;
+
+    return normalizedAll
+        .filter((transaction) => savingsIds.has(String(transaction?.account_id)))
+        .filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsIds, savingsNames))
+        .reduce((sum, transaction) => sum + (Number(transaction?.amount) || 0), 0);
 }
 
 function safeRatio(numerator, denominator, fallback = null) {
@@ -1789,7 +1802,9 @@ function renderKPIs(kpis, data) {
     
     if (totalIncome) totalIncome.textContent = formatCurrency(kpis.income);
     if (totalExpenses) totalExpenses.textContent = formatCurrency(kpis.expenses);
-    if (netSavings) netSavings.textContent = formatCurrency(kpis.netSavings);
+    if (netSavings) netSavings.textContent = formatCurrency(
+        Number.isFinite(Number(kpis.savingsWidgetNet)) ? Number(kpis.savingsWidgetNet) : kpis.netSavings
+    );
     if (savingsRate) savingsRate.textContent = formatPercent(kpis.savingsRate);
     
     // Update savings ring

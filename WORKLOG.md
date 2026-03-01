@@ -6,6 +6,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- `Sparen` KPI-berekening gecorrigeerd:
+  - widgetwaarde wordt nu berekend op exact dezelfde savings-subset als de secondary view (`Spaarrekening mutaties`);
+  - netto = positieve mutaties + negatieve mutaties (dus opnames worden afgetrokken i.p.v. genegeerd).
+
 - Detailtransactietabel uitgebreid:
   - kolom `Tegenrekening / merchant` toont nu ook rekeningnummer (voorkeur: `counterparty_iban`, fallback: `counterparty_account_id`);
   - zoekveld doorzoekt nu ook het rekeningnummer;
