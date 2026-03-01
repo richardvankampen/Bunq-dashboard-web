@@ -38,8 +38,9 @@ Dit bestand is de actuele bron voor overdracht.
   - `init_ok=True`, `last_error=None`
   - `discover_bunq_user_ids()` retourneert `user_ids=[75231272]`
   - Conclusie: multi-user mismatch is niet de primaire oorzaak.
-- Raw fallback faalt in runtime met:
-  - `Raw Bunq monetary-account fallback failed: bunq-sdk api_client unavailable`
+- Raw fallback client-resolutie werkt nu:
+  - logregel gezien: `Resolved Bunq HTTP client via bunq.sdk.http.api_client.ApiClient.__init__`
+  - resterende failure zat in SDK-client call-signatuur (`ApiClient.get(...)` verwacht verplichte `params` + `custom_headers`).
 - Belangrijke operationele les (bevestigd):
   - `install_or_update_synology.sh` moet als root worden uitgevoerd (`sudo sh ...`).
   - Run als normale user kan bij `docker stack deploy` leiden tot fallback op compose-defaults zoals `vault.jouwdomein.nl` / `bunq.jouwdomein.nl`, ondanks correcte `.env`.
@@ -57,25 +58,21 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
 - `948a564` - meerdere Bunq user IDs detecteren en per user account-enumeratie proberen (bevestigd: momenteel 1 user-id gevonden).
 - Extra hardening (nieuw, nog te valideren op NAS na deploy):
   - `_call_monetary_account_list(...)` stuurt nu standaard `count` mee (`BUNQ_ACCOUNT_PAGE_SIZE`, default/max 200), ook in `status=ACTIVE` varianten.
-  - `_resolve_bunq_api_client(...)` probeert nu ook endpoint-module + endpoint-klassen (`MonetaryAccount*`, `PaymentApiObject`) voor client-resolutie.
-  - raw-fallback foutmelding bevat uitgebreide kandidaatdiagnostiek (`candidates: ...`) i.p.v. alleen `api_client unavailable`.
-  - Runtime-incidentfix: endpoint-klasse werd foutief als HTTP client gezien (`Resolved ... endpoint.MonetaryAccountApiObject.self`).
-    - `_is_http_client_like(...)` sluit nu endpoint classes/objecten expliciet uit.
-    - `_call_api_client_get(...)` bouwt nu dynamisch alleen calls voor beschikbare methodes (`get/request/execute`) en geeft duidelijke fout als geen van drie beschikbaar is.
-  - Raw-client discovery verder verdiept:
-    - accessor-probing uitgebreid met session-gerelateerde paden;
-    - object-graph traversal volgt nu ook private contextvelden (`_ApiContext__*`, `_SessionContext__*`, etc.);
-    - traversal-diepte verhoogd van 2 naar 3 om interne SDK context-objecten te bereiken.
-  - Nieuwe fallback-laag toegevoegd:
-    - SDK HTTP client wordt nu ook direct geconstrueerd vanuit `ApiContext` via bekende SDK-klassen/factories (`bunq.sdk.http.api_client*`) met signature-gebaseerde argumentmapping.
-  - Runtime-observatie + fix:
-    - client-resolutie werkt nu (`Resolved Bunq HTTP client via bunq.sdk.http.api_client.ApiClient.__init__`),
-    - maar `ApiClient.get(...)` verwacht verplichte `params` en `custom_headers`.
-    - `_call_api_client_get(...)` ondersteunt nu expliciet Bunq `get/request/execute` signaturen met verplichte positional args en lege `custom_headers`.
+  - `_resolve_bunq_api_client(...)` retourneert nu alleen gevalideerde HTTP-clients en gebruikt standaard een strikte resolve-volgorde:
+    - `BUNQ_STRICT_RAW_CLIENT_RESOLUTION=true` (default).
+  - `_call_api_client_get(...)` maakt onderscheid tussen signatuurfouten en echte runtime/API-fouten, met duidelijkere foutmelding.
+  - Raw monetary fallback is versmald naar gedocumenteerde Bunq paden i.p.v. brede probing:
+    - `/v1/user/{id}/monetary-account`
+    - `/v1/user/{id}/monetary-account-savings`
+    - `/v1/user/{id}/monetary-account-external-savings`
+  - Raw fallback heeft cooldown op herhaalde failures:
+    - `BUNQ_RAW_FALLBACK_COOLDOWN_SECONDS` (default `120`).
+  - SDK endpoint-discovery staat standaard in strikte modus:
+    - `BUNQ_STRICT_ENDPOINT_DISCOVERY=true` (default), dus eerst alleen canonieke endpoint-klassen/modes.
 
-Status: incident nog open; volgende validatie richt zich op:
-- of `count`-param direct extra accounts (incl. savings) teruggeeft;
-- of raw-fallback nu een bruikbare client resolveert i.p.v. endpoint-class false positive / `api_client unavailable`.
+Status: incident nog open; focus ligt nu op:
+- valideren dat de gedocumenteerde raw-paden de ontbrekende savings-account objecten opleveren;
+- daarna savings-widget/logica bevestigen op live data.
 
 ## Deployment + validatie (volgende stap)
 

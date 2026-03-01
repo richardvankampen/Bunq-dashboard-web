@@ -20,6 +20,14 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - raw fallback resolveert nu daadwerkelijk een SDK client (`ApiClient.__init__`), maar call-signatuur mismatch vastgesteld:
     - `ApiClient.get() missing 2 required positional arguments: 'params' and 'custom_headers'`.
   - `_call_api_client_get(...)` uitgebreid met Bunq-compatibele `get/request/execute` callvarianten met verplichte positional args en lege headers.
+- SDK-first savings-ophaalpad verder aangescherpt (minder fuzzy fallback):
+  - endpoint-discovery blijft standaard strict (`BUNQ_STRICT_ENDPOINT_DISCOVERY=true`);
+  - raw monetary fallback gebruikt nu alleen gedocumenteerde Bunq paden:
+    - `/v1/user/{id}/monetary-account`
+    - `/v1/user/{id}/monetary-account-savings`
+    - `/v1/user/{id}/monetary-account-external-savings`
+  - brede pad/probe-combinaties verwijderd; logregel verduidelijkt naar `Using documented raw Bunq monetary-account endpoint`.
+  - cooldown blijft actief om herhaalde mislukte raw-pogingen te dempen (`BUNQ_RAW_FALLBACK_COOLDOWN_SECONDS`, default 120s).
 
 ## 2026-02-28
 

@@ -87,6 +87,7 @@ _BUNQ_INIT_LOCK = threading.Lock()
 _BUNQ_CONTEXT_INITIALIZED = False
 _BUNQ_INIT_LAST_ATTEMPT_TS = 0.0
 _BUNQ_INIT_LAST_ERROR = None
+_RAW_MONETARY_FALLBACK_FAILURE = {}
 
 _MONETARY_ACCOUNT_VARIANT_FIELDS = (
     # SDK generates classes with ApiObject suffix; include both for forward/backward compat.
@@ -414,13 +415,29 @@ def _call_api_client_get(api_client, path, params=None):
     for call in calls:
         try:
             return call()
-        except TypeError as exc:
-            last_exc = exc
-            continue
         except Exception as exc:
-            last_exc = exc
-            continue
-    raise RuntimeError(f"api_client.get failed for path '{path}': {last_exc}")
+            if _is_signature_compat_error(exc):
+                last_exc = exc
+                continue
+            raise RuntimeError(f"api_client call failed for path '{path}': {exc}") from exc
+
+    if last_exc is not None:
+        raise RuntimeError(f"api_client call signature mismatch for path '{path}': {last_exc}")
+    raise RuntimeError(f"api_client call failed for path '{path}': no callable variant succeeded")
+
+def _is_signature_compat_error(exc):
+    if isinstance(exc, TypeError):
+        return True
+    message = str(exc).lower()
+    signature_fragments = (
+        'unexpected keyword argument',
+        'required positional argument',
+        'missing',
+        'takes',
+        'positional argument',
+        'multiple values for argument',
+    )
+    return any(fragment in message for fragment in signature_fragments)
 
 def _is_http_client_like(obj):
     if obj is None:
@@ -717,6 +734,13 @@ def _construct_sdk_http_client_from_api_context(api_context):
 
     return None, None
 
+def _coerce_http_client_candidate(candidate):
+    if candidate is None:
+        return None, None
+    if _is_http_client_like(candidate):
+        return candidate, 'self'
+    return _extract_http_client_via_accessors(candidate)
+
 def _resolve_bunq_api_client():
     """
     Resolve Bunq SDK api client across SDK variants.
@@ -726,19 +750,22 @@ def _resolve_bunq_api_client():
     if callable(bunq_context_client):
         try:
             client = bunq_context_client()
-            if client is not None:
-                return client
+            resolved, _ = _coerce_http_client_candidate(client)
+            if resolved is not None:
+                return resolved
         except Exception:
             pass
 
     # Fallback to BunqContext static attribute variants.
     for attr_name in ('_api_client', 'api_client_'):
         client = getattr(BunqContext, attr_name, None)
-        if client is not None:
-            return client
+        resolved, _ = _coerce_http_client_candidate(client)
+        if resolved is not None:
+            return resolved
 
     # Fallback via ApiContext/BunqContext.api_context() accessor variants.
     api_context = BunqContext.api_context()
+    strict_resolution = get_bool_env('BUNQ_STRICT_RAW_CLIENT_RESOLUTION', True)
 
     # Generic accessor-based probing on BunqContext/ApiContext first.
     for root_obj, root_name in ((BunqContext, 'BunqContext'), (api_context, 'api_context')):
@@ -751,18 +778,22 @@ def _resolve_bunq_api_client():
         candidate = getattr(api_context, accessor, None)
         if callable(candidate):
             try:
-                client = candidate()
-                if client is not None:
-                    return client
+                candidate = candidate()
             except Exception:
-                pass
-        elif candidate is not None:
-            return candidate
+                continue
+        resolved, nested_accessor = _coerce_http_client_candidate(candidate)
+        if resolved is not None:
+            if nested_accessor and nested_accessor != 'self':
+                logger.info("Resolved Bunq HTTP client via api_context.%s.%s", accessor, nested_accessor)
+            return resolved
 
     for attr_name in ('_api_client', 'api_client_'):
         client = getattr(api_context, attr_name, None)
-        if client is not None:
-            return client
+        resolved, nested_accessor = _coerce_http_client_candidate(client)
+        if resolved is not None:
+            if nested_accessor and nested_accessor != 'self':
+                logger.info("Resolved Bunq HTTP client via api_context.%s.%s", attr_name, nested_accessor)
+            return resolved
 
     # Try adapter-style accessors and common nested client holders.
     adapters = []
@@ -784,8 +815,11 @@ def _resolve_bunq_api_client():
         if adapter is None:
             continue
         # Sometimes the adapter itself exposes request/get.
-        if callable(getattr(adapter, 'get', None)) or callable(getattr(adapter, 'request', None)):
-            return adapter
+        resolved, nested_accessor = _coerce_http_client_candidate(adapter)
+        if resolved is not None:
+            if nested_accessor and nested_accessor != 'self':
+                logger.info("Resolved Bunq HTTP client via api_context.adapter.%s", nested_accessor)
+            return resolved
         for nested_name in (
             'api_client', 'get_api_client',
             'http_client', 'get_http_client',
@@ -797,12 +831,21 @@ def _resolve_bunq_api_client():
                     nested = nested()
                 except Exception:
                     continue
-            if nested is not None and (
-                callable(getattr(nested, 'get', None))
-                or callable(getattr(nested, 'request', None))
-                or callable(getattr(nested, 'execute', None))
-            ):
-                return nested
+            resolved, nested_accessor = _coerce_http_client_candidate(nested)
+            if resolved is not None:
+                if nested_accessor and nested_accessor != 'self':
+                    logger.info("Resolved Bunq HTTP client via api_context.adapter.%s.%s", nested_name, nested_accessor)
+                return resolved
+
+    # Construct SDK HTTP client directly from ApiContext when possible.
+    constructed_client, constructed_source = _construct_sdk_http_client_from_api_context(api_context)
+    if constructed_client is not None:
+        logger.info("Resolved Bunq HTTP client via %s", constructed_source)
+        return constructed_client
+
+    # In strict mode we intentionally avoid broad endpoint/object-graph probing.
+    if strict_resolution:
+        return None
 
     # Probe endpoint module and known endpoint classes for SDK variants where
     # request clients are attached on generated endpoint classes.
@@ -827,12 +870,6 @@ def _resolve_bunq_api_client():
             logger.info("Resolved Bunq HTTP client via endpoint.%s.%s", class_name, accessor)
             return resolved
 
-    # Construct SDK HTTP client directly from ApiContext when possible.
-    constructed_client, constructed_source = _construct_sdk_http_client_from_api_context(api_context)
-    if constructed_client is not None:
-        logger.info("Resolved Bunq HTTP client via %s", constructed_source)
-        return constructed_client
-
     # Generic discovery over BunqContext / ApiContext object graph.
     discovered_client, discovered_path = _discover_http_client_candidate(BunqContext, root_name='BunqContext', max_depth=3)
     if discovered_client is not None:
@@ -845,6 +882,26 @@ def _resolve_bunq_api_client():
         return discovered_client
 
     return None
+
+def _raw_monetary_fallback_cooldown_seconds():
+    cooldown = get_int_env('BUNQ_RAW_FALLBACK_COOLDOWN_SECONDS', 120)
+    if cooldown < 0:
+        return 0
+    return cooldown
+
+def _raw_monetary_attempt_plan(user_id):
+    page_size = get_int_env('BUNQ_ACCOUNT_PAGE_SIZE', 200)
+    if page_size < 1:
+        page_size = 200
+    if page_size > 200:
+        page_size = 200
+    # Keep this deterministic and aligned with Bunq API docs:
+    # use explicit monetary-account endpoints instead of broad path probing.
+    return (
+        (f"/v1/user/{user_id}/monetary-account", {'status': 'ACTIVE', 'count': page_size}),
+        (f"/v1/user/{user_id}/monetary-account-savings", {'status': 'ACTIVE', 'count': page_size}),
+        (f"/v1/user/{user_id}/monetary-account-external-savings", {'status': 'ACTIVE', 'count': page_size}),
+    )
 
 def _extract_monetary_accounts_from_raw_payload(payload):
     if payload is None:
@@ -891,61 +948,51 @@ def list_monetary_accounts_raw_api(user_id):
         diag = _build_api_client_diagnostics(api_context)
         raise RuntimeError(f"bunq-sdk api_client unavailable (candidates: {diag})")
 
-    base_paths = (
-        f"user/{user_id}/monetary-account",
-        f"user/{user_id}/monetary-account-bank",
-        f"user/{user_id}/monetary-account-savings",
-        f"user/{user_id}/monetary-account-external-savings",
-        f"user/{user_id}/monetary-account-investment",
-        f"user/{user_id}/monetary-account-external",
-        f"user/{user_id}/monetary-account-joint",
-        f"user/{user_id}/monetary-account-card",
-    )
-    paths = []
-    for base_path in base_paths:
-        paths.append(base_path)
-        paths.append(f"/{base_path}")
-        paths.append(f"v1/{base_path}")
-        paths.append(f"/v1/{base_path}")
-    params_variants = (
-        {'status': 'ACTIVE'},
-        {},
-        None,
-    )
+    user_key = str(user_id)
+    cooldown_seconds = _raw_monetary_fallback_cooldown_seconds()
+    failure_state = _RAW_MONETARY_FALLBACK_FAILURE.get(user_key)
+    if failure_state is not None and cooldown_seconds > 0:
+        failure_ts, failure_msg = failure_state
+        elapsed = time.time() - failure_ts
+        if elapsed < cooldown_seconds:
+            remaining = int(cooldown_seconds - elapsed)
+            raise RuntimeError(f"raw fallback cooldown active ({remaining}s remaining): {failure_msg}")
 
     last_exc = None
     merged_accounts = []
     seen_ids = set()
-    for path in paths:
-        for params in params_variants:
-            try:
-                raw_result = _call_api_client_get(api_client, path, params=params)
-                payload = _extract_json_payload(raw_result)
-                accounts = _extract_monetary_accounts_from_raw_payload(payload)
-                if accounts:
-                    added = 0
-                    for account in accounts:
-                        account_id = get_obj_field(account, 'id_', 'id')
-                        dedupe_key = str(account_id) if account_id is not None else f"obj:{id(account)}"
-                        if dedupe_key in seen_ids:
-                            continue
-                        seen_ids.add(dedupe_key)
-                        merged_accounts.append(account)
-                        added += 1
-                    if added:
-                        logger.info(
-                            "Using raw Bunq monetary-account fallback: path=%s params=%s (+%d accounts)",
-                            path,
-                            params if params is not None else '{}',
-                            added,
-                        )
-            except Exception as exc:
-                last_exc = exc
-                continue
+    for path, params in _raw_monetary_attempt_plan(user_id):
+        try:
+            raw_result = _call_api_client_get(api_client, path, params=params)
+            payload = _extract_json_payload(raw_result)
+            accounts = _extract_monetary_accounts_from_raw_payload(payload)
+            if accounts:
+                added = 0
+                for account in accounts:
+                    account_id = get_obj_field(account, 'id_', 'id')
+                    dedupe_key = str(account_id) if account_id is not None else f"obj:{id(account)}"
+                    if dedupe_key in seen_ids:
+                        continue
+                    seen_ids.add(dedupe_key)
+                    merged_accounts.append(account)
+                    added += 1
+                if added:
+                    logger.info(
+                        "Using documented raw Bunq monetary-account endpoint: path=%s params=%s (+%d accounts)",
+                        path,
+                        params if params is not None else '{}',
+                        added,
+                    )
+        except Exception as exc:
+            last_exc = exc
+            continue
 
     if merged_accounts:
+        _RAW_MONETARY_FALLBACK_FAILURE.pop(user_key, None)
         return merged_accounts
 
+    failure_message = str(last_exc) if last_exc is not None else 'no successful fallback response'
+    _RAW_MONETARY_FALLBACK_FAILURE[user_key] = (time.time(), failure_message)
     raise RuntimeError(f"raw monetary-account fallback failed: {last_exc}")
 
 def discover_monetary_account_endpoints():
@@ -964,6 +1011,12 @@ def discover_monetary_account_endpoints():
         'MonetaryAccountBank',
         'MonetaryAccountSavingsApiObject',
         'MonetaryAccountSavings',
+        'MonetaryAccountExternalSavingsApiObject',
+        'MonetaryAccountExternalSavings',
+        'MonetaryAccountJointApiObject',
+        'MonetaryAccountJoint',
+        'MonetaryAccountCardApiObject',
+        'MonetaryAccountCard',
         'MonetaryAccountInvestmentApiObject',
         'MonetaryAccountInvestment',
     )
@@ -982,6 +1035,10 @@ def discover_monetary_account_endpoints():
     # Prefer official direct names first.
     for name in direct_candidates:
         add_candidate(name, name, getattr(endpoint, name, None))
+
+    strict_discovery = get_bool_env('BUNQ_STRICT_ENDPOINT_DISCOVERY', True)
+    if strict_discovery:
+        return discovered
 
     # Then scan root endpoint exports.
     for attr_name in dir(endpoint):
@@ -1028,19 +1085,28 @@ def list_monetary_accounts():
     # Ensure the Bunq session token is still valid before any SDK call.
     ensure_bunq_session_active()
 
-    modes = (
-        'kw_params_active',
-        'positional_params_active',
-        'no_args',
-        'kw_params_empty',
-        'positional_params_empty',
-        'kw_user_id_params_active',
-        'kw_user_id',
-        'kw_user_id_params_empty',
-        'positional_user_id_params_active',
-        'positional_user_id',
-        'positional_user_id_params_empty',
-    )
+    strict_discovery = get_bool_env('BUNQ_STRICT_ENDPOINT_DISCOVERY', True)
+    if strict_discovery:
+        # Keep this aligned with Bunq SDK Python usage docs: list(params=..., custom_headers=None).
+        modes = (
+            'kw_params_active',
+            'kw_params_empty',
+            'no_args',
+        )
+    else:
+        modes = (
+            'kw_params_active',
+            'positional_params_active',
+            'no_args',
+            'kw_params_empty',
+            'positional_params_empty',
+            'kw_user_id_params_active',
+            'kw_user_id',
+            'kw_user_id_params_empty',
+            'positional_user_id_params_active',
+            'positional_user_id',
+            'positional_user_id_params_empty',
+        )
 
     candidates = []
     if _MONETARY_ACCOUNT_ENDPOINT is not None and _MONETARY_ACCOUNT_LIST_MODE is not None:
