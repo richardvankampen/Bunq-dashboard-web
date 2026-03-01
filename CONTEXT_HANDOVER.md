@@ -113,6 +113,13 @@ Dit bestand is de actuele bron voor overdracht.
 
 - `Action plan` detail gebruikt nu een gestapelde rijweergave voor tekstregels (`balance-detail-list-stacked`) zodat kopteksten/inhoud horizontaal leesbaar blijven (geen verticaal “ingedrukte” tekstblokken).
 
+## Header UX (actueel)
+
+- Op het bewegende Bunq-icoon naast `Bunq Financial Dashboard` staat nu een hover/focus popover met klikbare support-link:
+  - tekst: `buy me a coffee if you enjoy using this dashboard`
+  - URL: `https://bunq.me/BunqFinancialDashboard`
+  - opent in nieuw tabblad (`target="_blank"` + `rel="noopener noreferrer"`).
+
 ## Categorie-race (actueel)
 
 - Widgetnaam is `Categorie-race`.

@@ -314,6 +314,11 @@ body.effects-minimal .glass-effect {
     gap: var(--spacing-md);
 }
 
+.logo-icon-wrap {
+    position: relative;
+    overflow: visible;
+}
+
 .logo-icon {
     width: 60px;
     height: 60px;
@@ -326,6 +331,61 @@ body.effects-minimal .glass-effect {
     color: white;
     box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
     animation: float 3s ease-in-out infinite;
+}
+
+.logo-icon:focus-visible {
+    outline: 2px solid rgba(244, 114, 182, 0.75);
+    outline-offset: 3px;
+}
+
+.logo-hover-link {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 12px);
+    min-width: 260px;
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(244, 114, 182, 0.5);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(244, 114, 182, 0.24) 100%);
+    box-shadow: 0 10px 26px rgba(190, 24, 93, 0.32);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    pointer-events: none;
+    z-index: 300;
+}
+
+.logo-hover-link::before {
+    content: '';
+    position: absolute;
+    left: 20px;
+    bottom: 100%;
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent transparent rgba(244, 114, 182, 0.34) transparent;
+}
+
+.logo-hover-link a {
+    color: #f5d0fe;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.logo-hover-link a:hover,
+.logo-hover-link a:focus-visible {
+    color: #ffffff;
+}
+
+.logo-icon-wrap:hover .logo-hover-link,
+.logo-icon-wrap:focus-within .logo-hover-link {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
 }
 
 @keyframes float {

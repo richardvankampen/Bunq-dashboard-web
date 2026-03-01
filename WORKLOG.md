@@ -6,6 +6,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Header support-hover toegevoegd:
+  - bewegende Bunq-icoon in de header heeft nu een hover/focus popover met klikbare link.
+  - linktekst: `buy me a coffee if you enjoy using this dashboard`.
+  - linktarget: `https://bunq.me/BunqFinancialDashboard` (nieuw tabblad, `noopener noreferrer`).
+  - visueel gestyled als opvallende glass/magenta link-popover.
+
 - Safari tooltip-compatibiliteit voor inzichttegels toegevoegd:
   - native/psuedo hover-tooltip aangevuld met JS-gedreven floating tooltipcomponent (`#insightHoverTooltip`).
   - actieve kaart toont tooltip bij `mouseenter`/`focus` met viewport-aware positionering (boven of onder de kaart).
