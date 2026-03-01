@@ -740,7 +740,13 @@ function setupEventListeners() {
         setDetailTransactionsCollapsed(!detailModalState.transactionsCollapsed);
     });
     document.getElementById('balanceDetailList')?.addEventListener('click', (event) => {
-        const target = event.target.closest('[data-row-action-key]');
+        const rawTarget = event.target;
+        const startEl = rawTarget && typeof rawTarget.closest === 'function'
+            ? rawTarget
+            : rawTarget?.parentElement;
+        const target = startEl && typeof startEl.closest === 'function'
+            ? startEl.closest('[data-row-action-key]')
+            : null;
         if (!target || !detailModalState.rowActionMap) return;
         const actionKey = String(target.getAttribute('data-row-action-key') || '');
         const handler = detailModalState.rowActionMap[actionKey];
@@ -2796,7 +2802,7 @@ function showTransactionDetail(detailType) {
                 detailTransactionsState.query = '';
                 detailTransactionsState.sortKey = DETAIL_TRANSACTIONS_DEFAULT_SORT;
                 const titleEl = document.getElementById('balanceDetailTransactionsTitle');
-                if (titleEl) titleEl.textContent = `Alle transacties in periode (${transactionRowsAll.length})`;
+                if (titleEl) titleEl.textContent = `Transacties (${transactionRowsAll.length})`;
                 const searchEl = document.getElementById('balanceDetailTransactionsSearch');
                 if (searchEl) searchEl.value = '';
                 const sortEl = document.getElementById('balanceDetailTransactionsSort');
@@ -2856,7 +2862,7 @@ function showTransactionDetail(detailType) {
             ],
             chart: { trace, layout },
             transactionRows: transactionRowsAll,
-            transactionsTitle: `Alle transacties in periode (${transactionRowsAll.length})`,
+            transactionsTitle: `Transacties (${transactionRowsAll.length})`,
             rowActionMap,
             transactionsCollapsedByDefault: true
         });

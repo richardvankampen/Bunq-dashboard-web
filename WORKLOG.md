@@ -6,6 +6,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Geldstromen detailweergave klikfix:
+  - klikafhandeling op categorie-rijen robuust gemaakt voor browservarianten met non-Element `event.target`.
+  - interactieve rijstijl toegevoegd (`.balance-detail-row-action`) zodat klikbare categorieën duidelijk zichtbaar en focusable zijn.
+  - onderliggende transactiesectie gebruikt nu titel `Transacties (...)`; label `Alle transacties in de periode` staat in het bovenste categoriepaneel.
+
 - Root-cause fix voor niet-gefilterde negatieve interne overboekingen:
   - oorzaak vastgesteld: in bepaalde Bunq SDK responses miste tegenrekeningmetadata op het standaardpad (`counterparty_account_id/IBAN/naam`), waardoor uitgaande interne transacties niet als intern gemarkeerd werden.
   - backend uitgebreid met:

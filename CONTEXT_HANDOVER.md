@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix)
 
 ## Canonieke status
 
@@ -54,6 +54,8 @@ Dit bestand is de actuele bron voor overdracht.
   - client-side zoekveld toegevoegd (eigen rekening, merchant/tegenrekening, omschrijving, datum, bedrag).
   - client-side sortering toegevoegd (datum, bedrag, naam).
   - `Money Flow` detail ondersteunt klikbare categorie-rijen met gefilterde transactietabel en standaard ingeklapte sectie `Alle transacties in de periode`.
+  - geldstromen-detail klikhandler is robuust gemaakt voor browservarianten waar `event.target` geen direct `Element` is.
+  - tekst `Alle transacties in de periode` staat nu alleen in het bovenste categoriepaneel; de tabelsectie onderin gebruikt neutrale titel `Transacties (...)`.
 
 ## Internal transfer filtering (actueel)
 

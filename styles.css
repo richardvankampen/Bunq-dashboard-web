@@ -1368,6 +1368,21 @@ body.reduce-animations .play-btn:hover {
     background: rgba(148, 163, 184, 0.1);
 }
 
+.balance-detail-row-action {
+    width: 100%;
+    border: 1px solid transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.balance-detail-row-action:hover,
+.balance-detail-row-action:focus-visible {
+    border-color: var(--accent-primary);
+    background: rgba(59, 130, 246, 0.12);
+    outline: none;
+}
+
 .balance-detail-row-name {
     color: var(--text-primary);
     overflow-wrap: anywhere;
