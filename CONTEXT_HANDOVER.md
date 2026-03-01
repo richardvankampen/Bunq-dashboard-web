@@ -76,6 +76,9 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
       - `Raw Bunq endpoint parsed only duplicate accounts ...`
       - `Raw Bunq endpoint unavailable (skip) ...` bij 404/route-not-found
     - merge-pad (`list_monetary_accounts` met bestaande SDK-accounts) gebruikt nu `soft_fail=True` om partiële raw endpoint failures niet als globale fallback-failure te loggen.
+  - Raw payload extractie/parsing is extra gehard:
+    - `_extract_json_payload(...)` leest eerst `raw_body/raw_response/...` en pas later `.value`, zodat lege sdk-wrapperwaarden de echte JSON-body niet overschrijven.
+    - `_extract_monetary_accounts_from_raw_payload(...)` accepteert ook directe account-dicts zonder `MonetaryAccount*` wrapper key.
 
 Status: incident nog open; focus ligt nu op:
 - valideren welke route-variant in de matrix echt data teruggeeft op deze Bunq/SDK runtime;

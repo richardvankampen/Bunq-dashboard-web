@@ -308,6 +308,21 @@ def _call_monetary_account_list(account_endpoint, user_id, mode):
     raise RuntimeError(f"Unknown monetary account list mode: {mode}")
 
 def _extract_json_payload(candidate):
+    def _payload_has_meaningful_content(payload):
+        if payload is None:
+            return False
+        if isinstance(payload, dict):
+            response = payload.get('Response')
+            if isinstance(response, list) and response:
+                return True
+            response = payload.get('response')
+            if isinstance(response, list) and response:
+                return True
+            return bool(payload)
+        if isinstance(payload, (list, tuple)):
+            return len(payload) > 0
+        return True
+
     if candidate is None:
         return None
 
@@ -332,20 +347,28 @@ def _extract_json_payload(candidate):
             return None
 
     if isinstance(candidate, (list, tuple)):
+        fallback_payload = None
         for item in candidate:
             payload = _extract_json_payload(item)
-            if payload is not None:
+            if payload is None:
+                continue
+            if _payload_has_meaningful_content(payload):
                 return payload
-        return None
+            if fallback_payload is None:
+                fallback_payload = payload
+        return fallback_payload
 
+    fallback_payload = None
     for attr_name in (
-        'value',
         'raw_body',
         'raw_response',
         'body',
         'response_body',
         'response',
         'json',
+        # Keep 'value' last. Some sdk response wrappers expose an empty .value
+        # while raw_body/response still contain the full JSON payload.
+        'value',
     ):
         nested = getattr(candidate, attr_name, None)
         if callable(nested):
@@ -354,10 +377,14 @@ def _extract_json_payload(candidate):
             except Exception:
                 continue
         payload = _extract_json_payload(nested)
-        if payload is not None:
+        if payload is None:
+            continue
+        if _payload_has_meaningful_content(payload):
             return payload
+        if fallback_payload is None:
+            fallback_payload = payload
 
-    return None
+    return fallback_payload
 
 def _call_api_client_get(api_client, path, params=None):
     params_payload = params if isinstance(params, dict) else ({} if params is None else params)
@@ -963,6 +990,19 @@ def _extract_monetary_accounts_from_raw_payload(payload):
                 variant_key = key
                 variant_value = value
                 break
+
+        # Some sdk/api variants return direct account dict entries without
+        # MonetaryAccount* wrapper keys. Accept them when they look account-like.
+        if variant_value is None:
+            has_id = any(field in item for field in ('id', 'id_'))
+            has_balance = 'balance' in item
+            has_descriptor = any(field in item for field in ('description', 'display_name', 'sub_type', 'type', 'type_'))
+            if has_id and (has_balance or has_descriptor):
+                normalized = dict(item)
+                normalized.setdefault('_raw_type', 'MonetaryAccountRaw')
+                accounts.append(normalized)
+                continue
+
         if variant_value is None:
             continue
         if not isinstance(variant_value, dict):

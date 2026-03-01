@@ -42,6 +42,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - prefixes `/v1/user`, `/user`, `user`;
     - suffixes `monetary-account*` inclusief `-bank/-savings/-external/-joint/-card`;
     - params varianten met/zonder `status` en `count`.
+- Raw payload parsing verder gehard op basis van NAS-debug:
+  - `_extract_json_payload(...)` prioriteert nu `raw_body/raw_response/...` boven `.value` en valt pas terug op lege payloads als er niets beters is.
+  - voorkomt scenario waarin een lege sdk-wrapper `.value` de echte JSON-body maskeert.
+  - `_extract_monetary_accounts_from_raw_payload(...)` accepteert nu ook directe account-dicts zonder `MonetaryAccount*` wrapper key.
 - Installatie-instructies aangescherpt op Synology:
   - `scripts/install_or_update_synology.sh` expliciet als root laten uitvoeren (`sudo sh ...`).
   - `NO_CACHE` overrides nu gedocumenteerd via root-shell variant (`sudo sh -c 'NO_CACHE=... sh ...'`) om sudo-env valkuilen te vermijden.
