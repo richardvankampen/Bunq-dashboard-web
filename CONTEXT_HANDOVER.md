@@ -107,6 +107,19 @@ sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack 
 sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
 ```
 
+Snelle debug-loop (zonder stack deploy) bij pure codewijzigingen:
+
+```bash
+cd /volume1/docker/bunq-dashboard
+sudo git pull --rebase origin main
+sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
+```
+
+Gebruik full stack deploy (met `.env` laden) alleen bij wijziging van:
+- `.env`
+- `docker-compose.yml`
+- secrets/netwerk/deploy-config
+
 Synology deploy-regel:
 - Gebruik voor install/update altijd: `sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh`
 - Voor handmatige redeploy: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
@@ -171,6 +184,7 @@ Let op:
 - Het script toont nu ook `first_account=...` per route, ook bij `MAX_ROWS=0`.
 - Bij eerste lege route (`parsed_accounts=0`) toont script nu ook `result_type` en `probe_*` attribuutdiagnostiek om SDK-wrappervelden te identificeren.
 - De `probe_*` diagnostiek bevat nu ook `get_*` accessors en `__dict__`, specifiek om BunqResponseRaw payloadvelden in SDK-varianten te vinden.
+- Voor snelle code-iteraties is er nu `scripts/quick_redeploy.sh` (build + service update, zonder stack deploy).
 - Als `MAX_ROWS` via `sudo` niet doorkomt, gebruik de 2e script-parameter (`...sh <service> <max_rows>`) of `sudo env MAX_ROWS=...`.
 
 ## Als savings nog steeds ontbreken

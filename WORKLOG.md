@@ -68,6 +68,13 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `_extract_monetary_accounts_from_raw_payload(...)` accepteert nu ook single-object payloads zonder `Response[]` wrapper en nested `value/data/result` payloads.
 - Debugscript probe-matrix uitgebreid voor BunqResponseRaw:
   - toegevoegd: `get_*` probes en `__dict__`, zodat we bij `parsed_accounts=0` direct zien waar de SDK-runtime de body bewaart.
+- Nieuw snel redeployscript toegevoegd:
+  - `scripts/quick_redeploy.sh`
+  - doet bewust geen `docker stack deploy`; alleen:
+    - cached image build (default),
+    - `docker service update --force --image ...` met retry bij `update out of sequence`.
+  - doel: snellere debug-loop bij pure codewijzigingen (`api_proxy.py`, frontend, scripts).
+  - expliciete waarschuwing in script: bij `.env`/`docker-compose.yml`/secrets/netwerkwijzigingen wel volledige stack deploy doen.
 - Volgende-sessie checklist expliciet vastgelegd in `CONTEXT_HANDOVER.md`:
   - redeploy met `.env` geladen;
   - raw debug rerun + grep met `first_account=...`;
