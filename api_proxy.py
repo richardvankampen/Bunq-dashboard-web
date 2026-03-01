@@ -3075,11 +3075,7 @@ def extract_own_ibans(accounts):
     for account in accounts:
         if not is_own_bunq_account(account):
             continue
-        aliases = getattr(account, 'alias', None) or []
-        for alias in aliases:
-            alias_iban = extract_alias_iban(alias)
-            if alias_iban:
-                ibans.add(alias_iban)
+        ibans.update(extract_account_ibans(account))
     return ibans
 
 def normalize_party_name(value):
@@ -3088,63 +3084,20 @@ def normalize_party_name(value):
         return ''
     return re.sub(r'\s+', ' ', str(value)).strip().casefold()
 
-def _add_identity_name(target, value):
-    """Add normalized identity names while avoiding noisy short tokens."""
-    normalized = normalize_party_name(value)
-    if len(normalized) < 4:
-        return
-    target.add(normalized)
-
-def _collect_identity_names_from_node(target, node):
-    if node is None:
-        return
-
-    for attr_name in (
-        'description',
-        'display_name',
-        'public_nick_name',
-        'name',
-        'merchant_name',
-        'company_name',
-        'legal_name',
-        'holder_name',
-        'account_holder_name',
-    ):
-        _add_identity_name(target, get_obj_field(node, attr_name))
-
-    first_name = get_obj_field(node, 'first_name')
-    last_name = get_obj_field(node, 'last_name')
-    full_name_parts = [part for part in (first_name, last_name) if isinstance(part, str) and part.strip()]
-    if full_name_parts:
-        _add_identity_name(target, " ".join(full_name_parts))
-
-def extract_account_identity_names(account):
-    """Extract own account and holder identity names for internal-transfer matching."""
-    names = set()
+def extract_account_ibans(account):
+    """Extract IBANs from account alias/user_alias structures."""
+    ibans = set()
     if account is None:
-        return names
-
-    _collect_identity_names_from_node(names, account)
-
-    for wrapper_name in ('UserPerson', 'UserCompany', 'LabelUser', 'LabelMonetaryAccount'):
-        _collect_identity_names_from_node(names, get_obj_field(account, wrapper_name))
-
-    co_owners = get_obj_field(account, 'all_co_owner', 'co_owner') or []
-    if not isinstance(co_owners, (list, tuple, set)):
-        co_owners = [co_owners]
-    for owner in co_owners:
-        _collect_identity_names_from_node(names, owner)
-        for wrapper_name in ('UserPerson', 'UserCompany', 'LabelUser'):
-            _collect_identity_names_from_node(names, get_obj_field(owner, wrapper_name))
+        return ibans
 
     aliases = get_obj_field(account, 'alias', 'user_alias') or []
     if not isinstance(aliases, (list, tuple, set)):
         aliases = [aliases]
     for alias in aliases:
-        for alias_node in iter_alias_nodes(alias):
-            _collect_identity_names_from_node(names, alias_node)
-
-    return names
+        alias_iban = extract_alias_iban(alias)
+        if alias_iban:
+            ibans.add(alias_iban)
+    return ibans
 
 def is_own_bunq_account(account):
     """
@@ -3160,15 +3113,6 @@ def is_own_bunq_account(account):
         return False
     return True
 
-def extract_own_account_names(accounts):
-    """Extract own account and alias names for internal transfer detection fallback."""
-    names = set()
-    for account in accounts:
-        if not is_own_bunq_account(account):
-            continue
-        names.update(extract_account_identity_names(account))
-    return names
-
 def extract_own_account_ids(accounts):
     """Extract own monetary-account ids for deterministic internal transfer matching."""
     ids = set()
@@ -3179,24 +3123,6 @@ def extract_own_account_ids(accounts):
         if account_id is not None:
             ids.add(str(account_id))
     return ids
-
-def description_mentions_own_account(description, own_account_names):
-    """
-    Fallback signal for internal transfers when alias/account-id metadata is incomplete.
-    Matches configured own Bunq account names in transaction description text.
-    """
-    if not description or not own_account_names:
-        return False
-    description_normalized = normalize_party_name(description)
-    if not description_normalized:
-        return False
-
-    for own_name in own_account_names:
-        if len(own_name) < 4:
-            continue
-        if own_name in description_normalized:
-            return True
-    return False
 
 def _safe_tx_amount(transaction):
     return safe_float(transaction.get('amount'), default=0.0, context='transaction amount')
@@ -3259,43 +3185,6 @@ def reconcile_internal_transfers(transactions, own_account_ids):
         by_payment_id[key].append(idx)
 
     for indices in by_payment_id.values():
-        if len(indices) < 2:
-            continue
-        positives = [index for index in indices if _safe_tx_amount(transactions[index]) > 0]
-        negatives = [index for index in indices if _safe_tx_amount(transactions[index]) < 0]
-        distinct_accounts = {str(transactions[index].get('account_id') or '') for index in indices}
-        if positives and negatives and len(distinct_accounts) >= 2:
-            _mark_internal_transfer_indices(transactions, indices)
-            reconciled += len(indices)
-
-    # Pass 2: fallback matching on minute timestamp + abs(amount) + description/counterparty.
-    by_signature = defaultdict(list)
-    for idx, transaction in enumerate(transactions):
-        if transaction.get('is_internal_transfer'):
-            continue
-        account_id = str(transaction.get('account_id') or '')
-        if account_id not in own_ids:
-            continue
-
-        minute_key = _tx_minute_key(transaction)
-        if not minute_key:
-            continue
-
-        amount_abs = _rounded_abs_amount(transaction.get('amount'))
-        if amount_abs <= 0:
-            continue
-
-        currency = str(transaction.get('currency') or 'EUR').upper()
-        description = normalize_party_name(transaction.get('description'))
-        counterparty = normalize_party_name(transaction.get('counterparty') or transaction.get('merchant'))
-        discriminator = description or counterparty
-        if len(discriminator) < 3:
-            continue
-
-        key = (minute_key, currency, amount_abs, discriminator)
-        by_signature[key].append(idx)
-
-    for indices in by_signature.values():
         if len(indices) < 2:
             continue
         positives = [index for index in indices if _safe_tx_amount(transactions[index]) > 0]
@@ -5125,7 +5014,7 @@ def get_accounts():
             accounts_data.append({
                 'id': account_id,
                 'description': get_obj_field(account, 'description', 'display_name') or f"Account {account_id}",
-                'identity_names': sorted(extract_account_identity_names(account)),
+                'ibans': sorted(extract_account_ibans(account)),
                 'balance': {
                     'value': balance_value,
                     'currency': balance_currency
@@ -5216,7 +5105,6 @@ def get_transactions():
                 accounts_by_id[str(acc_id)] = acc
         own_account_ids = extract_own_account_ids(accounts)
         own_ibans = extract_own_ibans(accounts)
-        own_account_names = extract_own_account_names(accounts)
         
         target_ids = None
         if account_id:
@@ -5239,7 +5127,6 @@ def get_transactions():
                 sort_desc=sort_desc,
                 own_account_ids=own_account_ids,
                 own_ibans=own_ibans,
-                own_account_names=own_account_names,
                 account_name=get_obj_field(account, 'description', 'display_name'),
                 return_meta=True
             )
@@ -5308,7 +5195,6 @@ def get_account_transactions(
     sort_desc=True,
     own_account_ids=None,
     own_ibans=None,
-    own_account_names=None,
     account_name=None,
     return_meta=False
 ):
@@ -5343,7 +5229,6 @@ def get_account_transactions(
     transactions = []
     own_account_ids = own_account_ids or set()
     own_ibans = own_ibans or set()
-    own_account_names = own_account_names or set()
     seen_transaction_keys = set()
 
     for source_name, payment in entries:
@@ -5367,6 +5252,7 @@ def get_account_transactions(
         is_internal_transfer = False
         counterparty_alias = get_obj_field(payment, 'counterparty_alias', 'counterparty')
         counterparty_monetary_account = get_obj_field(payment, 'monetary_account_counterparty')
+        merchant_reference = get_obj_field(payment, 'merchant_reference', 'merchant_reference_')
         counterparty_account_id = (
             get_obj_field(counterparty_monetary_account, 'id_', 'id', 'monetary_account_id')
             or get_obj_field(counterparty_alias, 'monetary_account_id', 'id_', 'id')
@@ -5374,8 +5260,13 @@ def get_account_transactions(
         )
         counterparty_account_id = str(counterparty_account_id) if counterparty_account_id is not None else None
         counterparty_name = extract_counterparty_name(counterparty_alias)
-        counterparty_name_normalized = normalize_party_name(counterparty_name)
+        counterparty_account_name = get_obj_field(counterparty_monetary_account, 'description', 'display_name', 'name')
         counterparty_iban = extract_alias_iban(counterparty_alias)
+        counterparty_account_ibans = set()
+        if counterparty_iban:
+            counterparty_account_ibans.add(counterparty_iban)
+        counterparty_account_ibans.update(extract_account_ibans(counterparty_monetary_account))
+        merchant_reference_iban = normalize_iban(merchant_reference)
         current_account_id = str(account_id) if account_id is not None else None
         if (
             counterparty_account_id
@@ -5384,13 +5275,9 @@ def get_account_transactions(
         ):
             # Deterministic: transfer between known own monetary accounts.
             is_internal_transfer = True
-        elif counterparty_iban and counterparty_iban in own_ibans:
+        elif counterparty_account_ibans and any(iban in own_ibans for iban in counterparty_account_ibans):
             is_internal_transfer = True
-        elif counterparty_name_normalized and counterparty_name_normalized in own_account_names:
-            # Fallback for runtime variants where internal transfers lack a usable IBAN.
-            is_internal_transfer = True
-        elif not counterparty_account_id and not counterparty_iban and description_mentions_own_account(description, own_account_names):
-            # Last-resort fallback: description mentions one of the own Bunq accounts.
+        elif merchant_reference_iban and merchant_reference_iban in own_ibans:
             is_internal_transfer = True
         amount_value, amount_currency = parse_monetary_value(
             get_obj_field(payment, 'amount', 'monetary_value'),
@@ -5413,7 +5300,6 @@ def get_account_transactions(
             amount_currency,
             rate_date=rate_date,
         )
-        merchant_reference = get_obj_field(payment, 'merchant_reference', 'merchant_reference_')
         merchant_category_code = (
             extract_alias_merchant_category_code(counterparty_alias)
             or get_obj_field(payment, 'merchant_category_code', 'mcc')
@@ -5425,7 +5311,7 @@ def get_account_transactions(
             merchant_category_code=merchant_category_code,
             amount=amount_value
         )
-        merchant_candidates = [counterparty_name, description, merchant_reference]
+        merchant_candidates = [counterparty_account_name, counterparty_name, description, merchant_reference]
         merchant_label = next(
             (
                 value.strip()
@@ -5449,9 +5335,10 @@ def get_account_transactions(
             'fx_rate_to_eur': fx_rate_to_eur,
             'fx_converted': fx_converted,
             'description': description,
-            'counterparty': counterparty_name,
+            'counterparty': counterparty_account_name or counterparty_name,
+            'counterparty_account_name': counterparty_account_name,
             'counterparty_account_id': counterparty_account_id,
-            'counterparty_iban': counterparty_iban,
+            'counterparty_iban': sorted(counterparty_account_ibans)[0] if counterparty_account_ibans else None,
             'merchant': merchant_label,
             'category': category,
             'type': get_obj_field(payment, 'type_', 'type'),
@@ -5607,7 +5494,6 @@ def get_statistics():
         accounts = list_monetary_accounts()
         own_account_ids = extract_own_account_ids(accounts)
         own_ibans = extract_own_ibans(accounts)
-        own_account_names = extract_own_account_names(accounts)
         all_transactions = []
         
         for account in accounts:
@@ -5618,7 +5504,6 @@ def get_statistics():
                 sort_desc=True,
                 own_account_ids=own_account_ids,
                 own_ibans=own_ibans,
-                own_account_names=own_account_names,
                 account_name=get_obj_field(account, 'description', 'display_name')
             )
             all_transactions.extend(transactions)

@@ -79,22 +79,17 @@ function getOwnBunqAccountIdentitySets() {
             .map((account) => String(account?.id || '').trim())
             .filter(Boolean)
     );
-    const ownNames = new Set();
+    const ownIbans = new Set();
     ownAccounts.forEach((account) => {
-        const baseName = normalizePartyNameForMatch(account?.description || account?.display_name || '');
-        if (baseName.length >= 4) {
-            ownNames.add(baseName);
-        }
-
-        const identityNames = Array.isArray(account?.identity_names) ? account.identity_names : [];
-        identityNames.forEach((name) => {
-            const normalized = normalizePartyNameForMatch(name);
-            if (normalized.length >= 4) {
-                ownNames.add(normalized);
+        const ibans = Array.isArray(account?.ibans) ? account.ibans : [];
+        ibans.forEach((iban) => {
+            const normalized = normalizeIbanForMatch(iban);
+            if (normalized) {
+                ownIbans.add(normalized);
             }
         });
     });
-    return { ownIds, ownNames };
+    return { ownIds, ownIbans };
 }
 
 function loadSelectedAccountIds() {
@@ -1490,8 +1485,7 @@ function applyClientFilters(data, options = {}) {
     let filtered = [...data];
     const excludeInternalTransfers = options.excludeInternalTransfers ?? CONFIG.excludeInternalTransfers;
     if (excludeInternalTransfers) {
-        const { ownIds: ownAccountIds, ownNames: ownAccountNames } = getOwnBunqAccountIdentitySets();
-        const ownAccountNameList = Array.from(ownAccountNames).filter((name) => name.length >= 4);
+        const { ownIds: ownAccountIds, ownIbans } = getOwnBunqAccountIdentitySets();
         filtered = filtered.filter((transaction) => {
             if (transaction?.is_internal_transfer) return false;
 
@@ -1511,24 +1505,11 @@ function applyClientFilters(data, options = {}) {
                 }
             }
 
-            if (ownAccountNames.size <= 0) return true;
-
-            const counterpartyCandidates = [
-                normalizePartyNameForMatch(transaction?.counterparty),
-                normalizePartyNameForMatch(transaction?.merchant)
-            ].filter(Boolean);
-            if (counterpartyCandidates.some((candidate) => ownAccountNames.has(candidate))) {
-                // Extra UI-side fallback for runtime variants where backend internal detection misses this transfer.
-                return false;
-            }
-
-            // Last-resort UI fallback when backend metadata on counterparty is incomplete.
-            const descriptionNormalized = normalizePartyNameForMatch(transaction?.description);
-            if (
-                descriptionNormalized
-                && ownAccountNameList.some((name) => descriptionNormalized.includes(name))
-            ) {
-                return false;
+            if (ownIbans.size > 0) {
+                const counterpartyIban = normalizeIbanForMatch(transaction?.counterparty_iban);
+                if (counterpartyIban && ownIbans.has(counterpartyIban)) {
+                    return false;
+                }
             }
             return true;
         });
@@ -2402,6 +2383,13 @@ function normalizePartyNameForMatch(value) {
         .trim()
         .toLocaleLowerCase('nl-NL')
         .replace(/\s+/g, ' ');
+}
+
+function normalizeIbanForMatch(value) {
+    return String(value || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '');
 }
 
 function getSavingsAccountSets() {

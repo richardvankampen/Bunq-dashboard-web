@@ -6,6 +6,18 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Persoonsnaam-gebaseerde internal-transfer workarounds verwijderd (deterministische matching):
+  - backend internal detectie gebruikt nu alleen account-id en IBAN-signalen (`counterparty_alias`, `monetary_account_counterparty`, `merchant_reference`);
+  - naam/omschrijving-fallbacks verwijderd uit backend en frontend;
+  - cross-account reconcile teruggebracht naar deterministische pass (`payment-id + minute + amount + currency`);
+  - `/api/accounts` levert `ibans` per rekening en frontend fallback matcht daarop.
+
+- Interne detectie op rekeningnaam/rekeningnummer aangescherpt:
+  - backend leest nu ook rekeningnaam + alias-IBAN uit `monetary_account_counterparty`;
+  - backend matcht `merchant_reference` nu ook op eigen IBAN/eigen rekeningnaam;
+  - `/api/accounts` bevat nu `ibans` per account (naast `identity_names`);
+  - frontend fallback gebruikt `counterparty_iban` vs eigen `ibans`, zodat interne transacties ook zonder goede naamherkenning weggefilterd worden.
+
 - Interne tegenpartij op eigen naam (bijv. `Richard`) nu ook gefilterd:
   - backend identity-extractie uitgebreid met account-houder/co-owner/aliasnamen (`display_name`, `public_nick_name`, `first_name + last_name`, etc.);
   - `extract_own_account_names(...)` gebruikt nu deze bredere identity-set, zodat interne transacties zonder bruikbaar account-id/IBAN alsnog als intern worden gemarkeerd;
