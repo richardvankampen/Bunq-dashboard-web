@@ -1489,7 +1489,14 @@ function applyClientFilters(data, options = {}) {
                 const counterpartyAccountId = transaction?.counterparty_account_id != null
                     ? String(transaction.counterparty_account_id).trim()
                     : '';
-                if (counterpartyAccountId && ownAccountIds.has(counterpartyAccountId)) {
+                const sourceAccountId = transaction?.account_id != null
+                    ? String(transaction.account_id).trim()
+                    : '';
+                if (
+                    counterpartyAccountId
+                    && ownAccountIds.has(counterpartyAccountId)
+                    && (!sourceAccountId || counterpartyAccountId !== sourceAccountId)
+                ) {
                     return false;
                 }
             }

@@ -3186,7 +3186,9 @@ def reconcile_internal_transfers(transactions, own_account_ids):
 
     reconciled = 0
 
-    # Pass 1: deterministic matching on Bunq payment id + amount/currency.
+    # Pass 1: deterministic matching on Bunq payment id + minute + amount/currency.
+    # Include minute to avoid accidental pairing of unrelated transactions where
+    # payment ids collide across accounts in certain runtime variants.
     by_payment_id = defaultdict(list)
     for idx, transaction in enumerate(transactions):
         if transaction.get('is_internal_transfer'):
@@ -3197,8 +3199,12 @@ def reconcile_internal_transfers(transactions, own_account_ids):
         payment_id = transaction.get('id')
         if payment_id is None:
             continue
+        minute_key = _tx_minute_key(transaction)
+        if not minute_key:
+            continue
         key = (
             str(payment_id),
+            minute_key,
             str(transaction.get('currency') or 'EUR').upper(),
             _rounded_abs_amount(transaction.get('amount')),
         )
@@ -5321,7 +5327,12 @@ def get_account_transactions(
         counterparty_name = extract_counterparty_name(counterparty_alias)
         counterparty_name_normalized = normalize_party_name(counterparty_name)
         counterparty_iban = extract_alias_iban(counterparty_alias)
-        if counterparty_account_id and counterparty_account_id in own_account_ids:
+        current_account_id = str(account_id) if account_id is not None else None
+        if (
+            counterparty_account_id
+            and counterparty_account_id in own_account_ids
+            and counterparty_account_id != current_account_id
+        ):
             # Deterministic: transfer between known own monetary accounts.
             is_internal_transfer = True
         elif counterparty_iban and counterparty_iban in own_ibans:

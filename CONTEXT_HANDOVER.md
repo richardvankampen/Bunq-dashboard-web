@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven)
 
 ## Canonieke status
 
@@ -67,8 +67,12 @@ Dit bestand is de actuele bron voor overdracht.
     - pass 1: match op payment-id + amount/currency met plus/min-tegenboeking op verschillende eigen Bunq-rekeningen;
     - pass 2: fallback op minuut-timestamp + abs(amount) + description/counterparty-signature met plus/min-tegenboeking.
     - doel: negatieve interne afschrijvingen zonder complete counterparty metadata alsnog als intern markeren.
+  - overfilter-correctie (inkomsten/uitgaven op 0 voorkomen):
+    - deterministische account-id-match markeert alleen intern als `counterparty_account_id` een eigen Bunq-account is én verschilt van de bronrekening (`account_id`);
+    - reconcile pass 1 gebruikt nu ook minuut-timestamp in de key (`payment-id + minute + amount + currency`) om false matches tussen ongerelateerde transacties te voorkomen.
   - deze detectie wordt toegepast in zowel `/api/transactions` als `/api/statistics`.
   - frontend bevat extra fallback-filtering op tegenrekening-account-id, tegenrekening/merchant-naam en omschrijving-match vs eigen Bunq-rekeningen wanneer backend-flagging in een runtimevariant onvolledig is.
+  - frontend account-id fallback respecteert nu ook bronrekening-id (zelfde account-id wordt niet automatisch intern weggefilterd).
   - balanswidgets voor betaal/spaar gebruiken nu alleen eigen Bunq-rekeningen (Triodos valt buiten `Betaalrekeningen (totaal)`).
 
 ## Widgetteksten (actueel)

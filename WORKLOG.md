@@ -6,6 +6,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Overfilter-correctie voor `exclude internal` (inkomsten/uitgaven vielen naar 0):
+  - backend deterministic internal-check markeert alleen intern als `counterparty_account_id` in eigen Bunq-ids zit én verschilt van bron `account_id`;
+  - backend `reconcile_internal_transfers` pass 1 aangescherpt naar `payment-id + minute + amount + currency` om false pairings te vermijden;
+  - frontend fallbackfilter op `counterparty_account_id` respecteert nu ook `account_id` (zelfde id niet automatisch wegfilteren).
+
 - Categorie-race frame-rate aangepast:
   - `RACING_ANIMATION_FPS` gewijzigd van 10 naar 2.
   - gevolg: daganimatie speelt rustiger af (~45s bij ~90 frames).
