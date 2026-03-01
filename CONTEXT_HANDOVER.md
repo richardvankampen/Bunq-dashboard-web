@@ -129,7 +129,7 @@ Dit bestand is de actuele bron voor overdracht.
 
 - Op het bewegende Bunq-icoon naast `Bunq Financial Dashboard` staat nu een hover/focus popover met klikbare support-link:
   - tekst: `Click on the logo to buy me a coffee if you like using this free dashboard`
-  - URL: `https://bunq.me/BunqFinancialDashboard`
+  - URL: `https://bunq.me/BunqFinancialDashboard/3.50`
   - zowel de popover-link als klik op het bewegende logo openen deze URL in een nieuw tabblad (`target="_blank"` + `rel="noopener noreferrer"`).
   - popoverstijl is nu donkerder/frosted voor beter contrast.
 

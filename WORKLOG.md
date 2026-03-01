@@ -6,6 +6,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Supportlink voor het bewegende Bunq-logo aangepast naar:
+  - `https://bunq.me/BunqFinancialDashboard/3.50`
+  - toegepast op zowel logo-click als tooltip-link in de header.
+
 - Documentatie uitgebreid met advies voor **vast/sticky publiek IP** in alle relevante user-docs:
   - `README.md` en `README-NL.md`: expliciete aanbeveling + verwijzing naar troubleshooting-sectie.
   - `SYNOLOGY_INSTALL.md` en `SYNOLOGY_INSTALL-NL.md`: netwerkvereisten aangevuld met vast/sticky publiek IP-advies.
@@ -44,7 +48,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - Header support-hover toegevoegd:
   - bewegende Bunq-icoon in de header heeft nu een hover/focus popover met klikbare link.
   - linktekst: `buy me a coffee if you enjoy using this dashboard`.
-  - linktarget: `https://bunq.me/BunqFinancialDashboard` (nieuw tabblad, `noopener noreferrer`).
+  - linktarget: `https://bunq.me/BunqFinancialDashboard/3.50` (nieuw tabblad, `noopener noreferrer`).
   - visueel gestyled als opvallende glass/magenta link-popover.
 
 - Safari tooltip-compatibiliteit voor inzichttegels toegevoegd:
