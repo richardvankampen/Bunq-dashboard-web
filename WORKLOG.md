@@ -13,6 +13,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `README.md`
   - `SYNOLOGY_INSTALL.md`
   - `CONTEXT_HANDOVER.md`
+  - `AGENTS.md` (vaste startup-instructies voor nieuwe sessies)
 - Operationele les vastgelegd:
   - Als install/update als normale user wordt gedraaid, kan deploy op compose-defaults terugvallen (`*.jouwdomein.nl`) ondanks correcte `.env`, met Vaultwarden `ENOTFOUND` en demo mode als gevolg.
 

@@ -119,3 +119,4 @@ Vanaf nu bij elke codewijziging:
 - `WORKLOG.md` bijwerken met wat/waarom/resultaat.
 - `CONTEXT_HANDOVER.md` bijwerken naar 1 actuele, niet-duplicerende waarheid.
 - Verouderde informatie in `CONTEXT_HANDOVER.md` verwijderen i.p.v. extra lagen toevoegen.
+- Startup-volgorde voor nieuwe sessies staat vast in `AGENTS.md` (eerst `CONTEXT_HANDOVER.md`, daarna `WORKLOG.md`).
