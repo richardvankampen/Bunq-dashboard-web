@@ -75,16 +75,25 @@ for path, params in plan:
             print("result_type=" + type(result).__name__)
             probe_attrs = (
                 "value",
+                "get_value",
                 "raw_body",
+                "get_raw_body",
                 "raw_response",
                 "body",
+                "get_body",
                 "response_body",
+                "get_response_body",
                 "response",
+                "get_response",
                 "json",
+                "get_json",
+                "get_data",
+                "data",
                 "content",
                 "text",
                 "headers",
                 "status_code",
+                "__dict__",
             )
             for attr in probe_attrs:
                 if not hasattr(result, attr):

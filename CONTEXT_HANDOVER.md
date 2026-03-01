@@ -83,7 +83,9 @@ Doel: savings-account discovery robuuster maken bij SDK-variantfouten.
     - merge-pad (`list_monetary_accounts` met bestaande SDK-accounts) gebruikt nu `soft_fail=True` om partiële raw endpoint failures niet als globale fallback-failure te loggen.
   - Raw payload extractie/parsing is extra gehard:
     - `_extract_json_payload(...)` leest eerst `raw_body/raw_response/...` en pas later `.value`, zodat lege sdk-wrapperwaarden de echte JSON-body niet overschrijven.
+    - `_extract_json_payload(...)` probeert nu ook `get_*` methoden (`get_value/get_body/get_raw_body/get_response_body/get_json/get_data`) en scant `__dict__` private velden op payload-achtige data.
     - `_extract_monetary_accounts_from_raw_payload(...)` accepteert ook directe account-dicts zonder `MonetaryAccount*` wrapper key.
+    - `_extract_monetary_accounts_from_raw_payload(...)` accepteert ook single-object payloads zonder `Response[]` wrapper plus nested `value/data/result` payloads.
     - `_extract_monetary_accounts_from_raw_result(...)` verwerkt ook sdk model-object responses uit raw client calls (dus niet alleen JSON payloads).
     - account-extractie is aangescherpt om false positives te reduceren:
       - alleen account-like mappings/objecten (o.a. `id` + `balance` of monetary-account class-hint) worden meegenomen.
@@ -168,6 +170,7 @@ Let op:
 - Het script toont nu ook `attempt_count=<n>` en gebruikt ongebufferde Python-output (`python3 -u`) voor directe voortgang.
 - Het script toont nu ook `first_account=...` per route, ook bij `MAX_ROWS=0`.
 - Bij eerste lege route (`parsed_accounts=0`) toont script nu ook `result_type` en `probe_*` attribuutdiagnostiek om SDK-wrappervelden te identificeren.
+- De `probe_*` diagnostiek bevat nu ook `get_*` accessors en `__dict__`, specifiek om BunqResponseRaw payloadvelden in SDK-varianten te vinden.
 - Als `MAX_ROWS` via `sudo` niet doorkomt, gebruik de 2e script-parameter (`...sh <service> <max_rows>`) of `sudo env MAX_ROWS=...`.
 
 ## Als savings nog steeds ontbreken

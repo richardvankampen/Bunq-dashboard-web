@@ -62,6 +62,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - Debugscript introspectie toegevoegd voor lege raw responses:
   - bij eerste `parsed_accounts=0` toont script nu `result_type` plus type/size van relevante response-attributen (`value`, `raw_body`, `response`, `json`, etc.).
   - doel: exact bepalen waar de SDK-wrapper de daadwerkelijke payload verbergt.
+- BunqResponseRaw payloadextractie verder uitgebreid op basis van documentatie-aanwijzingen:
+  - `_extract_json_payload(...)` probeert nu expliciet ook `get_*` methoden (`get_value/get_body/get_raw_body/get_response_body/get_json/get_data`) naast velden.
+  - private objectvelden worden nu ook meegenomen via `__dict__`-scan met prioriteit op payload-achtige keys (`raw/body/response/json/...`).
+  - `_extract_monetary_accounts_from_raw_payload(...)` accepteert nu ook single-object payloads zonder `Response[]` wrapper en nested `value/data/result` payloads.
+- Debugscript probe-matrix uitgebreid voor BunqResponseRaw:
+  - toegevoegd: `get_*` probes en `__dict__`, zodat we bij `parsed_accounts=0` direct zien waar de SDK-runtime de body bewaart.
 - Volgende-sessie checklist expliciet vastgelegd in `CONTEXT_HANDOVER.md`:
   - redeploy met `.env` geladen;
   - raw debug rerun + grep met `first_account=...`;

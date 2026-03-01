@@ -332,7 +332,7 @@ def _call_monetary_account_list(account_endpoint, user_id, mode):
         return account_endpoint.list(user_id, _monetary_account_query_params(active_only=False))
     raise RuntimeError(f"Unknown monetary account list mode: {mode}")
 
-def _extract_json_payload(candidate):
+def _extract_json_payload(candidate, _visited=None):
     def _payload_has_meaningful_content(payload):
         if payload is None:
             return False
@@ -348,8 +348,20 @@ def _extract_json_payload(candidate):
             return len(payload) > 0
         return True
 
+    if _visited is None:
+        _visited = set()
+
     if candidate is None:
         return None
+
+    try:
+        candidate_id = id(candidate)
+    except Exception:
+        candidate_id = None
+    if candidate_id is not None:
+        if candidate_id in _visited:
+            return None
+        _visited.add(candidate_id)
 
     if isinstance(candidate, dict):
         return candidate
@@ -374,7 +386,7 @@ def _extract_json_payload(candidate):
     if isinstance(candidate, (list, tuple)):
         fallback_payload = None
         for item in candidate:
-            payload = _extract_json_payload(item)
+            payload = _extract_json_payload(item, _visited)
             if payload is None:
                 continue
             if _payload_has_meaningful_content(payload):
@@ -387,13 +399,23 @@ def _extract_json_payload(candidate):
     for attr_name in (
         'raw_body',
         'raw_response',
+        'get_raw_body',
         'body',
+        'get_body',
         'response_body',
+        'get_response_body',
         'response',
+        'get_response',
         'json',
+        'get_json',
+        'get_data',
+        'data',
+        'content',
+        'text',
         # Keep 'value' last. Some sdk response wrappers expose an empty .value
         # while raw_body/response still contain the full JSON payload.
         'value',
+        'get_value',
     ):
         nested = getattr(candidate, attr_name, None)
         if callable(nested):
@@ -401,13 +423,32 @@ def _extract_json_payload(candidate):
                 nested = nested()
             except Exception:
                 continue
-        payload = _extract_json_payload(nested)
+        payload = _extract_json_payload(nested, _visited)
         if payload is None:
             continue
         if _payload_has_meaningful_content(payload):
             return payload
         if fallback_payload is None:
             fallback_payload = payload
+
+    # BunqResponseRaw variants can hide the real payload in private fields.
+    obj_dict = getattr(candidate, '__dict__', None)
+    if isinstance(obj_dict, dict) and obj_dict:
+        priority_tokens = ('raw', 'body', 'response', 'json', 'payload', 'value', 'content', 'data')
+
+        def _attr_priority(attr_key):
+            normalized = str(attr_key).lower()
+            has_priority_token = any(token in normalized for token in priority_tokens)
+            return (0 if has_priority_token else 1, normalized)
+
+        for attr_key in sorted(obj_dict.keys(), key=_attr_priority):
+            payload = _extract_json_payload(obj_dict.get(attr_key), _visited)
+            if payload is None:
+                continue
+            if _payload_has_meaningful_content(payload):
+                return payload
+            if fallback_payload is None:
+                fallback_payload = payload
 
     return fallback_payload
 
@@ -1028,7 +1069,12 @@ def _extract_monetary_accounts_from_raw_payload(payload):
     response_items = []
     if isinstance(payload, dict):
         response_items = payload.get('Response') or payload.get('response') or []
-    elif isinstance(payload, list):
+        if not isinstance(response_items, list):
+            response_items = []
+        # Some responses are a single account(-wrapper) dict without Response[].
+        if not response_items:
+            response_items = [payload]
+    elif isinstance(payload, (list, tuple)):
         response_items = payload
 
     accounts = []
@@ -1048,6 +1094,16 @@ def _extract_monetary_accounts_from_raw_payload(payload):
         # Some sdk/api variants return direct account dict entries without
         # MonetaryAccount* wrapper keys. Accept strict account-like mappings.
         if variant_value is None:
+            nested_payload = item.get('value')
+            if nested_payload is None:
+                nested_payload = item.get('data')
+            if nested_payload is None:
+                nested_payload = item.get('result')
+            if nested_payload is not None and nested_payload is not item:
+                nested_accounts = _extract_monetary_accounts_from_raw_payload(nested_payload)
+                if nested_accounts:
+                    accounts.extend(nested_accounts)
+                    continue
             if _is_account_like_mapping(item):
                 normalized = dict(item)
                 normalized.setdefault('_raw_type', 'MonetaryAccountRaw')
