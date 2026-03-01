@@ -3150,6 +3150,109 @@ def description_mentions_own_account(description, own_account_names):
             return True
     return False
 
+def _safe_tx_amount(transaction):
+    return safe_float(transaction.get('amount'), default=0.0, context='transaction amount')
+
+def _rounded_abs_amount(value):
+    try:
+        return round(abs(float(value)), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+def _tx_minute_key(transaction):
+    parsed = parse_bunq_datetime(transaction.get('date'), context='transaction date')
+    if parsed is None:
+        return None
+    return parsed.replace(second=0, microsecond=0).isoformat()
+
+def _mark_internal_transfer_indices(transactions, indices):
+    for index in indices:
+        transactions[index]['is_internal_transfer'] = True
+        # Keep category aligned with the internal-transfer flag.
+        transactions[index]['category'] = 'Internal Transfer'
+
+def reconcile_internal_transfers(transactions, own_account_ids):
+    """
+    Second-pass reconciliation over all fetched account transactions.
+    Detect internal transfers that were not flagged in single-transaction parsing
+    because counterparty metadata was incomplete in a Bunq runtime variant.
+    """
+    if not transactions:
+        return 0
+
+    own_ids = {str(account_id) for account_id in (own_account_ids or set()) if account_id is not None}
+    if not own_ids:
+        return 0
+
+    reconciled = 0
+
+    # Pass 1: deterministic matching on Bunq payment id + amount/currency.
+    by_payment_id = defaultdict(list)
+    for idx, transaction in enumerate(transactions):
+        if transaction.get('is_internal_transfer'):
+            continue
+        account_id = str(transaction.get('account_id') or '')
+        if account_id not in own_ids:
+            continue
+        payment_id = transaction.get('id')
+        if payment_id is None:
+            continue
+        key = (
+            str(payment_id),
+            str(transaction.get('currency') or 'EUR').upper(),
+            _rounded_abs_amount(transaction.get('amount')),
+        )
+        by_payment_id[key].append(idx)
+
+    for indices in by_payment_id.values():
+        if len(indices) < 2:
+            continue
+        positives = [index for index in indices if _safe_tx_amount(transactions[index]) > 0]
+        negatives = [index for index in indices if _safe_tx_amount(transactions[index]) < 0]
+        distinct_accounts = {str(transactions[index].get('account_id') or '') for index in indices}
+        if positives and negatives and len(distinct_accounts) >= 2:
+            _mark_internal_transfer_indices(transactions, indices)
+            reconciled += len(indices)
+
+    # Pass 2: fallback matching on minute timestamp + abs(amount) + description/counterparty.
+    by_signature = defaultdict(list)
+    for idx, transaction in enumerate(transactions):
+        if transaction.get('is_internal_transfer'):
+            continue
+        account_id = str(transaction.get('account_id') or '')
+        if account_id not in own_ids:
+            continue
+
+        minute_key = _tx_minute_key(transaction)
+        if not minute_key:
+            continue
+
+        amount_abs = _rounded_abs_amount(transaction.get('amount'))
+        if amount_abs <= 0:
+            continue
+
+        currency = str(transaction.get('currency') or 'EUR').upper()
+        description = normalize_party_name(transaction.get('description'))
+        counterparty = normalize_party_name(transaction.get('counterparty') or transaction.get('merchant'))
+        discriminator = description or counterparty
+        if len(discriminator) < 3:
+            continue
+
+        key = (minute_key, currency, amount_abs, discriminator)
+        by_signature[key].append(idx)
+
+    for indices in by_signature.values():
+        if len(indices) < 2:
+            continue
+        positives = [index for index in indices if _safe_tx_amount(transactions[index]) > 0]
+        negatives = [index for index in indices if _safe_tx_amount(transactions[index]) < 0]
+        distinct_accounts = {str(transactions[index].get('account_id') or '') for index in indices}
+        if positives and negatives and len(distinct_accounts) >= 2:
+            _mark_internal_transfer_indices(transactions, indices)
+            reconciled += len(indices)
+
+    return reconciled
+
 def _normalize_account_type_text(value):
     if value is None:
         return ''
@@ -5093,6 +5196,10 @@ def get_transactions():
                     'payment': tx_meta.get('payment'),
                     'card_payment': tx_meta.get('card_payment'),
                 })
+
+        reconciled_count = reconcile_internal_transfers(all_transactions, own_account_ids)
+        if reconciled_count > 0:
+            logger.info("🔁 Reconciled %d internal-transfer transaction(s) in cross-account pass", reconciled_count)
         
         if exclude_internal:
             all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]
@@ -5455,6 +5562,10 @@ def get_statistics():
                 account_name=get_obj_field(account, 'description', 'display_name')
             )
             all_transactions.extend(transactions)
+
+        reconciled_count = reconcile_internal_transfers(all_transactions, own_account_ids)
+        if reconciled_count > 0:
+            logger.info("🔁 Reconciled %d internal-transfer transaction(s) for statistics", reconciled_count)
         
         if exclude_internal:
             all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]

@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile)
 
 ## Canonieke status
 
@@ -63,6 +63,10 @@ Dit bestand is de actuele bron voor overdracht.
   - backend markeert internal transfers lijst-gebaseerd op eigen account-id/IBAN/naam (afgeleid uit de volledige opgehaalde Bunq-rekeninglijst).
   - linked external accounts (zoals Triodos `MonetaryAccountExternal`) tellen expliciet niet als intern; Bunq `ExternalSavings` blijft wel intern.
   - backend detectie leest nu ook geneste alias-account-id (`extract_alias_account_id`) en gebruikt een extra description-match fallback op eigen Bunq-rekeningnamen voor edge-cases zonder bruikbare alias/IBAN metadata.
+  - backend draait daarnaast een cross-account reconcile-pass (`reconcile_internal_transfers`) over alle opgehaalde transacties:
+    - pass 1: match op payment-id + amount/currency met plus/min-tegenboeking op verschillende eigen Bunq-rekeningen;
+    - pass 2: fallback op minuut-timestamp + abs(amount) + description/counterparty-signature met plus/min-tegenboeking.
+    - doel: negatieve interne afschrijvingen zonder complete counterparty metadata alsnog als intern markeren.
   - deze detectie wordt toegepast in zowel `/api/transactions` als `/api/statistics`.
   - frontend bevat extra fallback-filtering op tegenrekening-account-id, tegenrekening/merchant-naam en omschrijving-match vs eigen Bunq-rekeningen wanneer backend-flagging in een runtimevariant onvolledig is.
   - balanswidgets voor betaal/spaar gebruiken nu alleen eigen Bunq-rekeningen (Triodos valt buiten `Betaalrekeningen (totaal)`).

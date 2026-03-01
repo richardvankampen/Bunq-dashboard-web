@@ -16,6 +16,9 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - backend uitgebreid met:
     - `extract_alias_account_id(...)` voor geneste aliasvarianten;
     - description-gebaseerde fallbackmatch op eigen Bunq-rekeningnamen.
+    - nieuwe cross-account reconciliatie (`reconcile_internal_transfers`) die plus/min tegenboekingen tussen eigen Bunq-rekeningen markeert op basis van:
+      - payment-id + amount/currency, en
+      - fallback signature (minuut + abs(amount) + description/counterparty).
   - frontend fallback uitgebreid met description-match op eigen Bunq-rekeningnamen.
   - resultaat: negatieve interne overboekingen worden nu ook uitgefilterd bij `exclude internal`.
 
