@@ -331,6 +331,8 @@ body.effects-minimal .glass-effect {
     color: white;
     box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
     animation: float 3s ease-in-out infinite;
+    text-decoration: none;
+    cursor: pointer;
 }
 
 .logo-icon:focus-visible {
@@ -346,11 +348,13 @@ body.effects-minimal .glass-effect {
     max-width: min(420px, calc(100vw - 32px));
     padding: 8px 10px;
     border-radius: var(--radius-sm);
-    border: 1px solid rgba(244, 114, 182, 0.5);
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(244, 114, 182, 0.24) 100%);
-    box-shadow: 0 10px 26px rgba(190, 24, 93, 0.32);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(236, 72, 153, 0.36);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.84) 0%, rgba(76, 29, 149, 0.74) 58%, rgba(17, 24, 39, 0.84) 100%);
+    box-shadow:
+        0 14px 30px rgba(2, 6, 23, 0.56),
+        0 8px 20px rgba(168, 85, 247, 0.24);
+    backdrop-filter: blur(22px) saturate(130%);
+    -webkit-backdrop-filter: blur(22px) saturate(130%);
     opacity: 0;
     transform: translateY(6px);
     transition: opacity var(--transition-fast), transform var(--transition-fast);
@@ -365,15 +369,14 @@ body.effects-minimal .glass-effect {
     bottom: 100%;
     border-width: 6px;
     border-style: solid;
-    border-color: transparent transparent rgba(244, 114, 182, 0.34) transparent;
+    border-color: transparent transparent rgba(76, 29, 149, 0.82) transparent;
 }
 
 .logo-hover-link a {
-    color: #f5d0fe;
+    color: #f9a8d4;
     font-size: 0.8rem;
     font-weight: 600;
-    text-decoration: underline;
-    text-underline-offset: 2px;
+    text-decoration: none;
 }
 
 .logo-hover-link a:hover,

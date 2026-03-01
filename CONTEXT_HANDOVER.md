@@ -32,6 +32,10 @@ Dit bestand is de actuele bron voor overdracht.
   - `git pull` voorbeelden gebruiken nu `sudo git pull --rebase origin main`;
   - README EN/NL bevatten nu ook expliciet quick code-only redeploy (`scripts/quick_redeploy.sh`);
   - troubleshooting/synology NL voorbeelden voor full deploy gebruiken `.env`-load + `docker service update --force --image bunq-dashboard:$TAG ...` in dezelfde shell.
+- `TROUBLESHOOTING-NL.md` is inhoudelijk opgeschoond:
+  - sterk verouderde/inconsistente instructies verwijderd;
+  - structuur teruggebracht naar actuele diagnose + deploy/redeploy flows + kernincidenten;
+  - taalconsistentie NL verbeterd en commando's geharmoniseerd op `sudo` + huidige scripts.
 
 ## Frontend detailweergave (actueel)
 
@@ -120,9 +124,10 @@ Dit bestand is de actuele bron voor overdracht.
 ## Header UX (actueel)
 
 - Op het bewegende Bunq-icoon naast `Bunq Financial Dashboard` staat nu een hover/focus popover met klikbare support-link:
-  - tekst: `buy me a coffee if you enjoy using this dashboard`
+  - tekst: `Click on the logo to buy me a coffee if you like using this free dashboard`
   - URL: `https://bunq.me/BunqFinancialDashboard`
-  - opent in nieuw tabblad (`target="_blank"` + `rel="noopener noreferrer"`).
+  - zowel de popover-link als klik op het bewegende logo openen deze URL in een nieuw tabblad (`target="_blank"` + `rel="noopener noreferrer"`).
+  - popoverstijl is nu donkerder/frosted voor beter contrast.
 
 ## Settings UX (actueel)
 

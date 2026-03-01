@@ -6,6 +6,20 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- `TROUBLESHOOTING-NL.md` grondig opgeschoond:
+  - document grotendeels herschreven naar een actuele, compacte runbook-structuur.
+  - verouderde/inconsistente instructies verwijderd (historische varianten, mixed flows, taalmix EN/NL).
+  - redeploy/deploy instructies afgestemd op huidige standaard:
+    - code-only: `quick_redeploy.sh`
+    - configwijziging: `.env`-load + stack deploy + image-force update
+    - volledige routine: `install_or_update_synology.sh`
+
+- Header support-hover bijgewerkt op verzoek:
+  - popovertekst gewijzigd naar `Click on the logo to buy me a coffee if you like using this free dashboard`.
+  - klik op het bewegende logo zelf opent nu ook dezelfde support-link in nieuw tabblad.
+  - popover visueel donkerder en meer frosted gemaakt.
+  - linktekst in popover niet meer onderstreept.
+
 - Markdown instructie-audit uitgevoerd en gecorrigeerd op nieuwe deployflow:
   - `README.md` en `README-NL.md`: `sudo git pull` vervangen door `sudo git pull --rebase origin main` en quick code-only redeploy toegevoegd (`sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false`).
   - `TROUBLESHOOTING.md`: full deploy snippet geüpdatet naar `.env` load + `docker service update --force --image bunq-dashboard:$TAG ...`; quick redeploy sectie expliciet toegevoegd.

@@ -1,869 +1,249 @@
-# 🐛 Probleemoplossingsgids - Bunq Dashboard
+# Probleemoplossingsgids - Bunq Dashboard (NL)
 
-Uitgebreide probleemoplossingsgids voor alle bekende problemen en hun oplossingen.
+Actuele gids voor diagnose en herstel op Synology Docker Swarm.
 
-**Laatst bijgewerkt:** February 2026
-**Van toepassing op:** Session-based (fresh installs)
+Laatst bijgewerkt: 1 maart 2026
+Van toepassing op: session-based installaties (Vaultwarden-first)
 
 ---
 
-## 🧭 Navigatie
+## Navigatie
 
-- Startpunt en overzicht: [README-NL.md](README-NL.md)
-- Synology install: [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
+- Startpunt: [README-NL.md](README-NL.md)
+- Installatie en onderhoud: [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
 - Security hardening: [SECURITY-NL.md](SECURITY-NL.md)
 
-## 📋 Snelle diagnose
+---
 
-Start hier als je niet zeker weet wat het probleem is:
+## Snelle diagnose
+
+Voer deze set eerst uit:
 
 ```bash
-# Swarm stack name: bunq (pas aan als je een andere naam gebruikt)
-# Check if containers are running
-docker ps
+cd /volume1/docker/bunq-dashboard
 
-# Swarm convenience: get the running task container id
-BUNQ_CONTAINER=$(docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
+sudo docker ps
+sudo docker service ls
+sudo docker service ps bunq_bunq-dashboard --no-trunc
+sudo docker service logs --since 10m bunq_bunq-dashboard
 
-# Check container logs
-docker service logs bunq_bunq-dashboard
-docker logs vaultwarden
-
-# Liveness (process/container up)
-curl http://localhost:5000/api/live
-# Readiness (Bunq init state)
-curl http://localhost:5000/api/health
-# Let op: /api/health kan 503 geven als Bunq key/IP mismatcht
-
-# Check runtime server in container (should show gunicorn worker process)
-docker exec "$BUNQ_CONTAINER" ps -ef | grep -E "gunicorn|api_proxy" | grep -v grep
-
-# Check environment variables
-cat .env | grep -v SECRET | grep -v PASSWORD
-docker secret ls | grep bunq_
+curl -s http://127.0.0.1:5000/api/live
+curl -s http://127.0.0.1:5000/api/health
 ```
+
+Interpretatie:
+- `/api/live` moet `200` geven als proces draait.
+- `/api/health` kan `503` geven als Bunq init niet geslaagd is (meestal key/IP/whitelist probleem).
 
 ---
 
-## 🔴 KRITIEKE PROBLEMEN
+## Update- en Redeployflows (actueel)
 
-### 1. Container start niet
+Gebruik altijd deze flows; oudere varianten zonder duidelijke scope zijn verwijderd.
 
-**Symptomen:**
-- Container stopt direct na start
-- `docker ps` toont geen bunq-dashboard
-- Error in logs bij `docker stack deploy`
+### 1. Code-only redeploy (aanbevolen)
 
-**Mogelijke Oorzaken & Oplossingen:**
+Gebruik dit bij wijzigingen in code/templates/docs, zonder `.env`/compose/secrets/netwerkwijziging:
 
-#### A. Port Already in Use
 ```bash
-# Check wat port 5000 gebruikt
-sudo netstat -tulpn | grep 5000
-
-# Oplossing 1: Stop conflicterende service
-sudo systemctl stop [conflicting-service]
-
-# Oplossing 2: Wijzig port in docker-compose.yml
-ports:
-  - "5001:5000"  # Gebruik 5001 i.p.v. 5000
-```
-
-#### B. Missing Dependencies
-```bash
-# Rebuild zonder cache
-TAG=$(git rev-parse --short HEAD)
-docker build --no-cache -t bunq-dashboard:$TAG .
-
-# Check requirements_web.txt bestaat
-ls -la requirements_web.txt
-
-# Manually install dependencies in container
-docker exec -it "$BUNQ_CONTAINER" pip install -r requirements_web.txt
-```
-
-#### C. Permission Issues
-```bash
-# Fix permissions op volumes
-sudo chown -R $(whoami) /volume1/docker/bunq-dashboard
-sudo chmod -R 755 /volume1/docker/bunq-dashboard
-
-# Recreate containers
-docker stack rm bunq
-# Redeploy (reload .env)
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq; docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard'
-```
-
-#### D. Syntax Error in Code
-```bash
-# Check Python syntax
-docker exec "$BUNQ_CONTAINER" python -m py_compile api_proxy.py
-
-# Check logs for specific error
-docker service logs bunq_bunq-dashboard 2>&1 | grep -i error
-```
-
----
-
-### 2. Dashboard niet bereikbaar (HTTP 502/503)
-
-**Symptomen:**
-- Browser kan niet verbinden
-- "502 Bad Gateway" of "503 Service Unavailable"
-- Timeout errors
-
-**Oplossingen:**
-
-#### A. Container Not Running
-```bash
-# Check status
-docker ps | grep bunq-dashboard
-
-# If not running, check why:
-docker service logs bunq_bunq-dashboard
-
-# Quick code-only redeploy (aanbevolen)
 cd /volume1/docker/bunq-dashboard
 sudo git pull --rebase origin main
 sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false
+```
 
-# Als service niet bestaat of config gewijzigd is: full deploy
+### 2. Full deploy bij configwijziging
+
+Gebruik dit bij wijzigingen in `.env`, `docker-compose.yml`, secrets of netwerk:
+
+```bash
+cd /volume1/docker/bunq-dashboard
+TAG=$(sudo git rev-parse --short HEAD)
 sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq; docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard'
 ```
 
-#### B. Firewall Blocking
-```bash
-# Synology: Check firewall rules
-Control Panel → Security → Firewall → Edit Rules
-
-# Allow port 5000 for local network:
-Source IP: 192.168.0.0/16
-Port: 5000
-Action: Allow
-
-# Linux: Check iptables
-sudo iptables -L | grep 5000
-
-# Allow if blocked:
-sudo iptables -A INPUT -p tcp --dport 5000 -j ACCEPT
-```
-
-#### C. Wrong IP Address
-```bash
-# Check your NAS IP
-ifconfig | grep "inet "
-# or
-ip addr show
-
-# Access via correct IP:
-http://<NAS-IP>:5000
-```
-
-#### D. DNS Issues (Domain Names)
-```bash
-# If using domain name, test DNS:
-nslookup bunq.yourdomain.com
-
-# Fallback to IP if DNS fails
-http://192.168.1.100:5000
-```
-
----
-
-### 3. Authenticatie mislukt / 401 onbevoegd
-
-**Voor sessiegebaseerde authenticatie:**
-
-#### A. Wrong Credentials
-```bash
-# Verify username in .env
-cat .env | grep BASIC_AUTH_USERNAME
-
-# Verify secret exists
-docker secret ls | grep bunq_basic_auth_password
-
-# Reset password (rotate secret):
-sudo docker secret rm bunq_basic_auth_password
-printf "NewStrongPassword" | sudo docker secret create bunq_basic_auth_password -
-
-# Redeploy (reload .env)
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-```
-
-#### B. Session Expired
-```bash
-# Sessions expire after 24 hours by default
-# Solution: Just login again
-
-# To check session lifetime:
-grep PERMANENT_SESSION_LIFETIME api_proxy.py
-
-# To extend (edit api_proxy.py):
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=48)
-```
-
-#### C. Flask Secret Not Set or Changed
-```bash
-# Check if secret exists
-docker secret ls | grep bunq_flask_secret_key
-
-# If missing, create:
-python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
-
-# Redeploy (reload .env)
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-
-# ⚠️ WARNING: Changing secret key invalidates all sessions!
-```
-
-#### D. Cookies Not Accepted
-```bash
-# Check browser cookie settings
-# Chrome: Settings → Privacy → Cookies
-# Firefox: Settings → Privacy → Cookies
-
-# Enable cookies for your domain
-# Try different browser to isolate issue
-
-# Check cookies via DevTools:
-# Application/Storage → Cookies → jouw domein
-# Controleer of er een `session` cookie staat met HttpOnly aangevinkt
-```
-
-**Voor sessie-authenticatie:**
+### 3. Volledige install/update routine
 
 ```bash
-# Clear browser cache/credentials
-# Hard refresh: Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac)
-
-# Test login with curl:
-curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"your_password"}' \
-  http://192.168.1.100:5000/api/auth/login
-
-# Use session cookie for authenticated requests:
-curl -b cookies.txt http://192.168.1.100:5000/api/auth/status
-```
-
----
-
-### 4. CORS Errors
-
-**Symptomen:**
-```
-Access to fetch at 'http://192.168.1.100:5000/api/...'
-from origin 'http://192.168.1.100:5000'
-has been blocked by CORS policy
-```
-
-**Oplossingen:**
-
-#### A. Wrong ALLOWED_ORIGINS
-```bash
-# Check .env
-cat .env | grep ALLOWED_ORIGINS
-
-# Should match your access URL exactly:
-ALLOWED_ORIGINS=http://192.168.1.100:5000
-
-# Multiple origins (comma-separated):
-ALLOWED_ORIGINS=http://192.168.1.100:5000,http://10.8.0.5:5000
-
-# After changing (reload .env):
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-```
-
-#### B. Using Wrong Port
-```bash
-# If you see CORS error, you're likely using 2 ports
-# Solution: Use SINGLE PORT (5000) for both frontend and API
-
-# Check docker-compose.yml only has:
-ports:
-  - "5000:5000"
-
-# Access via: http://192.168.1.100:5000
-```
-
-#### C. Mixed HTTP/HTTPS
-```bash
-# Ensure consistent protocol
-# Either ALL http:// OR ALL https://
-
-# Wrong:
-Frontend: https://bunq.yourdomain.com
-API calls: http://192.168.1.100:5000  # ❌ Mixed!
-
-# Correct:
-Frontend: https://bunq.yourdomain.com
-API calls: https://bunq.yourdomain.com/api  # ✅ Same origin
-```
-
----
-
-### 5. Vaultwarden Connection Failed
-
-**Symptomen:**
-```
-❌ Vaultwarden connection error
-❌ API key not found in vault
-❌ Vaultwarden authentication failed
-```
-
-**Oplossingen:**
-
-#### A. Vaultwarden Not Running
-```bash
-# Check if running
-docker ps | grep vaultwarden
-
-# If not running, start:
-docker start vaultwarden
-
-# Check logs:
-docker logs vaultwarden
-```
-
-#### B. Wrong Credentials
-```bash
-# Verify secrets exist
-docker secret ls | grep -E "bunq_vaultwarden_client|bunq_vaultwarden_master_password"
-
-# Get correct credentials from Vaultwarden:
-1. Login to http://192.168.1.100:9000
-2. Account Settings → Security → API Key
-3. Enter master password
-4. Copy client_id and client_secret
-5. Update secrets:
-   - `sudo docker secret rm bunq_vaultwarden_client_id`
-   - `printf '%s' "user.xxxx-xxxx-xxxx-xxxx" | sudo docker secret create bunq_vaultwarden_client_id -`
-   - `sudo docker secret rm bunq_vaultwarden_client_secret`
-   - `printf '%s' "your_client_secret" | sudo docker secret create bunq_vaultwarden_client_secret -`
-   - `sudo docker secret rm bunq_vaultwarden_master_password`
-   - `printf '%s' "your_vaultwarden_master_password" | sudo docker secret create bunq_vaultwarden_master_password -`
-6. Redeploy: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'`
-```
-
-Tip: in het dashboard kun je ook naar **Settings → Admin Maintenance (P1) → Check status** voor een snelle runtime check.
-
-#### C. Network Issues Between Containers
-```bash
-# Test connectivity
-docker exec "$BUNQ_CONTAINER" ping vaultwarden
-
-# If fails, check network:
-docker network ls
-docker network inspect bunq-net
-
-# If bunq-net is missing:
-sudo docker network create --driver overlay --attachable bunq-net
-
-# Ensure Vaultwarden is attached:
-sudo docker network connect bunq-net vaultwarden
-
-# Redeploy (reload .env):
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-```
-
-#### D. Item Name Mismatch
-```bash
-# Check item name in Vaultwarden vault
-# Default: "Bunq API Key" (exact match required)
-
-# Verify in .env:
-VAULTWARDEN_ITEM_NAME="Bunq API Key"
-VAULTWARDEN_ACCESS_METHOD=cli
-
-# Check in Vaultwarden UI:
-1. Login to http://192.168.1.100:9000
-2. My Vault → Check item name
-3. Must match EXACTLY (case-sensitive!)
-
-# If different, either:
-# Option A: Rename item in Vaultwarden
-# Option B: Update VAULTWARDEN_ITEM_NAME in .env
-```
-
-#### E. Vault Returns Encrypted Cipher Names (2.xxxx|xxxx|xxxx)
-```bash
-# Symptom in logs:
-# Item '<name>' not found, while /api/ciphers returns encrypted names.
-#
-# Fix: use CLI decrypt method (recommended/default)
-VAULTWARDEN_ACCESS_METHOD=cli
-
-# Ensure master password secret exists:
-docker secret ls | grep bunq_vaultwarden_master_password
-```
-
-#### F. API Key Not in Vault
-```bash
-# Add Bunq API key to Vaultwarden:
-1. Login to http://192.168.1.100:9000
-2. My Vault → Add Item
-3. Item Type: Login
-4. Name: Bunq API Key  # Exactly this!
-5. Username: bunq-dashboard
-6. Password: <paste your Bunq API key here>
-7. Save
-
-# Restart dashboard:
-docker service update --force bunq_bunq-dashboard
-```
-
----
-
-## 🟡 VEEL VOORKOMENDE PROBLEMEN
-
-### 6. Dashboard Loads Demo Data (Not Real Bunq Data)
-
-**Oplossingen:**
-
-#### A. Not Logged In (Session Auth)
-```bash
-# For session-based auth:
-1. Click login button (top right)
-2. Enter credentials (username uit .env, wachtwoord via secret)
-3. Enable "Use real Bunq data" checkbox
-4. Click Refresh
-
-# If login button missing: check you're using app.js
-```
-
-#### B. Vaultwarden Not Configured
-```bash
-# Check .env:
-USE_VAULTWARDEN=true  # Must be true!
-VAULTWARDEN_ACCESS_METHOD=cli  # Recommended/default
-
-# Check credentials set:
-docker secret ls | grep -E "bunq_vaultwarden_client|bunq_vaultwarden_master_password"
-
-# If not set, follow Vaultwarden setup in SYNOLOGY_INSTALL-NL.md
-```
-
-#### B2. Alleen healthchecks in logs na deploy/herstart
-```bash
-# Force restart + focused startup check:
-sh scripts/restart_bunq_service.sh
-
-# Of handmatig:
-TAG=$(git rev-parse --short HEAD)
-sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
-sudo docker service logs --since 3m bunq_bunq-dashboard | \
-  grep -E "Retrieving API key from Vaultwarden|API key retrieved from vault|No valid API key"
-```
-
-#### B3. Service draait met oude image/tag
-```bash
-TAG=$(git rev-parse --short HEAD)
-sudo docker build --no-cache -t bunq-dashboard:$TAG .
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
-
-# Verifieer runtime marker:
-BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
-sudo docker exec "$BUNQ_CONTAINER" sh -c "grep -n 'get_api_key_from_vaultwarden_cli' /app/api_proxy.py"
-```
-
-#### B4. Je ziet nog `This is a development server` in logs
-```bash
-# Verwacht in productie: gunicorn logs (geen Flask dev server warning)
-# Als warning terugkomt, draai je waarschijnlijk nog een oude image/service.
-
-TAG=$(git rev-parse --short HEAD)
-sudo docker build --no-cache -t bunq-dashboard:$TAG .
-sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
-sudo docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard
-
-# Controleer gunicorn proces:
-BUNQ_CONTAINER=$(sudo docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
-sudo docker exec "$BUNQ_CONTAINER" ps -ef | grep gunicorn
-```
-
-#### C. Bunq API Key / IP Whitelist Mismatch
-```bash
-# Detect the exact Bunq auth error:
-docker service logs bunq_bunq-dashboard | grep -E "Incorrect API key or IP address|response id"
-
-# Run automated fix (in repo):
 cd /volume1/docker/bunq-dashboard
-sh scripts/register_bunq_ip.sh
-# Optional non-interactive target:
-# TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
-# Optional cleanup pass (after validation):
-# TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
-# Example:
-# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
-
-# Script output shows the container egress public IP.
-# In Bunq app: Profile -> Security -> API Keys
-# Ensure API key is active and allowlist includes that IP.
-
-# Via UI kan dit ook:
-# Settings -> Admin Maintenance (P1) -> Run maintenance now
-# (met opties voor auto egress IP, whitelist update, refresh key en context recreate)
-
-# If you rotated API key AND use direct fallback mode (USE_VAULTWARDEN=false), update secret first:
-printf "Paste BUNQ API key: "
-stty -echo; IFS= read -r BUNQ_API_KEY; stty echo; echo
-CLEAN_KEY="$(printf '%s' "$BUNQ_API_KEY" | tr -d '\r\n')"
-sudo docker stack rm bunq
-sleep 15
-sudo docker secret rm bunq_api_key 2>/dev/null || true
-printf '%s' "$CLEAN_KEY" | sudo docker secret create bunq_api_key -
-unset BUNQ_API_KEY CLEAN_KEY
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-
-# Re-run registration script after key update:
-sh scripts/register_bunq_ip.sh
-```
-
-#### D. Wrong Bunq Environment
-```bash
-# Check .env:
-BUNQ_ENVIRONMENT=PRODUCTION  # For real banking
-# or
-BUNQ_ENVIRONMENT=SANDBOX     # For testing
-
-# Ensure API key matches environment!
-# Sandbox key doesn't work with PRODUCTION and vice versa
-
-# After changing (reload .env):
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+sudo git pull --rebase origin main
+sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
 
 ---
 
-### 7. Rate Limit Exceeded
+## Kritieke problemen
 
-**Symptomen:**
-```
-429 Too Many Requests
-Rate limit exceeded. Please try again later.
-```
+### 1. Dashboard service start niet
 
-**Oplossingen:**
+Symptomen:
+- `docker service ps` toont failed/rejected tasks
+- UI geeft 502/503
 
-#### A. Too Many Login Attempts
+Acties:
+
 ```bash
-# Session auth has 5 login attempts per minute limit
-# Solution: Wait 60 seconds, then try again
-
-# To reset rate limiter:
-docker service update --force bunq_bunq-dashboard
-
-# To increase limit (api_proxy.py):
-# Find: max_reqs = 5 if endpoint == 'login'
-# Change to: max_reqs = 10 if endpoint == 'login'
-# Then rebuild
+cd /volume1/docker/bunq-dashboard
+sudo docker service ps bunq_bunq-dashboard --no-trunc
+sudo docker service logs --since 10m bunq_bunq-dashboard
 ```
 
-#### B. Too Many API Calls
+Herstel:
+1. Bij codewijziging: run code-only redeploy.
+2. Bij config/secrets wijziging: run full deploy.
+3. Bij aanhoudende build/deploy problemen: run install/update script.
+
+### 2. Login werkt niet (401 / Invalid username or password)
+
+Checks:
+
 ```bash
-# General limit: 30 requests per minute
-# Reduce refresh frequency in dashboard
-
-# Or increase limit in api_proxy_*.py:
-rate_limiter = RateLimiter(
-    max_requests=60,  # Increase from 30
-    window_seconds=60
-)
-# Then rebuild
+cd /volume1/docker/bunq-dashboard
+grep -E '^(BASIC_AUTH_USERNAME|BASE_URL)=' .env
+sudo docker secret ls | grep bunq_basic_auth_password
 ```
+
+Belangrijk:
+- Dashboard wachtwoord komt uit Docker secret (`bunq_basic_auth_password`), niet uit `.env`.
+- Bij wachtwoordrotatie: secret vernieuwen en daarna full deploy.
+
+### 3. Bunq data faalt (meestal key/IP mismatch)
+
+Checks:
+
+```bash
+sudo docker service logs --since 15m bunq_bunq-dashboard | grep -E "Incorrect API key or IP address|No valid API key|Vaultwarden|Bunq API initialized"
+```
+
+Herstel:
+1. Run in dashboard: `Settings -> Admin Maintenance -> Run full maintenance`.
+2. Of via terminal:
+
+```bash
+cd /volume1/docker/bunq-dashboard
+TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+sudo sh scripts/restart_bunq_service.sh
+```
+
+### 4. Vaultwarden verbinding faalt
+
+Checks:
+
+```bash
+sudo docker ps | grep vaultwarden
+sudo docker logs --tail 200 vaultwarden
+sudo docker service logs --since 10m bunq_bunq-dashboard | grep -E "Vaultwarden|API key retrieved from vault|No valid API key"
+```
+
+Controleren:
+- `.env`: `USE_VAULTWARDEN=true`, `VAULTWARDEN_ACCESS_METHOD=cli`
+- Secrets bestaan:
+  - `bunq_vaultwarden_client_id`
+  - `bunq_vaultwarden_client_secret`
+  - `bunq_vaultwarden_master_password`
+
+### 5. Spaarrekeningen ontbreken in `/api/accounts`
+
+Valideer met de checker:
+
+```bash
+EXPECTED_ACCOUNTS_JSON='[
+  {"description":"Spaarrekening","currency":"EUR"},
+  {"description":"Spaargeld in ZAR","currency":"ZAR"}
+]'
+
+DASHBOARD_USERNAME="<dashboard-user>" \
+DASHBOARD_PASSWORD="<dashboard-pass>" \
+python3 /volume1/docker/bunq-dashboard/scripts/check_accounts_api.py \
+  --base-url "$BASE_URL" \
+  --insecure \
+  --expected-json "$EXPECTED_ACCOUNTS_JSON" \
+  --timeout 180
+```
+
+Als dit faalt: run eerst full maintenance en herhaal checker.
 
 ---
 
-### 8. Sessie verloopt steeds opnieuw
+## Veel voorkomende problemen
 
-**Symptomen:**
-- Logged out after few minutes
-- Must login constantly
-- Session doesn't persist across page reloads
+### 6. CORS errors
 
-**Oplossingen:**
+Controleer `.env`:
 
-#### A. Flask Secret Changes
 ```bash
-# If secret key changes, all sessions invalidate
-# Solution: Keep bunq_flask_secret_key constant!
-
-# Check if it's set:
-docker secret ls | grep bunq_flask_secret_key
-
-# If missing, create:
-python3 -c "import secrets; print(secrets.token_hex(32))" | sudo docker secret create bunq_flask_secret_key -
+grep '^ALLOWED_ORIGINS=' /volume1/docker/bunq-dashboard/.env
 ```
 
-#### B. Browser Not Accepting Cookies
-```bash
-# Check browser settings allow cookies
-# Especially in private/incognito mode
+Regel:
+- `ALLOWED_ORIGINS` moet exact matchen met de URL die je in de browser gebruikt.
 
-# Test in normal browser window first
-# Disable strict tracking prevention if needed
+Na wijziging:
+- full deploy uitvoeren.
+
+### 7. Sessie verloopt te snel
+
+Controleer:
+- Browser accepteert cookies.
+- `SESSION_COOKIE_SECURE` matcht je setup:
+  - `true` bij HTTPS
+  - `false` alleen bij lokale HTTP test
+
+Bij wijziging van `.env`: full deploy uitvoeren.
+
+### 8. Trage performance / time-outs
+
+Controleer of dataset truncatie optreedt:
+
+```bash
+curl -s 'http://127.0.0.1:5000/api/transactions?days=365&page=1&page_size=200&exclude_internal=true' | jq '{truncated, amount_eur_missing_count, truncated_accounts}'
 ```
 
-#### C. SESSION_COOKIE_SECURE Mismatch
+Als `truncated=true`:
+- verhoog pagination limieten in `.env` (bijv. `BUNQ_PAYMENT_MAX_PAGES`, `BUNQ_CARD_PAYMENT_MAX_PAGES`)
+- daarna full deploy.
+
+### 9. Frontend wijzigingen niet zichtbaar
+
+Meestal browser cache.
+
+Acties:
+1. Hard refresh (`Cmd/Ctrl + Shift + R`).
+2. Controleer runtime image:
+
 ```bash
-# Check .env:
-SESSION_COOKIE_SECURE=true   # Recommended/default (HTTPS)
-# For local HTTP only:
-# SESSION_COOKIE_SECURE=false
-
-# Must match your access method!
-# If accessing via http://, set to false
-# If accessing via https://, set to true
-
-# After changing (reload .env):
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+sudo docker service inspect bunq_bunq-dashboard --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
 ```
+
+3. Run code-only redeploy.
 
 ---
 
-### 9. Trage prestaties / time-outs
-
-**Symptomen:**
-- Dashboard loads slowly
-- Timeouts when fetching data
-- Visualizations take long to render
-
-**Oplossingen:**
-
-#### A. Resource Constraints
-```bash
-# Check container resources:
-docker stats "$BUNQ_CONTAINER"
-
-# If CPU/Memory maxed out:
-# Edit docker-compose.yml:
-services:
-  bunq-dashboard:
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'      # Increase from 1.0
-          memory: 2048M    # Increase from 1024M
-
-# Restart:
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-```
-
-#### B. Bunq API Slow
-```bash
-# API might be slow during high load
-# Add caching in api_proxy.py
-
-# Or reduce data fetch interval
-# In dashboard settings: increase refresh interval
-```
-
-#### C. Too Many Transactions
-```bash
-# Check whether backend pagination cap was reached:
-curl -s 'http://127.0.0.1:5000/api/transactions?days=365&page=1&page_size=200&exclude_internal=true' | \
-  jq '{truncated, amount_eur_missing_count, truncated_accounts}'
-
-# If truncated=true, increase Bunq paging limits in .env:
-# BUNQ_PAYMENT_MAX_PAGES=80
-# BUNQ_CARD_PAYMENT_MAX_PAGES=80
-# (optional) BUNQ_PAYMENT_PAGE_SIZE=200
-# (optional) BUNQ_CARD_PAYMENT_PAGE_SIZE=200
-
-# Then redeploy:
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-```
-
----
-
-### 10. Visualisaties worden niet getoond
-
-**Symptomen:**
-- Blank charts
-- "No data available"
-- Loading spinner forever
-
-**Oplossingen:**
-
-#### A. No Transaction Data
-```bash
-# Check logs:
-docker service logs bunq_bunq-dashboard | grep transaction
-
-# Verify Bunq account has transactions
-# Or use demo data for testing
-```
-
-#### B. JavaScript Errors
-```bash
-# Open browser console (F12)
-# Check for errors
-
-# Common: Plotly not loaded
-# Solution: Check internet connection
-# Plotly loads from CDN
-```
-
-#### C. Browser Compatibility
-```bash
-# Use modern browser:
-# Chrome 90+, Firefox 88+, Safari 14+
-
-# Update browser if old version
-# Disable browser extensions that might interfere
-```
-
----
-
-## 🟢 CONFIGURATIE PROBLEMEN
-
-### 11. Omgevingsvariabelen worden niet geladen
+## Diagnostiekpakket maken
 
 ```bash
-# Check .env file location:
-ls -la /volume1/docker/bunq-dashboard/.env
+cd /volume1/docker/bunq-dashboard
 
-# Ensure .env is loaded into the shell before deploy:
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
+sudo sh -c 'echo "=== Service status ===" > diagnostic.txt'
+sudo sh -c 'docker service ps bunq_bunq-dashboard --no-trunc >> diagnostic.txt 2>&1'
+sudo sh -c 'echo "\n=== Dashboard logs ===" >> diagnostic.txt'
+sudo sh -c 'docker service logs bunq_bunq-dashboard >> diagnostic.txt 2>&1'
+sudo sh -c 'echo "\n=== Live/Health ===" >> diagnostic.txt'
+sudo sh -c 'curl -s http://127.0.0.1:5000/api/live >> diagnostic.txt 2>&1'
+sudo sh -c 'curl -s http://127.0.0.1:5000/api/health >> diagnostic.txt 2>&1'
 
-# Test variable loading:
-docker exec "$BUNQ_CONTAINER" env | grep BUNQ
-
-# Rebuild if needed:
-docker stack rm bunq
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-```
-
----
-
-### 12. SSL/HTTPS Issues
-
-```bash
-# If using reverse proxy with HTTPS:
-
-# A. Mixed content errors:
-# Ensure API calls use relative paths:
-fetch('/api/transactions')  # ✅ Relative
-fetch('http://...')         # ❌ Hardcoded
-
-# B. Certificate errors:
-# Check reverse proxy SSL cert valid
-# Update SESSION_COOKIE_SECURE=true in .env
-
-# C. HSTS issues:
-# Clear HSTS settings in browser:
-# Chrome: chrome://net-internals/#hsts
-```
-
----
-
-## 📊 DEBUGGING TIPS
-
-### Enable Debug Logging
-
-```bash
-# In .env:
-FLASK_DEBUG=true
-LOG_LEVEL=DEBUG
-
-# Restart (reload .env):
-sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq'
-
-# Watch logs:
-docker service logs -f bunq_bunq-dashboard
-
-# ⚠️ Disable in production! (exposes sensitive info)
-```
-
-### Test API Endpoints Manually
-
-```bash
-# Liveness check:
-curl http://localhost:5000/api/live
-
-# Readiness (Bunq context state):
-curl http://localhost:5000/api/health
-# 200 = ready, 503 = Bunq not initialized (meestal key/IP mismatch)
-
-# Login to get session cookie:
-curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"your_password"}' \
-  http://localhost:5000/api/auth/login
-
-# Accounts (with session cookie):
-curl -b cookies.txt http://localhost:5000/api/accounts
-
-# Transactions:
-curl -b cookies.txt http://localhost:5000/api/transactions
-
-# Session status:
-curl -b cookies.txt http://localhost:5000/api/auth/status
-```
-
-### Check File Permissions
-
-```bash
-# Verify all files readable:
-ls -la /volume1/docker/bunq-dashboard/
-
-# Fix if needed:
-sudo chown -R $(whoami):$(whoami) /volume1/docker/bunq-dashboard/
-sudo chmod -R 755 /volume1/docker/bunq-dashboard/
-```
-
----
-
-## 🆘 NOG STEEDS PROBLEMEN?
-
-### Verzamel diagnostische info
-
-```bash
-# Run this script to collect info:
-#!/bin/bash
-echo "=== Docker Status ===" > diagnostic.txt
-docker ps >> diagnostic.txt
-BUNQ_CONTAINER=$(docker ps --filter name=bunq_bunq-dashboard -q | head -n1)
-echo "
-=== Container Logs ===" >> diagnostic.txt
-docker service logs bunq_bunq-dashboard >> diagnostic.txt 2>&1
-echo "
-=== Environment (safe) ===" >> diagnostic.txt
-docker exec "$BUNQ_CONTAINER" env | grep -v SECRET | grep -v PASSWORD >> diagnostic.txt
-echo "
-=== Network ===" >> diagnostic.txt
-docker network inspect bunq-net >> diagnostic.txt
-echo "
-=== Health ===" >> diagnostic.txt
-curl http://localhost:5000/api/live >> diagnostic.txt 2>&1
-curl http://localhost:5000/api/health >> diagnostic.txt 2>&1
-
-# Review diagnostic.txt before sharing (remove any secrets!)
 cat diagnostic.txt
 ```
 
-### Open een GitHub-issue
-
-1. Go to: https://github.com/richardvankampen/Bunq-dashboard-web/issues
-2. Click "New Issue"
-3. Provide:
-   - Problem description
-   - Steps to reproduce
-   - Your configuration (no secrets!)
-   - Diagnostic info (from above script)
-   - Docker version: `docker --version`
-   - NAS model (if Synology)
+Controleer `diagnostic.txt` altijd op gevoelige data voordat je deelt.
 
 ---
 
-## 📚 Aanvullende bronnen
+## Hulp
 
-- [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md) - Complete installation guide
-- [SECURITY-NL.md](SECURITY-NL.md) - Security configuration
-- [README-NL.md](README-NL.md) - General documentation
-
----
-
-**Last Updated:** February 2026
-**Maintained by:** Community Contributors
-
-*Als je een oplossing vindt voor een nieuw probleem, overweeg dan een PR om deze gids bij te werken!*
+- GitHub issues: <https://github.com/richardvankampen/Bunq-dashboard-web/issues>
+- Neem in elk issue op:
+  - korte probleemomschrijving
+  - reproductiestappen
+  - relevante logregels
+  - output van `docker --version`
+  - Synology model en DSM versie
