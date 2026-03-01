@@ -6,6 +6,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- KPI/tooltip correcties:
+  - `Savings Rate` gebruikt nu dezelfde gecorrigeerde `Sparen`-netto als de spaarmutatie-view (negatieve mutaties tellen dus mee).
+  - inzicht-tegel tooltips worden nu op de hele kaart gezet (`.insight-card`), niet alleen op de kopregel.
+
 - `Sparen` KPI-berekening gecorrigeerd:
   - widgetwaarde wordt nu berekend op exact dezelfde savings-subset als de secondary view (`Spaarrekening mutaties`);
   - netto = positieve mutaties + negatieve mutaties (dus opnames worden afgetrokken i.p.v. genegeerd).

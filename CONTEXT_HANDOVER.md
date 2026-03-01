@@ -50,6 +50,7 @@ Dit bestand is de actuele bron voor overdracht.
   - `Bedrag`
 - KPI-afstemming:
   - `Sparen` gebruikt nu dezelfde datasetlogica als de secondary view `Spaarrekening mutaties` (stortingen minus opnames), inclusief negatieve bedragen.
+  - `Savings Rate` wordt nu ook afgeleid van diezelfde gecorrigeerde `Sparen`-netto (i.p.v. oude netto-spaarbenadering).
 - Performance/UX:
   - dubbele oude individuele opsomming verwijderd bij detailviews met second-view transactietabel (geen dubbeling meer).
   - modal rendert transacties in batches (`Toon meer`) i.p.v. alles in 1 keer om UI-lag bij grote periodes te beperken.
@@ -94,6 +95,7 @@ Dit bestand is de actuele bron voor overdracht.
   - `Maandverdeling`
 - Bovenstaande widgettitels hebben korte hover-uitleg (native tooltip via `title`).
 - Insights-kaarten (o.a. `Terugkerende kosten`, `Volgende beste actie`, `Datakwaliteit`) zijn ook vertaald naar Nederlands en voorzien van korte hover-uitleg.
+  - tooltip op insight-kaarten staat nu op de hele tegel (`.insight-card`), niet alleen op de `h4`-titel.
 - Op `Cashflow (tijdslijn)` is de downloadknop verwijderd; detailview opent via de detailactieknop.
 
 ## Categorie-race (actueel)

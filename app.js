@@ -870,6 +870,8 @@ function setupEventListeners() {
         });
     });
 
+    syncInsightCardTooltips();
+
     document.getElementById('moneyFlowCard')?.addEventListener('click', (event) => {
         if (event.target.closest('.action-btn')) return;
         showTransactionDetail('money-flow');
@@ -887,6 +889,16 @@ function setupEventListeners() {
     // Keep charts responsive when viewport size changes
     window.addEventListener('resize', () => {
         resizeAllCharts();
+    });
+}
+
+function syncInsightCardTooltips() {
+    document.querySelectorAll('.insight-card').forEach((card) => {
+        const heading = card.querySelector('h4[title]');
+        if (!heading) return;
+        const tooltip = String(heading.getAttribute('title') || '').trim();
+        if (!tooltip) return;
+        card.setAttribute('title', tooltip);
     });
 }
 
@@ -1464,6 +1476,7 @@ function processAndRenderData(data) {
     latestDataQualitySummary = computeDataQualitySummary(normalized, accountsList, dataQualitySummary);
     const kpis = calculateKPIs(normalized);
     kpis.savingsWidgetNet = savingsWidgetNet;
+    kpis.savingsRate = kpis.income > 0 ? (savingsWidgetNet / kpis.income) * 100 : 0;
     renderKPIs(kpis, normalized);
     renderBalanceKPIs(balanceMetrics);
 
