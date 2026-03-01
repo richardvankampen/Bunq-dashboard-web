@@ -10,6 +10,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - native/psuedo hover-tooltip aangevuld met JS-gedreven floating tooltipcomponent (`#insightHoverTooltip`).
   - actieve kaart toont tooltip bij `mouseenter`/`focus` met viewport-aware positionering (boven of onder de kaart).
   - pseudo-tooltips worden uitgeschakeld zodra JS-tooltips actief zijn (`body.js-insight-tooltips`) om dubbele weergave te voorkomen.
+  - floating tooltip visuele stijl omgezet naar dezelfde glassmorphism variabelen als de overige tegels voor consistente look.
   - reden: Safari in gemaximaliseerd/fullscreen venster toonde tooltip niet consistent.
 
 - Stilistische widgetfixes:

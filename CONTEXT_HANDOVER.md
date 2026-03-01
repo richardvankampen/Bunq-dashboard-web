@@ -104,6 +104,7 @@ Dit bestand is de actuele bron voor overdracht.
 - Safari hover-fix inzichttegels:
   - JS-gestuurde floating tooltip toegevoegd (`.insight-hover-tooltip`) die op `mouseenter/focus` op inzichttegels toont.
   - CSS pseudo-tooltips worden automatisch uitgeschakeld wanneer JS-tooltip actief is (`body.js-insight-tooltips`) om dubbele tooltips te voorkomen.
+  - floating tooltip gebruikt nu dezelfde glass-stijlvariabelen als de rest van de UI (`--glass-bg`, `--glass-border`, blur/backdrop) voor consistente styling.
   - doel: ook in Safari (maximized/fullscreen) consistente tooltipweergave.
 
 ## Detailmodal styling (actueel)
