@@ -153,6 +153,7 @@ Let op:
 - Gebruik niet de shellvariabele `UID` voor Bunq user-id (die is readonly in POSIX shells).
 - Losse `docker exec python3 -c ...` debugcalls moeten eerst `init_bunq(...)` doen; anders krijg je `ApiContext has not been loaded`.
 - Het script streamt output live; bij redirect naar bestand (`> file 2>&1`) blijft voortgang zichtbaar via `tail -f file`.
+- Het script toont nu ook `attempt_count=<n>` en gebruikt ongebufferde Python-output (`python3 -u`) voor directe voortgang.
 
 ## Als savings nog steeds ontbreken
 - Neem de exacte nieuwe `api_client unavailable (candidates: ...)` logregel over; die bepaalt het volgende concrete resolverpad.

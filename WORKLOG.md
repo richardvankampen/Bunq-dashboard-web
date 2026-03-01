@@ -33,6 +33,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - draait route-probing in één exec-run (voorkomt herhaalde Vaultwarden decrypt per endpoint);
     - parseert user-id via marker `CODX_USER_ID=...` i.p.v. shellvariabele `UID` (readonly in shell).
     - streamt nu live output tijdens run (geen buffered stilte tot einde).
+    - gebruikt nu `python3 -u` (ongebufferde output), toont `attempt_count`, en rapporteert correcte exit-code bij failures.
 - Live NAS-observatie vastgelegd:
   - `/v1/user/{id}/monetary-account*` raw paden geven op deze runtime allemaal `404 Route not found`.
   - hierop is `_raw_monetary_attempt_plan(...)` verbreed naar deterministische route- en param-varianten:
