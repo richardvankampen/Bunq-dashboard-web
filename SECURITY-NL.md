@@ -1,9 +1,9 @@
-# 🔒 Security Best Practices - Bunq Dashboard
+# 🔒 Beveiligingsrichtlijnen - Bunq Dashboard
 
-Complete security guide voor veilig gebruik van het Bunq Dashboard.
+Volledige beveiligingsgids voor veilig gebruik van het Bunq Dashboard.
 
-**Last Updated:** February 2026
-**Security Level:** Production-grade with session-based authentication
+**Laatst bijgewerkt:** February 2026
+**Beveiligingsniveau:** Production-grade with session-based authentication
 
 ---
 
@@ -13,7 +13,7 @@ Complete security guide voor veilig gebruik van het Bunq Dashboard.
 - Installatie: [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
 - Troubleshooting: [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
 
-## 🎯 Security Overview
+## 🎯 Beveiligingsoverzicht
 
 Het Bunq Dashboard is ontworpen met **security-first** principes:
 
@@ -32,7 +32,7 @@ Het Bunq Dashboard is ontworpen met **security-first** principes:
 
 ---
 
-## 🛡️ CRITICAL Security Requirements
+## 🛡️ Kritieke beveiligingseisen
 
 ### 1. ⚠️ VPN Access ONLY
 
@@ -44,7 +44,7 @@ Het Bunq Dashboard is ontworpen met **security-first** principes:
 - ✅ NEVER expose dashboard to public internet
 - ✅ Use Synology VPN Server (OpenVPN or L2TP/IPSec)
 
-**How to Setup VPN:**
+**VPN instellen:**
 
 ```bash
 # Synology NAS:
@@ -66,7 +66,7 @@ VPN Server → OpenVPN → Export configuration
 # Linux: openvpn client
 ```
 
-**Verify VPN is working:**
+**Controleer of de VPN werkt:**
 ```bash
 # Before connecting to VPN:
 curl http://192.168.1.100:5000
@@ -79,7 +79,7 @@ curl http://192.168.1.100:5000
 
 ---
 
-### 2. 🔐 Use Session-Based Authentication
+### 2. 🔐 Gebruik sessiegebaseerde authenticatie
 
 **Why:** Session auth is the most secure option.
 
@@ -89,7 +89,7 @@ curl http://192.168.1.100:5000
 - ✅ CSRF bescherming
 - ✅ Auto-logout (24 uur)
 
-**Setup:**
+**Instellen:**
 ```bash
 # Session-based auth is default (api_proxy.py)
 # Key requirements:
@@ -101,7 +101,7 @@ curl http://192.168.1.100:5000
 
 ---
 
-### 3. 🔑 Vaultwarden for Secret Management
+### 3. 🔑 Vaultwarden voor geheimbeheer
 
 **Why:** Never store API keys in plain text.
 
@@ -564,7 +564,7 @@ rm -rf /volume1/docker/bunq-dashboard/*
 
 ---
 
-## 📋 Security Checklist
+## 📋 Beveiligingschecklist
 
 ### Initial Setup
 - [ ] VPN installed and configured

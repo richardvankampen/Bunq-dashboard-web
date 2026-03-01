@@ -1,4 +1,4 @@
-# 🏠 Synology NAS Installation Guide
+# 🏠 Synology NAS-installatiegids
 
 Complete stap-voor-stap instructies voor het installeren van Bunq Dashboard op je Synology NAS met Vaultwarden secret management.
 
@@ -8,8 +8,8 @@ Complete stap-voor-stap instructies voor het installeren van Bunq Dashboard op j
 
 - Startpunt (dit document): [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
 - Korte overzichtspagina: [README-NL.md](README-NL.md)
-- Security hardening: [SECURITY-NL.md](SECURITY-NL.md)
-- Troubleshooting: [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
+- Beveiligingsversterking: [SECURITY-NL.md](SECURITY-NL.md)
+- Probleemoplossing: [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
 
 Tip: De lijst met visualisaties staat kort in de [README-NL.md](README-NL.md).
 
@@ -34,7 +34,7 @@ Tip: De lijst met visualisaties staat kort in de [README-NL.md](README-NL.md).
 
 ## 🔧 Deel 1: Voorbereiding
 
-### Stap 1.1: Enable SSH (Optioneel maar aanbevolen)
+### Stap 1.1: SSH inschakelen (Optioneel maar aanbevolen)
 
 ```
 Control Panel → Terminal & SNMP
@@ -92,7 +92,7 @@ Container Manager → Registry
 
 Wacht tot download compleet (zie Notifications).
 
-### Stap 2.2: Create Vaultwarden Container
+### Stap 2.2: Maak een Vaultwarden-container
 
 **Via Container Manager UI:**
 
@@ -152,7 +152,7 @@ services:
 
 ### Stap 2.3: Start Vaultwarden
 
-Klik "Run" of via SSH:
+Klik op "Run" of via SSH:
 ```bash
 cd /volume1/docker/vaultwarden
 sudo docker compose up -d
@@ -160,17 +160,17 @@ sudo docker compose up -d
 
 **Tip:** Als `docker compose` niet werkt op jouw DSM, gebruik dan `docker-compose` (met een streepje).
 
-Verify:
+Controleer:
 ```bash
 sudo docker ps | grep vaultwarden
 # Should show container running
 ```
 
-### Stap 2.4: Setup Vaultwarden Account
+### Stap 2.4: Vaultwarden-account instellen
 
 1. **Open browser**: `http://192.168.1.100:9000`
 
-2. **Create Account**:
+2. **Account aanmaken**:
    - Email: `admin@local` (of jouw email)
    - Master Password: **Kies een STERK wachtwoord!**
    - Confirm password
@@ -210,7 +210,7 @@ sudo docker ps | grep vaultwarden
    └── Save
    ```
 
-3. **Verify**: Je zou nu 1 item moeten zien in "My Vault"
+3. **Controleer**: Je zou nu 1 item moeten zien in "My Vault"
 
 ### Stap 2.6: Genereer API Access Token
 
@@ -588,7 +588,7 @@ sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 
 Belangrijk:
 - Voer dit script altijd uit met `sudo sh ...` (root).
-- Run je het als normale user, dan kan `docker stack deploy` defaults uit `docker-compose.yml` gebruiken (`*.jouwdomein.nl`) i.p.v. je `.env` waarden.
+- Voer je dit als normale gebruiker uit, dan kan `docker stack deploy` defaults uit `docker-compose.yml` gebruiken (`*.jouwdomein.nl`) i.p.v. je `.env` waarden.
 
 Tijdens de run vraagt het script:
 - `Use clean Docker build (--no-cache)? [Y/n]`
@@ -703,7 +703,7 @@ als `AUTO_SET_BUNQ_WHITELIST_IP=true` in `.env`.
 **Als het script nog steeds `Incorrect API key or IP address` toont:**
 1. Open bunq app en controleer API key status/IP-restrictie.
 2. Whitelist het egress IP dat het script toont.
-3. Run het script opnieuw.
+3. Voer het script opnieuw uit.
 
 ---
 
@@ -869,7 +869,7 @@ Voor uitgebreide oplossingen, zie [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
 
 ---
 
-## ✅ Verification Checklist
+## ✅ Verificatiechecklist
 
 - [ ] Vaultwarden running on port 9000
 - [ ] Vaultwarden accessible via browser
@@ -884,7 +884,7 @@ Voor uitgebreide oplossingen, zie [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
 
 ---
 
-## 📞 Need Help?
+## 📞 Hulp nodig?
 
 - GitHub Issues: [Create Issue](https://github.com/richardvankampen/Bunq-dashboard-web/issues)
 - Synology Forums: [DSM 7 Section](https://community.synology.com/enu/forum/1)
@@ -892,4 +892,4 @@ Voor uitgebreide oplossingen, zie [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
 
 ---
 
-**Installation complete! Enjoy your secure Bunq Dashboard! 🎉**
+**Installatie voltooid! Geniet van je veilige Bunq Dashboard! 🎉**

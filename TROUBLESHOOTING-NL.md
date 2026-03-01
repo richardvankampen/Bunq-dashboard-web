@@ -1,9 +1,9 @@
-# 🐛 Troubleshooting Guide - Bunq Dashboard
+# 🐛 Probleemoplossingsgids - Bunq Dashboard
 
-Comprehensive troubleshooting guide voor alle bekende problemen en hun oplossingen.
+Uitgebreide probleemoplossingsgids voor alle bekende problemen en hun oplossingen.
 
-**Last Updated:** February 2026
-**Applies to:** Session-based (fresh installs)
+**Laatst bijgewerkt:** February 2026
+**Van toepassing op:** Session-based (fresh installs)
 
 ---
 
@@ -13,7 +13,7 @@ Comprehensive troubleshooting guide voor alle bekende problemen en hun oplossing
 - Synology install: [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
 - Security hardening: [SECURITY-NL.md](SECURITY-NL.md)
 
-## 📋 Quick Diagnostic
+## 📋 Snelle diagnose
 
 Start hier als je niet zeker weet wat het probleem is:
 
@@ -47,7 +47,7 @@ docker secret ls | grep bunq_
 
 ## 🔴 KRITIEKE PROBLEMEN
 
-### 1. Container Won't Start
+### 1. Container start niet
 
 **Symptomen:**
 - Container stopt direct na start
@@ -105,7 +105,7 @@ docker service logs bunq_bunq-dashboard 2>&1 | grep -i error
 
 ---
 
-### 2. Dashboard Not Accessible (HTTP 502/503)
+### 2. Dashboard niet bereikbaar (HTTP 502/503)
 
 **Symptomen:**
 - Browser kan niet verbinden
@@ -168,9 +168,9 @@ http://192.168.1.100:5000
 
 ---
 
-### 3. Authentication Failed / 401 Unauthorized
+### 3. Authenticatie mislukt / 401 onbevoegd
 
-**Voor Session-Based Auth:**
+**Voor sessiegebaseerde authenticatie:**
 
 #### A. Wrong Credentials
 ```bash
@@ -228,7 +228,7 @@ sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack 
 # Controleer of er een `session` cookie staat met HttpOnly aangevinkt
 ```
 
-**Voor Session Auth:**
+**Voor sessie-authenticatie:**
 
 ```bash
 # Clear browser cache/credentials
@@ -572,7 +572,7 @@ rate_limiter = RateLimiter(
 
 ---
 
-### 8. Session Keeps Expiring
+### 8. Sessie verloopt steeds opnieuw
 
 **Symptomen:**
 - Logged out after few minutes
@@ -619,7 +619,7 @@ sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack 
 
 ---
 
-### 9. Slow Performance / Timeouts
+### 9. Trage prestaties / time-outs
 
 **Symptomen:**
 - Dashboard loads slowly
@@ -674,7 +674,7 @@ sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack 
 
 ---
 
-### 10. Visualizations Not Showing
+### 10. Visualisaties worden niet getoond
 
 **Symptomen:**
 - Blank charts
@@ -715,7 +715,7 @@ docker service logs bunq_bunq-dashboard | grep transaction
 
 ## 🟢 CONFIGURATIE PROBLEMEN
 
-### 11. Environment Variables Not Loading
+### 11. Omgevingsvariabelen worden niet geladen
 
 ```bash
 # Check .env file location:
@@ -811,9 +811,9 @@ sudo chmod -R 755 /volume1/docker/bunq-dashboard/
 
 ---
 
-## 🆘 STILL HAVING ISSUES?
+## 🆘 NOG STEEDS PROBLEMEN?
 
-### Collecteer Diagnostic Info
+### Verzamel diagnostische info
 
 ```bash
 # Run this script to collect info:
@@ -839,7 +839,7 @@ curl http://localhost:5000/api/health >> diagnostic.txt 2>&1
 cat diagnostic.txt
 ```
 
-### Open GitHub Issue
+### Open een GitHub-issue
 
 1. Go to: https://github.com/richardvankampen/Bunq-dashboard-web/issues
 2. Click "New Issue"
@@ -853,7 +853,7 @@ cat diagnostic.txt
 
 ---
 
-## 📚 Additional Resources
+## 📚 Aanvullende bronnen
 
 - [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md) - Complete installation guide
 - [SECURITY-NL.md](SECURITY-NL.md) - Security configuration
@@ -864,4 +864,4 @@ cat diagnostic.txt
 **Last Updated:** February 2026
 **Maintained by:** Community Contributors
 
-*Als je een oplossing vindt voor een nieuw probleem, overweeg dan een PR om deze guide te updaten!*
+*Als je een oplossing vindt voor een nieuw probleem, overweeg dan een PR om deze gids bij te werken!*

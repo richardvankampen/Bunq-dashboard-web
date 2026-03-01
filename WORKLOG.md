@@ -166,6 +166,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
     - `TROUBLESHOOTING-NL.md`
 - `README.md` bevat nu expliciete taalkeuze (EN/NL) zodat gebruikers direct tussen beide readme-varianten kunnen kiezen.
 - Links in NL-documentatie zijn aangepast naar `*-NL.md` targets zodat de NL-flow intern consistent blijft.
+- NL-documentatie inhoudelijk opgeschoond op onnodig Engels (koppen en begeleidende zinnen) in:
+  - `README-NL.md`
+  - `SECURITY-NL.md`
+  - `SYNOLOGY_INSTALL-NL.md`
+  - `TROUBLESHOOTING-NL.md`
 
 ## 2026-02-28
 

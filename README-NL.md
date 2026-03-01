@@ -1,6 +1,6 @@
 # 💰 Bunq Financial Dashboard
 
-**Veilige web-based visualisaties van je Bunq transactiedata (Synology-first)**
+**Veilige webgebaseerde visualisaties van je Bunq transactiedata (Synology-first)**
 Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseert.
 
 ## 🌐 Taal
@@ -8,11 +8,11 @@ Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseer
 - Nederlands (dit bestand): [README-NL.md](README-NL.md)
 - English: [README.md](README.md)
 
-⚠️ **IMPORTANT:** Access ONLY via VPN. NEVER forward ports to the internet.
+⚠️ **BELANGRIJK:** Gebruik alleen toegang via VPN. Zet nooit poorten open naar het internet.
 
 ---
 
-## ✨ Belangrijkste Features
+## ✨ Belangrijkste functies
 
 - Single-port dashboard (frontend + API) op poort 5000
 - Real-time data uit de Bunq API (read-only)
@@ -28,7 +28,7 @@ Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseer
 - Actionable insight cards (runway, needs-vs-wants, merchant concentration, monthly net projection) met deep-dive details
 - Caching en pagination voor performance
 - Synology‑ready deployment
-- Admin maintenance tools in Settings (status, egress IP, Bunq context re-init, bundled maintenance run met opties)
+- Beheeronderhoudstools in Instellingen (status, egress IP, Bunq context re-init, bundled maintenance run met opties)
 - Terminal-helper knoppen in admin panel (tonen copy-ready install/update en restart commando's)
 
 **Visualisaties:**
@@ -44,29 +44,29 @@ Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseer
 - Insights (automatisch)
 - Custom charts
 
-## 🔒 Security (Kort)
+## 🔒 Beveiliging (kort)
 
-- Session-based auth met HttpOnly cookies en CSRF‑bescherming
+- Sessiegebaseerde authenticatie met HttpOnly cookies en CSRF‑bescherming
 - `SESSION_COOKIE_SECURE=true` als veilige default (zet alleen op `false` bij lokale HTTP)
 - Secrets via Vaultwarden + Docker Swarm secrets (Vaultwarden is preferred; `VAULTWARDEN_ACCESS_METHOD=cli`)
 - VPN‑only toegang, geen publieke exposure
 - Rate limiting op login en API
 Meer details: [SECURITY-NL.md](SECURITY-NL.md)
 
-## 🚀 Quick Start (Synology)
+## 🚀 Snelle start (Synology)
 
 1. Installeer **Container Manager** (Package Center)
 2. Zorg voor **VPN-only toegang** (geen publieke exposure)
-3. Volg de volledige installatieguide: [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
+3. Volg de volledige installatiegids: [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
 4. Gebruik **Vaultwarden als primaire Bunq API key bron** (`USE_VAULTWARDEN=true`)
 5. Gebruik `VAULTWARDEN_ACCESS_METHOD=cli` + secret `bunq_vaultwarden_master_password`
    - Zet `VAULTWARDEN_URL` op een **HTTPS** URL (reverse proxy/domein met geldig certificaat)
 6. Gebruik directe `bunq_api_key` alleen als nood-fallback (`USE_VAULTWARDEN=false`)
-7. Voor install/update op Synology: run altijd als root:
+7. Voor install/update op Synology: voer dit altijd als root uit:
    - `sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh`
    - Niet als normale user uitvoeren.
 8. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh`
-   - Veilige non-interactive default: `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
+   - Veilige niet-interactieve standaard: `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
    - Optionele cleanup-pass daarna: `... DEACTIVATE_OTHERS=true ...`
 9. Na deploy/herstart kun je startup-validatie doen met `sudo sh scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
 10. Build/deploy controleert ook egress-IP vs actieve Bunq whitelist en geeft direct herstelcommando bij mismatch
@@ -120,7 +120,7 @@ sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh
 ```
 
 Belangrijk (Synology):
-- Run het install/update script altijd met `sudo sh ...`.
+- Voer het install/update-script altijd met `sudo sh ...` uit.
 - Als je het als normale user draait, kan `docker stack deploy` met default-waarden starten (`*.jouwdomein.nl`) i.p.v. je `.env` waarden.
 
 Het script vraagt standaard:
@@ -129,7 +129,7 @@ Het script vraagt standaard:
 Handige overrides:
 - `sudo sh -c 'NO_CACHE=false sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'` (sneller, cached build)
 - `sudo sh -c 'NO_CACHE=true sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh'` (volledig schone build)
-- In non-interactive runs blijft veilige default `NO_CACHE=true` actief.
+- In niet-interactieve runs blijft veilige default `NO_CACHE=true` actief.
 
 Wanneer `NO_CACHE=false` gebruiken:
 - Alleen code/documentatie wijzigingen (bijv. `app.js`, `api_proxy.py`, `index.html`, `.md`) en geen dependency/base-image wijzigingen.

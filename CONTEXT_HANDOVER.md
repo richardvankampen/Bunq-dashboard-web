@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning)
 
 ## Canonieke status
 
@@ -18,6 +18,7 @@ Dit bestand is de actuele bron voor overdracht.
 ## Documentatie-talen (actueel)
 
 - User-facing docs hebben nu een Engelse hoofdversie (`*.md`) en een Nederlandse variant (`*-NL.md`).
+- Nederlandstalige docs zijn taalkundig opgeschoond op onnodig Engels in koppen en uitlegzinnen (technische termen behouden waar logisch).
 - Huidige mapping:
   - `README.md` (EN) / `README-NL.md` (NL)
   - `SECURITY.md` (EN) / `SECURITY-NL.md` (NL)
