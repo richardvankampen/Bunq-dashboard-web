@@ -120,6 +120,14 @@ Dit bestand is de actuele bron voor overdracht.
   - URL: `https://bunq.me/BunqFinancialDashboard`
   - opent in nieuw tabblad (`target="_blank"` + `rel="noopener noreferrer"`).
 
+## Settings UX (actueel)
+
+- Instelling `Enable background particles` is visueel opgewaardeerd naar een prominente feature-togglekaart met:
+  - heldere glass gradient (cyan/magenta accenten),
+  - badge + titel + korte uitleg,
+  - custom switch met glow/pulse-animatie wanneer actief.
+- Technisch blijft dezelfde instelling behouden (`id="enableParticles"`), dus bestaande save/load logica in `app.js` is ongewijzigd.
+
 ## Categorie-race (actueel)
 
 - Widgetnaam is `Categorie-race`.

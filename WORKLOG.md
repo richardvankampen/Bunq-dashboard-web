@@ -6,6 +6,13 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Settings “Enable background particles” wow-upgrade:
+  - standaard checkbox vervangen door een prominente visual FX togglekaart.
+  - nieuwe kaart bevat badge, duidelijke titel/subtitel en custom switch.
+  - stijl: helderder glass gradient met cyan/magenta accenten, inclusief subtiele sheen-hover en pulse-glow in actieve stand.
+  - mobile gedrag toegevoegd: kaart stapelt netjes en switch blijft goed uitgelijnd op kleine schermen.
+  - compatibiliteit behouden: dezelfde input-id (`enableParticles`) blijft gebruikt door bestaande settings-logica.
+
 - Header support-hover toegevoegd:
   - bewegende Bunq-icoon in de header heeft nu een hover/focus popover met klikbare link.
   - linktekst: `buy me a coffee if you enjoy using this dashboard`.

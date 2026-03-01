@@ -1271,6 +1271,175 @@ body.js-insight-tooltips .insight-card[data-tooltip]::after {
     margin-right: 0.5rem;
 }
 
+.particles-setting-group {
+    margin-top: var(--spacing-sm);
+}
+
+.particles-toggle-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--spacing-md);
+    width: 100%;
+    padding: 0.95rem 1rem;
+    border: 1px solid rgba(168, 85, 247, 0.44);
+    border-radius: calc(var(--radius-md) + 2px);
+    background:
+        radial-gradient(circle at 16% 20%, rgba(56, 189, 248, 0.22) 0%, transparent 50%),
+        radial-gradient(circle at 88% 74%, rgba(244, 114, 182, 0.22) 0%, transparent 54%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(168, 85, 247, 0.19) 100%);
+    box-shadow:
+        0 10px 26px rgba(168, 85, 247, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    cursor: pointer;
+    overflow: hidden;
+    transition:
+        transform var(--transition-fast),
+        border-color var(--transition-fast),
+        box-shadow var(--transition-fast);
+    margin-bottom: 0;
+}
+
+.particles-toggle-card::before {
+    content: '';
+    position: absolute;
+    inset: -40% -30%;
+    background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.18) 42%, transparent 58%);
+    transform: translateX(-120%) rotate(6deg);
+    transition: transform 0.85s ease;
+    pointer-events: none;
+}
+
+.particles-toggle-card:hover::before,
+.particles-toggle-card:focus-within::before {
+    transform: translateX(120%) rotate(6deg);
+}
+
+.particles-toggle-card:hover,
+.particles-toggle-card:focus-within {
+    transform: translateY(-2px);
+    border-color: rgba(244, 114, 182, 0.7);
+    box-shadow:
+        0 14px 30px rgba(168, 85, 247, 0.32),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.particles-toggle-card input[type="checkbox"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    margin: 0;
+}
+
+.particles-toggle-content {
+    display: grid;
+    gap: 0.22rem;
+}
+
+.particles-toggle-badge {
+    width: fit-content;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #f5d0fe;
+    background: rgba(168, 85, 247, 0.28);
+    border: 1px solid rgba(244, 114, 182, 0.42);
+}
+
+.particles-toggle-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.25;
+}
+
+.particles-toggle-subtitle {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.35;
+}
+
+.particles-toggle-switch {
+    position: relative;
+    width: 62px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    background: rgba(30, 41, 59, 0.55);
+    box-shadow: inset 0 2px 6px rgba(2, 6, 23, 0.4);
+    transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.particles-toggle-switch::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+        radial-gradient(circle at 30% 45%, rgba(255, 255, 255, 0.3) 0%, transparent 45%),
+        radial-gradient(circle at 68% 58%, rgba(244, 114, 182, 0.26) 0%, transparent 50%);
+    opacity: 0.42;
+}
+
+.particles-toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: linear-gradient(145deg, #f8fafc 0%, #cbd5e1 100%);
+    box-shadow:
+        0 2px 6px rgba(2, 6, 23, 0.45),
+        inset 0 1px 2px rgba(255, 255, 255, 0.85);
+    transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.particles-toggle-card input[type="checkbox"]:checked ~ .particles-toggle-switch {
+    border-color: rgba(56, 189, 248, 0.62);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.4) 0%, rgba(244, 114, 182, 0.52) 100%);
+    box-shadow:
+        0 0 0 1px rgba(244, 114, 182, 0.22),
+        0 8px 18px rgba(168, 85, 247, 0.35),
+        inset 0 2px 6px rgba(15, 23, 42, 0.28);
+    animation: particleSwitchPulse 2.2s ease-in-out infinite;
+}
+
+.particles-toggle-card input[type="checkbox"]:checked ~ .particles-toggle-switch .particles-toggle-knob {
+    transform: translateX(28px);
+    background: linear-gradient(145deg, #ffffff 0%, #f5d0fe 100%);
+    box-shadow:
+        0 4px 10px rgba(168, 85, 247, 0.44),
+        inset 0 1px 2px rgba(255, 255, 255, 0.95);
+}
+
+.particles-toggle-card input[type="checkbox"]:focus-visible ~ .particles-toggle-switch {
+    box-shadow:
+        0 0 0 3px rgba(244, 114, 182, 0.26),
+        inset 0 2px 6px rgba(2, 6, 23, 0.4);
+}
+
+@keyframes particleSwitchPulse {
+    0%, 100% {
+        box-shadow:
+            0 0 0 1px rgba(244, 114, 182, 0.22),
+            0 8px 18px rgba(168, 85, 247, 0.35),
+            inset 0 2px 6px rgba(15, 23, 42, 0.28);
+    }
+    50% {
+        box-shadow:
+            0 0 0 2px rgba(56, 189, 248, 0.34),
+            0 12px 24px rgba(236, 72, 153, 0.38),
+            inset 0 2px 7px rgba(15, 23, 42, 0.26);
+    }
+}
+
 .setting-help {
     margin-top: 0.5rem;
     font-size: 0.75rem;
@@ -1836,6 +2005,15 @@ body.js-insight-tooltips .insight-card[data-tooltip]::after {
     .balance-detail-transactions-footer {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .particles-toggle-card {
+        grid-template-columns: 1fr;
+        gap: 0.7rem;
+    }
+
+    .particles-toggle-switch {
+        justify-self: start;
     }
 }
 
