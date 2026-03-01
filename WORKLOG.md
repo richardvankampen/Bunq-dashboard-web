@@ -6,6 +6,14 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- Documentatie uitgebreid met advies voor **vast/sticky publiek IP** in alle relevante user-docs:
+  - `README.md` en `README-NL.md`: expliciete aanbeveling + verwijzing naar troubleshooting-sectie.
+  - `SYNOLOGY_INSTALL.md` en `SYNOLOGY_INSTALL-NL.md`: netwerkvereisten aangevuld met vast/sticky publiek IP-advies.
+  - `TROUBLESHOOTING.md` en `TROUBLESHOOTING-NL.md`: nieuwe uitlegsectie over:
+    - verschil tussen vast, sticky dynamisch en regulier dynamisch publiek IP,
+    - waarom dit direct impact heeft op Bunq IP-whitelist stabiliteit,
+    - praktische providercontext (NL) en herstelstappen bij IP-wijziging.
+
 - `TROUBLESHOOTING-NL.md` grondig opgeschoond:
   - document grotendeels herschreven naar een actuele, compacte runbook-structuur.
   - verouderde/inconsistente instructies verwijderd (historische varianten, mixed flows, taalmix EN/NL).

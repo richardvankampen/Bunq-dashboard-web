@@ -37,6 +37,35 @@ Interpretatie:
 
 ---
 
+## Publiek IP-beleid (vast vs sticky)
+
+Voor dit dashboard is Bunq API-toegang in de praktijk gekoppeld aan je **huidige publieke egress-IP**.
+Als dat IP wijzigt, kan Bunq verzoeken afwijzen met `Incorrect API key or IP address` totdat je de whitelist bijwerkt.
+
+Begrippen:
+- **Vast/statisch publiek IP-adres**: je publieke IP verandert niet, behalve als je provider dit bewust wijzigt.
+- **Sticky dynamisch publiek IP-adres**: formeel dynamisch, maar vaak lange tijd gelijk (tot modem-reconnect, storing, onderhoud of lease-reset).
+- **Regulier dynamisch publiek IP-adres**: kan vaker en minder voorspelbaar wijzigen.
+
+Waarom dit voor deze software belangrijk is:
+- minder Bunq whitelist herregistraties nodig;
+- minder `503` readiness-incidenten na ISP/router gebeurtenissen;
+- stabielere werking en sneller troubleshooten.
+
+Providerpraktijk (Nederland, gebruikelijk beeld per 1 maart 2026):
+- Vast publiek IPv4-adres zit meestal op **zakelijke** abonnementen (vaak als add-on), onder andere bij veel pakketten van KPN Zakelijk, Ziggo Zakelijk en Odido Zakelijk.
+- Particuliere abonnementen zijn meestal dynamisch; soms sticky, maar meestal niet contractueel gegarandeerd.
+- Mobiele/5G en CGNAT-verbindingen zijn meestal het minst voorspelbaar voor IP-gebaseerde allowlists.
+
+Als je publieke IP is veranderd:
+```bash
+cd /volume1/docker/bunq-dashboard
+TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+sudo sh scripts/restart_bunq_service.sh
+```
+
+---
+
 ## Update- en Redeployflows (actueel)
 
 Gebruik altijd deze flows; oudere varianten zonder duidelijke scope zijn verwijderd.

@@ -38,6 +38,33 @@ Notes:
 - `/api/live` checks process/container liveness
 - `/api/health` checks readiness and can return `503` when Bunq key/IP mismatches
 
+## 🌍 Public IP strategy (fixed vs sticky)
+
+For this dashboard, your Bunq API access is effectively tied to your **current public egress IP**.
+If that IP changes, Bunq can reject requests with `Incorrect API key or IP address` until you update the whitelist.
+
+Definitions:
+- **Fixed/static public IP**: your public IP does not change unless your provider reassigns it manually.
+- **Sticky dynamic public IP**: officially dynamic, but often remains the same for long periods (until modem reconnect, outage, maintenance, or lease reset).
+- **Regular dynamic public IP**: may change more frequently and unpredictably.
+
+Why this matters here:
+- fewer Bunq whitelist re-registrations
+- fewer `503` readiness incidents after ISP/router events
+- more predictable operations and easier diagnostics
+
+Provider reality (Netherlands, typical situation as of March 1, 2026):
+- Static public IPv4 is usually offered on **business** subscriptions (commonly as an add-on), including many plans from providers such as KPN Zakelijk, Ziggo Zakelijk, and Odido Zakelijk.
+- Residential subscriptions are usually dynamic; some behave sticky, but this is generally not guaranteed contractually.
+- Mobile/5G and CGNAT connections are usually the least stable for IP-based allowlists.
+
+What to do when IP changed:
+```bash
+cd /volume1/docker/bunq-dashboard
+TARGET_IP=<PUBLIC_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+sudo sh scripts/restart_bunq_service.sh
+```
+
 ## 🔴 Critical Issues
 
 ### 1. Dashboard service not starting

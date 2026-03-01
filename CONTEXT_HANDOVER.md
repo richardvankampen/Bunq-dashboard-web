@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven + deterministische internal detectie op account-id/IBAN)
+Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven + deterministische internal detectie op account-id/IBAN + vast/sticky publiek IP advies in docs)
 
 ## Canonieke status
 
@@ -32,6 +32,10 @@ Dit bestand is de actuele bron voor overdracht.
   - `git pull` voorbeelden gebruiken nu `sudo git pull --rebase origin main`;
   - README EN/NL bevatten nu ook expliciet quick code-only redeploy (`scripts/quick_redeploy.sh`);
   - troubleshooting/synology NL voorbeelden voor full deploy gebruiken `.env`-load + `docker service update --force --image bunq-dashboard:$TAG ...` in dezelfde shell.
+- README/install/troubleshooting EN/NL bevatten nu expliciet advies voor stabiel publiek egress-IP:
+  - voorkeur voor vast publiek IP, minimaal sticky dynamisch IP;
+  - uitleg waarom dit relevant is voor Bunq whitelist stabiliteit;
+  - in troubleshooting staat extra toelichting op vast vs sticky + providerpraktijk.
 - `TROUBLESHOOTING-NL.md` is inhoudelijk opgeschoond:
   - sterk verouderde/inconsistente instructies verwijderd;
   - structuur teruggebracht naar actuele diagnose + deploy/redeploy flows + kernincidenten;

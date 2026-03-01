@@ -28,6 +28,7 @@ Tip: De lijst met visualisaties staat kort in de [README-NL.md](README-NL.md).
 
 ### Netwerk
 - **Vaste lokale IP** voor je NAS (bijv. 192.168.1.100)
+- **Sterk aanbevolen:** vast publiek IP-adres (beste keuze) of sticky dynamisch publiek IP-adres bij je provider
 - **Poorten vrij**: 5000 (Dashboard + API), 9000 (Vaultwarden)
 
 ---
@@ -668,6 +669,10 @@ Gebruik dit wanneer:
 - je een nieuwe Bunq API key hebt aangemaakt
 - je publieke IP is gewijzigd (bijv. VPN/ISP wijziging)
 - je logs tonen: `Incorrect API key or IP address`
+
+Tip:
+- Met een vast of sticky publiek IP-adres hoef je deze stap veel minder vaak te doen.
+- Zie [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md), sectie `Publiek IP-beleid (vast vs sticky)` voor uitleg en provideropties.
 
 **Script uit de repo:**
 ```bash

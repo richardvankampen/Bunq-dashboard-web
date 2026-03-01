@@ -29,6 +29,7 @@ Step-by-step guide for installing Bunq Dashboard on Synology NAS.
 
 ### Network
 - Static NAS LAN IP (for example `192.168.1.100`)
+- Recommended: fixed public IP (best) or sticky dynamic public IP (acceptable) from your ISP
 - Open local ports:
   - `5000` (dashboard + API)
   - `9000` (Vaultwarden)
@@ -222,6 +223,7 @@ python3 /volume1/docker/bunq-dashboard/scripts/check_accounts_api.py \
 - Keep `USE_VAULTWARDEN=true` as primary flow
 - Use `register_bunq_ip.sh` when Bunq key or egress IP changes
 - Use `restart_bunq_service.sh` for startup validation after deploy
+- Prefer fixed or sticky public IP connectivity to reduce Bunq whitelist churn (details in `TROUBLESHOOTING.md`)
 
 ## 📎 More Details
 

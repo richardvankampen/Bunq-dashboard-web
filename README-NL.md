@@ -70,10 +70,16 @@ Meer details: [SECURITY-NL.md](SECURITY-NL.md)
    - Optionele cleanup-pass daarna: `... DEACTIVATE_OTHERS=true ...`
 9. Na deploy/herstart kun je startup-validatie doen met `sudo sh scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
 10. Build/deploy controleert ook egress-IP vs actieve Bunq whitelist en geeft direct herstelcommando bij mismatch
+11. Sterk aanbevolen: gebruik een vast publiek IP-adres, of minimaal een sticky dynamisch publiek IP-adres, om Bunq-whitelist problemen en onverwachte auth-fouten te beperken
 
 Health endpoints:
 - Liveness: `GET /api/live` (container/app process up)
 - Readiness: `GET /api/health` (Bunq context state; kan `503` geven bij key/IP mismatch)
+
+Publiek-IP opmerking:
+- Bunq API toegang is gekoppeld aan je huidige publieke egress-IP.
+- Als je provider dat IP wijzigt, kan Bunq verzoeken weigeren tot je `scripts/register_bunq_ip.sh` opnieuw draait.
+- Zie [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md), sectie `Publiek IP-beleid (vast vs sticky)`.
 
 Transactie-diagnostiek:
 - `GET /api/transactions` retourneert extra velden:
