@@ -297,12 +297,7 @@ def _is_monetary_list_endpoint(name, candidate):
     return True
 
 def _monetary_account_query_params(active_only=False):
-    page_size = get_int_env('BUNQ_ACCOUNT_PAGE_SIZE', 200)
-    if page_size < 1:
-        page_size = 200
-    if page_size > 200:
-        page_size = 200
-    params = {'count': page_size}
+    params = {'count': _BUNQ_ACCOUNT_PAGE_SIZE}
     if active_only:
         params['status'] = 'ACTIVE'
     return params
@@ -991,11 +986,6 @@ def _raw_monetary_fallback_cooldown_seconds():
     return cooldown
 
 def _raw_monetary_attempt_plan(user_id):
-    page_size = get_int_env('BUNQ_ACCOUNT_PAGE_SIZE', 200)
-    if page_size < 1:
-        page_size = 200
-    if page_size > 200:
-        page_size = 200
     # Keep raw fallback aligned with documented Bunq monetary-account routes.
     # These routes are only used when sdk deserialization fails for savings types.
     routes = (
@@ -1004,8 +994,8 @@ def _raw_monetary_attempt_plan(user_id):
         f"/user/{user_id}/monetary-account-external-savings",
     )
     params_variants = (
-        {'status': 'ACTIVE', 'count': page_size},
-        {'count': page_size},
+        {'status': 'ACTIVE', 'count': _BUNQ_ACCOUNT_PAGE_SIZE},
+        {'count': _BUNQ_ACCOUNT_PAGE_SIZE},
     )
     return tuple((path, params) for path in routes for params in params_variants)
 
@@ -1609,14 +1599,8 @@ def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
     # Ensure the Bunq session token is still valid before any SDK call.
     ensure_bunq_session_active()
 
-    page_size = get_int_env('BUNQ_PAYMENT_PAGE_SIZE', 200)
-    if page_size < 1:
-        page_size = 200
-    if page_size > 200:
-        page_size = 200
-    max_pages = get_int_env('BUNQ_PAYMENT_MAX_PAGES', 50)
-    if max_pages < 1:
-        max_pages = 50
+    page_size = _BUNQ_PAYMENT_PAGE_SIZE
+    max_pages = _BUNQ_PAYMENT_MAX_PAGES
 
     # SDK canonical call signature (from endpoint.py):
     # PaymentApiObject.list(monetary_account_id=None, params=None, custom_headers=None)
@@ -1749,14 +1733,8 @@ def list_card_payments_for_account(account_id, cutoff_date=None, return_meta=Fal
 
     ensure_bunq_session_active()
 
-    page_size = get_int_env('BUNQ_CARD_PAYMENT_PAGE_SIZE', get_int_env('BUNQ_PAYMENT_PAGE_SIZE', 200))
-    if page_size < 1:
-        page_size = 200
-    if page_size > 200:
-        page_size = 200
-    max_pages = get_int_env('BUNQ_CARD_PAYMENT_MAX_PAGES', get_int_env('BUNQ_PAYMENT_MAX_PAGES', 50))
-    if max_pages < 1:
-        max_pages = 50
+    page_size = _BUNQ_CARD_PAYMENT_PAGE_SIZE
+    max_pages = _BUNQ_CARD_PAYMENT_MAX_PAGES
 
     modes = (
         'kw_monetary_account_id_params',
@@ -2515,21 +2493,29 @@ STATIC_DIR = APP_DIR
 STATIC_FILES = {'index.html', 'styles.css', 'app.js'}
 
 # Simple in-memory cache (per process)
-CACHE_ENABLED = os.getenv('CACHE_ENABLED', 'true').lower() == 'true'
+CACHE_ENABLED = get_bool_env('CACHE_ENABLED', True)
 CACHE_TTL_SECONDS = get_int_env('CACHE_TTL_SECONDS', 60)
 DEFAULT_PAGE_SIZE = get_int_env('DEFAULT_PAGE_SIZE', 500)
 MAX_PAGE_SIZE = get_int_env('MAX_PAGE_SIZE', 2000)
 MAX_DAYS = get_int_env('MAX_DAYS', 3650)
 
 # Local data store for historical analytics (P1)
-DATA_DB_ENABLED = os.getenv('DATA_DB_ENABLED', 'true').lower() == 'true'
+DATA_DB_ENABLED = get_bool_env('DATA_DB_ENABLED', True)
 DATA_DB_PATH = os.getenv('DATA_DB_PATH', os.path.join('config', 'dashboard_data.db'))
-FX_ENABLED = os.getenv('FX_ENABLED', 'true').lower() == 'true'
+FX_ENABLED = get_bool_env('FX_ENABLED', True)
 FX_RATE_SOURCE = os.getenv('FX_RATE_SOURCE', 'frankfurter').strip().lower()
 FX_REQUEST_TIMEOUT_SECONDS = get_int_env('FX_REQUEST_TIMEOUT_SECONDS', 8)
 FX_CACHE_HOURS = get_int_env('FX_CACHE_HOURS', 24)
 AUTO_SET_BUNQ_WHITELIST_IP = get_bool_env('AUTO_SET_BUNQ_WHITELIST_IP', True)
 AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS = get_bool_env('AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS', False)
+USE_VAULTWARDEN = get_bool_env('USE_VAULTWARDEN', True)
+
+# Bunq API pagination constants (resolved once at startup)
+_BUNQ_ACCOUNT_PAGE_SIZE = min(200, max(1, get_int_env('BUNQ_ACCOUNT_PAGE_SIZE', 200)))
+_BUNQ_PAYMENT_PAGE_SIZE = min(200, max(1, get_int_env('BUNQ_PAYMENT_PAGE_SIZE', 200)))
+_BUNQ_CARD_PAYMENT_PAGE_SIZE = min(200, max(1, get_int_env('BUNQ_CARD_PAYMENT_PAGE_SIZE', _BUNQ_PAYMENT_PAGE_SIZE)))
+_BUNQ_PAYMENT_MAX_PAGES = max(1, get_int_env('BUNQ_PAYMENT_MAX_PAGES', 50))
+_BUNQ_CARD_PAYMENT_MAX_PAGES = max(1, get_int_env('BUNQ_CARD_PAYMENT_MAX_PAGES', _BUNQ_PAYMENT_MAX_PAGES))
 
 def get_data_db_connection():
     if not DATA_DB_ENABLED:
@@ -3509,55 +3495,57 @@ def persist_transactions(transactions):
     captured_at = datetime.now(timezone.utc).isoformat()
 
     try:
+        rows = []
+        for transaction in transactions:
+            tx_key = build_transaction_cache_key(transaction)
+            amount = safe_float(transaction.get('amount'), default=0.0, context='transaction amount')
+            currency = (transaction.get('currency') or 'EUR').upper()
+            amount_eur = transaction.get('amount_eur')
+            if amount_eur is None:
+                tx_date = parse_bunq_datetime(transaction.get('date'), context='transaction date')
+                rate_date = tx_date.date().isoformat() if tx_date else None
+                amount_eur, _, _ = convert_amount_to_eur(amount, currency, rate_date=rate_date)
+            else:
+                amount_eur = safe_float(amount_eur, default=None, context='transaction amount_eur')
+            rows.append((
+                tx_key,
+                transaction.get('id'),
+                str(transaction.get('account_id')),
+                transaction.get('account_name'),
+                transaction.get('date'),
+                amount,
+                currency,
+                amount_eur,
+                transaction.get('description'),
+                transaction.get('counterparty'),
+                transaction.get('merchant'),
+                transaction.get('category'),
+                transaction.get('type'),
+                1 if transaction.get('is_internal_transfer') else 0,
+                captured_at,
+            ))
         with connection:
-            for transaction in transactions:
-                tx_key = build_transaction_cache_key(transaction)
-                amount = safe_float(transaction.get('amount'), default=0.0, context='transaction amount')
-                currency = (transaction.get('currency') or 'EUR').upper()
-                amount_eur = transaction.get('amount_eur')
-                if amount_eur is None:
-                    tx_date = parse_bunq_datetime(transaction.get('date'), context='transaction date')
-                    rate_date = tx_date.date().isoformat() if tx_date else None
-                    amount_eur, _, _ = convert_amount_to_eur(amount, currency, rate_date=rate_date)
-                else:
-                    amount_eur = safe_float(amount_eur, default=None, context='transaction amount_eur')
-                connection.execute(
-                    """
-                    INSERT INTO transaction_cache (
-                        tx_key, tx_id, account_id, account_name, tx_date, amount, currency, amount_eur,
-                        description, counterparty, merchant, category, tx_type, is_internal_transfer, captured_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(tx_key) DO UPDATE SET
-                        account_name = excluded.account_name,
-                        amount = excluded.amount,
-                        currency = excluded.currency,
-                        amount_eur = excluded.amount_eur,
-                        description = excluded.description,
-                        counterparty = excluded.counterparty,
-                        merchant = excluded.merchant,
-                        category = excluded.category,
-                        tx_type = excluded.tx_type,
-                        is_internal_transfer = excluded.is_internal_transfer,
-                        captured_at = excluded.captured_at
-                    """,
-                    (
-                        tx_key,
-                        transaction.get('id'),
-                        str(transaction.get('account_id')),
-                        transaction.get('account_name'),
-                        transaction.get('date'),
-                        amount,
-                        currency,
-                        amount_eur,
-                        transaction.get('description'),
-                        transaction.get('counterparty'),
-                        transaction.get('merchant'),
-                        transaction.get('category'),
-                        transaction.get('type'),
-                        1 if transaction.get('is_internal_transfer') else 0,
-                        captured_at,
-                    ),
-                )
+            connection.executemany(
+                """
+                INSERT INTO transaction_cache (
+                    tx_key, tx_id, account_id, account_name, tx_date, amount, currency, amount_eur,
+                    description, counterparty, merchant, category, tx_type, is_internal_transfer, captured_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tx_key) DO UPDATE SET
+                    account_name = excluded.account_name,
+                    amount = excluded.amount,
+                    currency = excluded.currency,
+                    amount_eur = excluded.amount_eur,
+                    description = excluded.description,
+                    counterparty = excluded.counterparty,
+                    merchant = excluded.merchant,
+                    category = excluded.category,
+                    tx_type = excluded.tx_type,
+                    is_internal_transfer = excluded.is_internal_transfer,
+                    captured_at = excluded.captured_at
+                """,
+                rows,
+            )
     except Exception as exc:
         logger.warning(f"⚠️ Failed persisting transactions: {exc}")
     finally:
@@ -3984,8 +3972,7 @@ def get_api_key_from_vaultwarden():
     Retrieve Bunq API key with Vaultwarden-first flow.
     Preferred method: Vaultwarden CLI decryption (`VAULTWARDEN_ACCESS_METHOD=cli`).
     """
-    use_vaultwarden = os.getenv('USE_VAULTWARDEN', 'true').lower() == 'true'
-    if not use_vaultwarden:
+    if not USE_VAULTWARDEN:
         logger.warning("⚠️ Vaultwarden disabled: falling back to direct API key (env/secret)")
         api_key = get_config('BUNQ_API_KEY', '', 'bunq_api_key')
         if api_key:
@@ -4029,12 +4016,11 @@ def get_public_egress_ip(timeout_seconds=8):
 
 def get_vaultwarden_status_snapshot():
     """Runtime status snapshot for admin panel diagnostics (no secret leakage)."""
-    use_vaultwarden = os.getenv('USE_VAULTWARDEN', 'true').strip().lower() == 'true'
     method = get_vaultwarden_access_method()
     item_name = os.getenv('VAULTWARDEN_ITEM_NAME', 'Bunq API Key').strip()
     vault_url = os.getenv('VAULTWARDEN_URL', '').strip()
     status = {
-        'enabled': use_vaultwarden,
+        'enabled': USE_VAULTWARDEN,
         'access_method': method,
         'vault_url': vault_url,
         'item_name': item_name,
@@ -4047,7 +4033,7 @@ def get_vaultwarden_status_snapshot():
         'error': None,
     }
 
-    if not use_vaultwarden:
+    if not USE_VAULTWARDEN:
         status['error'] = 'Vaultwarden disabled (USE_VAULTWARDEN=false)'
         return status
 
@@ -4674,8 +4660,6 @@ def get_admin_status():
     context_exists = os.path.exists(CONFIG_FILE)
     db_exists = os.path.exists(DATA_DB_PATH) if DATA_DB_PATH else False
     vault_status = get_vaultwarden_status_snapshot()
-    use_vaultwarden = os.getenv('USE_VAULTWARDEN', 'true').strip().lower() == 'true'
-
     response = {
         'success': True,
         'data': {
@@ -4683,8 +4667,8 @@ def get_admin_status():
             'api_initialized': bool(_BUNQ_CONTEXT_INITIALIZED),
             'api_key_available': bool(API_KEY),
             'bunq_last_error': _BUNQ_INIT_LAST_ERROR,
-            'use_vaultwarden': use_vaultwarden,
-            'api_key_source': 'vaultwarden' if use_vaultwarden else 'direct-secret',
+            'use_vaultwarden': USE_VAULTWARDEN,
+            'api_key_source': 'vaultwarden' if USE_VAULTWARDEN else 'direct-secret',
             'vaultwarden': vault_status,
             'context_file': CONFIG_FILE,
             'context_exists': context_exists,
@@ -4778,11 +4762,7 @@ def reinitialize_bunq_context():
             'context_exists': os.path.exists(CONFIG_FILE),
             'api_initialized': True,
             'egress_ip': get_public_egress_ip(),
-            'api_key_source': (
-                'vaultwarden'
-                if os.getenv('USE_VAULTWARDEN', 'true').strip().lower() == 'true'
-                else 'direct-secret'
-            )
+            'api_key_source': 'vaultwarden' if USE_VAULTWARDEN else 'direct-secret'
         }
     })
 
@@ -5338,7 +5318,7 @@ def get_account_transactions(
             'counterparty': counterparty_account_name or counterparty_name,
             'counterparty_account_name': counterparty_account_name,
             'counterparty_account_id': counterparty_account_id,
-            'counterparty_iban': sorted(counterparty_account_ibans)[0] if counterparty_account_ibans else None,
+            'counterparty_iban': next(iter(counterparty_account_ibans), None),
             'merchant': merchant_label,
             'category': category,
             'type': get_obj_field(payment, 'type_', 'type'),
@@ -5449,8 +5429,8 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
     ]):
         return 'Shopping'
     elif any(word in combined for word in [
-        'netflix', 'spotify', 'youtube', 'cinema', 'pathé', 'concert', 'steam',
-        'nintendo', 'playstation', 'xbox', 'disney+'
+        'youtube', 'cinema', 'pathé', 'concert', 'steam',
+        'nintendo', 'playstation', 'xbox'
     ]):
         return 'Entertainment'
     elif any(word in combined for word in [
