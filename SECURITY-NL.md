@@ -267,9 +267,9 @@ toegestaan zijn, anders krijg je:
 **Aanbevolen procedure na API key rotatie of netwerk/VPN wijziging:**
 ```bash
 cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
-# Optioneel tweede pass (pas na validatie):
-# TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+NO_PROMPT=true sh scripts/register_bunq_ip.sh
+# Optionele expliciete override:
+# TARGET_IP=<PUBLIEK_IPV4> NO_PROMPT=true sh scripts/register_bunq_ip.sh
 ```
 
 **Alternatief via UI (P1):**

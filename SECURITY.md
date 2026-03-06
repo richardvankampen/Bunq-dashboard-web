@@ -118,7 +118,7 @@ If Bunq initialization fails:
 1. Check `/api/health`
 2. Check service logs
 3. Validate egress IP vs Bunq whitelist
-4. Run whitelist update safely (`SAFE_TWO_STEP=true`)
+4. Run whitelist update safely (`NO_PROMPT=true sh scripts/register_bunq_ip.sh`)
 5. Reinitialize Bunq context if needed
 
 ## 📎 More Details

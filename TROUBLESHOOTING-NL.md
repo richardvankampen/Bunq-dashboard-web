@@ -60,7 +60,9 @@ Providerpraktijk (Nederland, gebruikelijk beeld per 1 maart 2026):
 Als je publieke IP is veranderd:
 ```bash
 cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+NO_PROMPT=true sh scripts/register_bunq_ip.sh
+# Optionele expliciete override:
+# TARGET_IP=<PUBLIEK_IPV4> NO_PROMPT=true sh scripts/register_bunq_ip.sh
 sudo sh scripts/restart_bunq_service.sh
 ```
 
@@ -149,7 +151,7 @@ Herstel:
 
 ```bash
 cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+NO_PROMPT=true sh scripts/register_bunq_ip.sh
 sudo sh scripts/restart_bunq_service.sh
 ```
 

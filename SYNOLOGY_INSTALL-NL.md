@@ -683,11 +683,9 @@ sh scripts/register_bunq_ip.sh
 **Snelle non-interactieve variant (expliciet target IP):**
 ```bash
 cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+NO_PROMPT=true sh scripts/register_bunq_ip.sh
 # Voorbeeld:
-# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
-# Optionele cleanup-pass (na validatie):
-# TARGET_IP=178.228.65.1 SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=true sh scripts/register_bunq_ip.sh
+# TARGET_IP=178.228.65.1 NO_PROMPT=true sh scripts/register_bunq_ip.sh
 ```
 
 Het script doet automatisch:
@@ -861,8 +859,8 @@ Gebruik `Reinit Bunq context` na:
 2. Update secret:
    - bij Vaultwarden-flow: update key in Vaultwarden item
    - bij directe key-flow (`USE_VAULTWARDEN=false`): update Docker secret `bunq_api_key`
-3. Run (safe non-interactive): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
-   - Optionele cleanup-pass na validatie: `... DEACTIVATE_OTHERS=true ...`
+3. Run (safe non-interactive): `NO_PROMPT=true sh scripts/register_bunq_ip.sh`
+   - Optionele expliciete override: `TARGET_IP=<PUBLIEK_IPV4> NO_PROMPT=true sh scripts/register_bunq_ip.sh`
 4. Validatie: `sudo sh scripts/restart_bunq_service.sh`
 
 No code changes needed! ✨
@@ -877,7 +875,7 @@ No code changes needed! ✨
 - Full deploy na `.env`/compose/secrets/netwerkwijziging: `sudo sh -c 'set -a; . /volume1/docker/bunq-dashboard/.env; set +a; docker stack deploy -c /volume1/docker/bunq-dashboard/docker-compose.yml bunq; docker service update --force --image bunq-dashboard:$TAG bunq_bunq-dashboard'`
 - Alleen herstart (zonder image-update): `sudo docker service update --force bunq_bunq-dashboard`
 - Herstart + startup-validatie (aanbevolen): `sudo sh scripts/restart_bunq_service.sh`
-- Bunq IP/device opnieuw registreren (safe): `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
+- Bunq IP/device opnieuw registreren (safe): `NO_PROMPT=true sh scripts/register_bunq_ip.sh`
 
 Voor uitgebreide oplossingen, zie [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md).
 

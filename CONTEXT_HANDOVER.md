@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-01 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven + deterministische internal detectie op account-id/IBAN + vast/sticky publiek IP advies in docs + particles-achtergrond zichtbaarheidsfix)
+Laatste update: 2026-03-06 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven + deterministische internal detectie op account-id/IBAN + vast/sticky publiek IP advies in docs + particles-achtergrond zichtbaarheidsfix + whitelist script host-first IP auto-detect)
 
 ## Canonieke status
 
@@ -32,6 +32,10 @@ Dit bestand is de actuele bron voor overdracht.
   - `git pull` voorbeelden gebruiken nu `sudo git pull --rebase origin main`;
   - README EN/NL bevatten nu ook expliciet quick code-only redeploy (`scripts/quick_redeploy.sh`);
   - troubleshooting/synology NL voorbeelden voor full deploy gebruiken `.env`-load + `docker service update --force --image bunq-dashboard:$TAG ...` in dezelfde shell.
+- `scripts/register_bunq_ip.sh` gedrag vereenvoudigd:
+  - default non-interactive flow is nu `NO_PROMPT=true sh scripts/register_bunq_ip.sh`;
+  - target-IP wordt automatisch bepaald (host `curl -4` first, container egress fallback);
+  - oude cleanup/deactivation flow via `DEACTIVATE_OTHERS/SAFE_TWO_STEP` is uit dit script verwijderd.
 - README/install/troubleshooting EN/NL bevatten nu expliciet advies voor stabiel publiek egress-IP:
   - voorkeur voor vast publiek IP, minimaal sticky dynamisch IP;
   - uitleg waarom dit relevant is voor Bunq whitelist stabiliteit;

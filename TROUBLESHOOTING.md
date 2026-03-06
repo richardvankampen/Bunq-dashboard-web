@@ -61,7 +61,9 @@ Provider reality (Netherlands, typical situation as of March 1, 2026):
 What to do when IP changed:
 ```bash
 cd /volume1/docker/bunq-dashboard
-TARGET_IP=<PUBLIC_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh
+NO_PROMPT=true sh scripts/register_bunq_ip.sh
+# Optional explicit target override:
+# TARGET_IP=<PUBLIC_IPV4> NO_PROMPT=true sh scripts/register_bunq_ip.sh
 sudo sh scripts/restart_bunq_service.sh
 ```
 

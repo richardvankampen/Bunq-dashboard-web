@@ -2,6 +2,24 @@
 
 Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies geen impact heeft.
 
+## 2026-03-06
+
+### Opgeleverd
+
+- `scripts/register_bunq_ip.sh` aangepast op basis van live incident:
+  - target whitelist IP wordt nu standaard automatisch bepaald (host publieke IPv4 via `curl -4` eerst, daarna container-egress fallback);
+  - duidelijke hard fail wanneer auto-detect geen publiek IPv4 oplevert;
+  - whitelist update vereenvoudigd naar alleen target-IP activeren (deactivation/cleanup-pad verwijderd uit dit script).
+- Herstelhints in scriptoutput aangepast naar nieuwe eenvoudige syntax:
+  - standaard: `NO_PROMPT=true sh scripts/register_bunq_ip.sh <service>`
+  - expliciete override: `TARGET_IP=<PUBLIEK_IPV4> NO_PROMPT=true sh scripts/register_bunq_ip.sh <service>`
+- Documentatie en install-output geharmoniseerd op deze nieuwe flow:
+  - `README.md`, `README-NL.md`
+  - `TROUBLESHOOTING.md`, `TROUBLESHOOTING-NL.md`
+  - `SECURITY.md`, `SECURITY-NL.md`
+  - `SYNOLOGY_INSTALL-NL.md`
+  - `scripts/install_or_update_synology.sh` herstelregels.
+
 ## 2026-03-01
 
 ### Opgeleverd

@@ -66,8 +66,8 @@ Meer details: [SECURITY-NL.md](SECURITY-NL.md)
    - `sudo sh /volume1/docker/bunq-dashboard/scripts/install_or_update_synology.sh`
    - Niet als normale user uitvoeren.
 8. Bij nieuwe Bunq API key of IP-wijziging: run `scripts/register_bunq_ip.sh`
-   - Veilige niet-interactieve standaard: `TARGET_IP=<PUBLIEK_IPV4> SAFE_TWO_STEP=true NO_PROMPT=true DEACTIVATE_OTHERS=false sh scripts/register_bunq_ip.sh`
-   - Optionele cleanup-pass daarna: `... DEACTIVATE_OTHERS=true ...`
+   - Veilige niet-interactieve standaard (target-IP automatisch bepaald): `NO_PROMPT=true sh scripts/register_bunq_ip.sh`
+   - Optionele expliciete override: `TARGET_IP=<PUBLIEK_IPV4> NO_PROMPT=true sh scripts/register_bunq_ip.sh`
 9. Na deploy/herstart kun je startup-validatie doen met `sudo sh scripts/restart_bunq_service.sh` (gebruikt standaard git-tag + ruimt oude `bunq-dashboard` images op)
 10. Build/deploy controleert ook egress-IP vs actieve Bunq whitelist en geeft direct herstelcommando bij mismatch
 11. Sterk aanbevolen: gebruik een vast publiek IP-adres, of minimaal een sticky dynamisch publiek IP-adres, om Bunq-whitelist problemen en onverwachte auth-fouten te beperken
