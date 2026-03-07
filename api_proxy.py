@@ -2723,34 +2723,52 @@ def requires_auth(f):
 
 class RateLimiter:
     """Simple in-memory rate limiter"""
-    
+
+    _SWEEP_INTERVAL = 1000  # full eviction sweep every N requests
+
     def __init__(self, max_requests=30, window_seconds=60):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests = defaultdict(list)
         self.login_attempts = defaultdict(list)  # Separate tracking for login
-    
+        self._request_count = 0
+
+    def _sweep(self, tracking):
+        """Evict all IPs with no requests in the current window."""
+        window_start = time.time() - self.window_seconds
+        stale = [k for k, v in tracking.items() if not v or v[-1] <= window_start]
+        for k in stale:
+            del tracking[k]
+
     def is_allowed(self, client_id, endpoint='general'):
         """Check if client is allowed to make request"""
         now = time.time()
         window_start = now - self.window_seconds
-        
+
         # Choose appropriate tracking dict
         tracking = self.login_attempts if endpoint == 'login' else self.requests
-        
-        # Clean old requests
+
+        # Clean old requests for this client; remove key entirely if now empty
         tracking[client_id] = [
             req_time for req_time in tracking[client_id]
             if req_time > window_start
         ]
-        
+        if not tracking[client_id]:
+            del tracking[client_id]
+
+        # Periodic full sweep to evict IPs that never return
+        self._request_count += 1
+        if self._request_count % self._SWEEP_INTERVAL == 0:
+            self._sweep(self.requests)
+            self._sweep(self.login_attempts)
+
         # Different limits for login (stricter)
         max_reqs = 5 if endpoint == 'login' else self.max_requests
-        
+
         # Check limit
-        if len(tracking[client_id]) >= max_reqs:
+        if len(tracking.get(client_id, [])) >= max_reqs:
             return False
-        
+
         # Record request
         tracking[client_id].append(now)
         return True
