@@ -79,6 +79,14 @@ Dutch version: [SECURITY-NL.md](SECURITY-NL.md)
 10. Build/deploy also checks egress IP vs active Bunq whitelist and prints a direct recovery command on mismatch
 11. Strongly recommended: use a fixed public IP, or at least a sticky dynamic public IP, for your internet connection to reduce Bunq whitelist drift and unexpected auth failures
 
+IP change runbook (copy/paste):
+```bash
+cd /volume1/docker/bunq-dashboard
+sudo env NO_PROMPT=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard
+sudo sh scripts/restart_bunq_service.sh
+curl -s http://127.0.0.1:5000/api/health
+```
+
 Health endpoints:
 - Liveness: `GET /api/live` (container/app process up)
 - Readiness: `GET /api/health` (Bunq context state; may return `503` on key/IP mismatch)

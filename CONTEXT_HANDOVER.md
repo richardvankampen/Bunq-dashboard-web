@@ -36,6 +36,10 @@ Dit bestand is de actuele bron voor overdracht.
   - default non-interactive flow is nu `NO_PROMPT=true sh scripts/register_bunq_ip.sh`;
   - target-IP wordt automatisch bepaald (host `curl -4` first, container egress fallback);
   - oude cleanup/deactivation flow via `DEACTIVATE_OTHERS/SAFE_TWO_STEP` is uit dit script verwijderd.
+- README EN/NL bevatten nu ook een compacte “IP change runbook” met 3 commando’s:
+  - whitelist update;
+  - restart/startup-check;
+  - directe `/api/health` verificatie.
 - README/install/troubleshooting EN/NL bevatten nu expliciet advies voor stabiel publiek egress-IP:
   - voorkeur voor vast publiek IP, minimaal sticky dynamisch IP;
   - uitleg waarom dit relevant is voor Bunq whitelist stabiliteit;

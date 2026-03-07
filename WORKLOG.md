@@ -6,6 +6,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd
 
+- README-runbook toegevoegd voor IP-wijziging (EN + NL):
+  - compacte copy/paste blokken met:
+    - `NO_PROMPT=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard`
+    - `sudo sh scripts/restart_bunq_service.sh`
+    - `curl -s http://127.0.0.1:5000/api/health`
+
 - `scripts/register_bunq_ip.sh` aangepast op basis van live incident:
   - target whitelist IP wordt nu standaard automatisch bepaald (host publieke IPv4 via `curl -4` eerst, daarna container-egress fallback);
   - duidelijke hard fail wanneer auto-detect geen publiek IPv4 oplevert;
