@@ -1190,6 +1190,64 @@ def list_monetary_accounts_raw_api(user_id, soft_fail=False):
     _RAW_MONETARY_FALLBACK_FAILURE[user_key] = (time.time(), failure_message)
     raise RuntimeError(f"raw monetary-account fallback failed: {last_exc}")
 
+def _discover_endpoints(cache_key, direct_candidates, validator, module_keyword=None, blocked_keywords=()):
+    """Generic endpoint discovery with one-time caching.
+
+    Scans the Bunq SDK endpoint module for classes matching `validator`.
+    If `module_keyword` is given, also sweeps dir(endpoint) and pkgutil sub-modules
+    whose normalised name contains the keyword.
+    Results are cached in _ENDPOINT_DISCOVERY_CACHE after the first call.
+    """
+    if cache_key in _ENDPOINT_DISCOVERY_CACHE:
+        return _ENDPOINT_DISCOVERY_CACHE[cache_key]
+
+    discovered = []
+    seen = set()
+
+    def add_candidate(module_prefix, candidate_name, candidate_obj):
+        if not validator(candidate_name, candidate_obj):
+            return
+        candidate_id = id(candidate_obj)
+        if candidate_id in seen:
+            return
+        seen.add(candidate_id)
+        name = f"{module_prefix}.{candidate_name}" if module_prefix else candidate_name
+        discovered.append((name, candidate_obj))
+
+    for name in direct_candidates:
+        add_candidate('', name, getattr(endpoint, name, None))
+
+    if module_keyword is not None:
+        for attr_name in dir(endpoint):
+            if attr_name in direct_candidates:
+                continue
+            add_candidate('', attr_name, getattr(endpoint, attr_name, None))
+
+        endpoint_path = getattr(endpoint, '__path__', None)
+        if endpoint_path:
+            base_module = endpoint.__name__
+            for module_info in pkgutil.iter_modules(endpoint_path):
+                module_name = module_info.name
+                normalized_module = _normalize_endpoint_name(module_name)
+                if module_keyword not in normalized_module:
+                    continue
+                if any(blocked in normalized_module for blocked in blocked_keywords):
+                    continue
+                try:
+                    module = importlib.import_module(f"{base_module}.{module_name}")
+                except Exception:
+                    continue
+                for class_name in direct_candidates:
+                    add_candidate(module_name, class_name, getattr(module, class_name, None))
+                for class_name in dir(module):
+                    if class_name in direct_candidates:
+                        continue
+                    add_candidate(module_name, class_name, getattr(module, class_name, None))
+
+    _ENDPOINT_DISCOVERY_CACHE[cache_key] = discovered
+    return discovered
+
+
 def discover_monetary_account_endpoints():
     """Return official Bunq monetary-account endpoints in deterministic order.
 
@@ -1198,34 +1256,12 @@ def discover_monetary_account_endpoints():
     - Add explicit savings endpoints to recover when sdk polymorphic parsing
       misses savings variants in some runtime combinations.
     """
-    if 'monetary_account' in _ENDPOINT_DISCOVERY_CACHE:
-        return _ENDPOINT_DISCOVERY_CACHE['monetary_account']
-
-    direct_candidates = (
-        'MonetaryAccountApiObject',
-        'MonetaryAccount',
-        'MonetaryAccountSavingsApiObject',
-        'MonetaryAccountSavings',
-        'MonetaryAccountExternalSavingsApiObject',
-        'MonetaryAccountExternalSavings',
+    return _discover_endpoints(
+        'monetary_account',
+        ('MonetaryAccountApiObject', 'MonetaryAccount', 'MonetaryAccountSavingsApiObject',
+         'MonetaryAccountSavings', 'MonetaryAccountExternalSavingsApiObject', 'MonetaryAccountExternalSavings'),
+        _is_monetary_list_endpoint,
     )
-    discovered = []
-    seen = set()
-
-    def add_candidate(display_name, candidate_name, candidate_obj):
-        if not _is_monetary_list_endpoint(candidate_name, candidate_obj):
-            return
-        candidate_id = id(candidate_obj)
-        if candidate_id in seen:
-            return
-        seen.add(candidate_id)
-        discovered.append((display_name, candidate_obj))
-
-    for name in direct_candidates:
-        add_candidate(name, name, getattr(endpoint, name, None))
-
-    _ENDPOINT_DISCOVERY_CACHE['monetary_account'] = discovered
-    return discovered
 
 def list_monetary_accounts():
     """Return monetary accounts using Bunq SDK official endpoints first."""
@@ -1422,69 +1458,15 @@ def discover_payment_endpoints():
     always tried before any fallback variant. The list() signature is:
         PaymentApiObject.list(monetary_account_id=None, params=None, custom_headers=None)
     """
-    if 'payment' in _ENDPOINT_DISCOVERY_CACHE:
-        return _ENDPOINT_DISCOVERY_CACHE['payment']
-
-    direct_candidates = (
-        'PaymentApiObject',   # SDK canonical name (endpoint.py)
-        'Payment',            # Legacy / aliased name
-        'PaymentApiObjectApiObject',  # Guard against double-suffix in future SDK versions
-        'MonetaryAccountPayment',
-        'MonetaryAccountPaymentApiObject',
-        'MonetaryAccountBankPayment',
-        'MonetaryAccountBankPaymentApiObject',
+    return _discover_endpoints(
+        'payment',
+        ('PaymentApiObject', 'Payment', 'PaymentApiObjectApiObject',
+         'MonetaryAccountPayment', 'MonetaryAccountPaymentApiObject',
+         'MonetaryAccountBankPayment', 'MonetaryAccountBankPaymentApiObject'),
+        _is_payment_list_endpoint,
+        module_keyword='payment',
+        blocked_keywords=('attachment', 'batch', 'draft', 'request', 'schedule'),
     )
-    discovered = []
-    seen = set()
-
-    def add_candidate(display_name, candidate_name, candidate_obj):
-        if not _is_payment_list_endpoint(candidate_name, candidate_obj):
-            return
-        candidate_id = id(candidate_obj)
-        if candidate_id in seen:
-            return
-        seen.add(candidate_id)
-        discovered.append((display_name, candidate_obj))
-
-    for name in direct_candidates:
-        add_candidate(name, name, getattr(endpoint, name, None))
-
-    for attr_name in dir(endpoint):
-        if attr_name in direct_candidates:
-            continue
-        add_candidate(attr_name, attr_name, getattr(endpoint, attr_name, None))
-
-    endpoint_path = getattr(endpoint, '__path__', None)
-    if endpoint_path:
-        base_module = endpoint.__name__
-        for module_info in pkgutil.iter_modules(endpoint_path):
-            module_name = module_info.name
-            normalized_module = module_name.lower().replace('_', '')
-            if 'payment' not in normalized_module:
-                continue
-            if any(blocked in normalized_module for blocked in ('attachment', 'batch', 'draft', 'request', 'schedule')):
-                continue
-            try:
-                module = importlib.import_module(f"{base_module}.{module_name}")
-            except Exception:
-                continue
-            for class_name in direct_candidates:
-                add_candidate(
-                    f"{module_name}.{class_name}",
-                    class_name,
-                    getattr(module, class_name, None),
-                )
-            for class_name in dir(module):
-                if class_name in direct_candidates:
-                    continue
-                add_candidate(
-                    f"{module_name}.{class_name}",
-                    class_name,
-                    getattr(module, class_name, None),
-                )
-
-    _ENDPOINT_DISCOVERY_CACHE['payment'] = discovered
-    return discovered
 
 def _is_card_payment_list_endpoint(name, candidate):
     if candidate is None:
@@ -1505,68 +1487,15 @@ def _is_card_payment_list_endpoint(name, candidate):
 
 def discover_card_payment_endpoints():
     """Discover card-payment endpoints ordered by preference."""
-    if 'card_payment' in _ENDPOINT_DISCOVERY_CACHE:
-        return _ENDPOINT_DISCOVERY_CACHE['card_payment']
-
-    direct_candidates = (
-        'CardPaymentApiObject',
-        'CardPayment',
-        'MonetaryAccountCardPaymentApiObject',
-        'MonetaryAccountCardPayment',
-        'MonetaryAccountBankCardPaymentApiObject',
-        'MonetaryAccountBankCardPayment',
+    return _discover_endpoints(
+        'card_payment',
+        ('CardPaymentApiObject', 'CardPayment',
+         'MonetaryAccountCardPaymentApiObject', 'MonetaryAccountCardPayment',
+         'MonetaryAccountBankCardPaymentApiObject', 'MonetaryAccountBankCardPayment'),
+        _is_card_payment_list_endpoint,
+        module_keyword='cardpayment',
+        blocked_keywords=('attachment', 'batch', 'draft', 'request', 'schedule'),
     )
-    discovered = []
-    seen = set()
-
-    def add_candidate(display_name, candidate_name, candidate_obj):
-        if not _is_card_payment_list_endpoint(candidate_name, candidate_obj):
-            return
-        candidate_id = id(candidate_obj)
-        if candidate_id in seen:
-            return
-        seen.add(candidate_id)
-        discovered.append((display_name, candidate_obj))
-
-    for name in direct_candidates:
-        add_candidate(name, name, getattr(endpoint, name, None))
-
-    for attr_name in dir(endpoint):
-        if attr_name in direct_candidates:
-            continue
-        add_candidate(attr_name, attr_name, getattr(endpoint, attr_name, None))
-
-    endpoint_path = getattr(endpoint, '__path__', None)
-    if endpoint_path:
-        base_module = endpoint.__name__
-        for module_info in pkgutil.iter_modules(endpoint_path):
-            module_name = module_info.name
-            normalized_module = module_name.lower().replace('_', '')
-            if 'cardpayment' not in normalized_module:
-                continue
-            if any(blocked in normalized_module for blocked in ('attachment', 'batch', 'draft', 'request', 'schedule')):
-                continue
-            try:
-                module = importlib.import_module(f"{base_module}.{module_name}")
-            except Exception:
-                continue
-            for class_name in direct_candidates:
-                add_candidate(
-                    f"{module_name}.{class_name}",
-                    class_name,
-                    getattr(module, class_name, None),
-                )
-            for class_name in dir(module):
-                if class_name in direct_candidates:
-                    continue
-                add_candidate(
-                    f"{module_name}.{class_name}",
-                    class_name,
-                    getattr(module, class_name, None),
-                )
-
-    _ENDPOINT_DISCOVERY_CACHE['card_payment'] = discovered
-    return discovered
 
 def _call_payment_list(payment_endpoint, account_id, mode, params=None):
     query_params = params or {}
@@ -1903,108 +1832,20 @@ def _is_credential_password_ip_endpoint(name_hint, candidate):
     return callable(getattr(candidate, 'create', None)) or callable(getattr(candidate, 'post', None))
 
 def discover_credential_password_endpoints():
-    if 'credential_password' in _ENDPOINT_DISCOVERY_CACHE:
-        return _ENDPOINT_DISCOVERY_CACHE['credential_password']
-
-    direct_candidates = (
-        'CredentialPasswordIp',
-        'CredentialPasswordIpApiObject',
+    return _discover_endpoints(
+        'credential_password',
+        ('CredentialPasswordIp', 'CredentialPasswordIpApiObject'),
+        _is_credential_password_endpoint,
+        module_keyword='credentialpasswordip',
     )
-    discovered = []
-    seen = set()
-
-    def add_candidate(display_name, candidate_name, candidate_obj):
-        name_hint = f"{display_name}.{candidate_name}" if display_name else candidate_name
-        if not _is_credential_password_endpoint(name_hint, candidate_obj):
-            return
-        candidate_id = id(candidate_obj)
-        if candidate_id in seen:
-            return
-        seen.add(candidate_id)
-        discovered.append((name_hint, candidate_obj))
-
-    for name in direct_candidates:
-        add_candidate('', name, getattr(endpoint, name, None))
-
-    for attr_name in dir(endpoint):
-        if attr_name in direct_candidates:
-            continue
-        add_candidate('', attr_name, getattr(endpoint, attr_name, None))
-
-    endpoint_path = getattr(endpoint, '__path__', None)
-    if endpoint_path:
-        base_module = endpoint.__name__
-        for module_info in pkgutil.iter_modules(endpoint_path):
-            module_name = module_info.name
-            normalized_module = _normalize_endpoint_name(module_name)
-            if 'credentialpasswordip' not in normalized_module:
-                continue
-            try:
-                module = importlib.import_module(f"{base_module}.{module_name}")
-            except Exception:
-                continue
-
-            for class_name in direct_candidates:
-                add_candidate(module_name, class_name, getattr(module, class_name, None))
-            for class_name in dir(module):
-                if class_name in direct_candidates:
-                    continue
-                add_candidate(module_name, class_name, getattr(module, class_name, None))
-
-    _ENDPOINT_DISCOVERY_CACHE['credential_password'] = discovered
-    return discovered
 
 def discover_credential_password_ip_endpoints():
-    if 'credential_password_ip' in _ENDPOINT_DISCOVERY_CACHE:
-        return _ENDPOINT_DISCOVERY_CACHE['credential_password_ip']
-
-    direct_candidates = (
-        'CredentialPasswordIpIp',
-        'CredentialPasswordIpIpApiObject',
+    return _discover_endpoints(
+        'credential_password_ip',
+        ('CredentialPasswordIpIp', 'CredentialPasswordIpIpApiObject'),
+        _is_credential_password_ip_endpoint,
+        module_keyword='credentialpasswordip',
     )
-    discovered = []
-    seen = set()
-
-    def add_candidate(display_name, candidate_name, candidate_obj):
-        name_hint = f"{display_name}.{candidate_name}" if display_name else candidate_name
-        if not _is_credential_password_ip_endpoint(name_hint, candidate_obj):
-            return
-        candidate_id = id(candidate_obj)
-        if candidate_id in seen:
-            return
-        seen.add(candidate_id)
-        discovered.append((name_hint, candidate_obj))
-
-    for name in direct_candidates:
-        add_candidate('', name, getattr(endpoint, name, None))
-
-    for attr_name in dir(endpoint):
-        if attr_name in direct_candidates:
-            continue
-        add_candidate('', attr_name, getattr(endpoint, attr_name, None))
-
-    endpoint_path = getattr(endpoint, '__path__', None)
-    if endpoint_path:
-        base_module = endpoint.__name__
-        for module_info in pkgutil.iter_modules(endpoint_path):
-            module_name = module_info.name
-            normalized_module = _normalize_endpoint_name(module_name)
-            if 'credentialpasswordip' not in normalized_module:
-                continue
-            try:
-                module = importlib.import_module(f"{base_module}.{module_name}")
-            except Exception:
-                continue
-
-            for class_name in direct_candidates:
-                add_candidate(module_name, class_name, getattr(module, class_name, None))
-            for class_name in dir(module):
-                if class_name in direct_candidates:
-                    continue
-                add_candidate(module_name, class_name, getattr(module, class_name, None))
-
-    _ENDPOINT_DISCOVERY_CACHE['credential_password_ip'] = discovered
-    return discovered
 
 def get_bunq_user_id():
     try:
