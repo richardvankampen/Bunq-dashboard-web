@@ -618,12 +618,12 @@ async function handleLogin(event) {
         loginButton.disabled = true;
         loginButton.textContent = 'Logging in...';
     }
-    
+
     const success = await login(username, password);
-    
+
     if (loginButton) {
         loginButton.disabled = false;
-        loginButton.textContent = 'Login';
+        loginButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login';
     }
     
     if (!success) {
@@ -1432,10 +1432,6 @@ function classifyAccountType(account) {
     // Guardrail: plain MonetaryAccountBank is checking unless strong savings/
     // investment hints were detected first.
     if (className.includes('monetaryaccountbank')) {
-        return 'checking';
-    }
-
-    if (declaredType === 'checking') {
         return 'checking';
     }
 

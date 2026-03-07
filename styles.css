@@ -589,11 +589,9 @@ body.reduce-animations .play-btn:hover {
 .rate-card::before { background: var(--gradient-primary); }
 .balance-card::before { background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%); }
 
-.clickable-kpi {
-    cursor: pointer;
-}
-
-.clickable-kpi-detail {
+.clickable-kpi,
+.clickable-kpi-detail,
+.clickable-viz {
     cursor: pointer;
 }
 
@@ -603,10 +601,6 @@ body.reduce-animations .play-btn:hover {
 
 .clickable-insight:hover {
     box-shadow: 0 14px 28px rgba(15, 23, 42, 0.4);
-}
-
-.clickable-viz {
-    cursor: pointer;
 }
 
 .kpi-icon {
@@ -691,9 +685,7 @@ body.reduce-animations .play-btn:hover {
     height: 110px;
 }
 
-.kpi-metric-chart {
-    height: 110px;
-}
+.kpi-metric-chart {}
 
 /* Progress Ring for Savings Rate */
 .progress-ring {
@@ -759,10 +751,6 @@ body.reduce-animations .play-btn:hover {
     min-height: 500px;
 }
 
-.viz-card.featured-card {
-    border: 2px solid var(--accent-primary);
-    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.2);
-}
 
 .card-header {
     padding: var(--spacing-md) var(--spacing-lg);
@@ -1140,7 +1128,6 @@ body.js-insight-tooltips .insight-card[data-tooltip]::after {
 
 .modal-content {
     width: min(980px, calc(100vw - 32px));
-    max-width: 980px;
     border-radius: var(--radius-lg);
     animation: slideUp 0.4s ease;
     display: flex;
@@ -1151,17 +1138,14 @@ body.js-insight-tooltips .insight-card[data-tooltip]::after {
 
 .login-modal-content {
     width: min(420px, calc(100vw - 32px));
-    max-width: 420px;
 }
 
 #balanceDetailModal .modal-content {
     width: min(1100px, calc(100vw - 32px));
-    max-width: 1100px;
 }
 
 #settingsModal .modal-content {
     width: min(900px, calc(100vw - 32px));
-    max-width: 900px;
 }
 
 @keyframes slideUp {
