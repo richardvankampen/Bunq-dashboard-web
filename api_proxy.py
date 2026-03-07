@@ -82,6 +82,7 @@ _CREDENTIAL_PASSWORD_IP_LIST_MODE = None
 _CREDENTIAL_PASSWORD_IP_CREATE_MODE = None
 _CREDENTIAL_PASSWORD_IP_UPDATE_MODE = None
 _FX_RUNTIME_CACHE = {}
+_ENDPOINT_DISCOVERY_CACHE = {}
 _VAULTWARDEN_CLI_LOCK = threading.Lock()
 _BUNQ_INIT_LOCK = threading.Lock()
 _BUNQ_CONTEXT_INITIALIZED = False
@@ -1197,6 +1198,9 @@ def discover_monetary_account_endpoints():
     - Add explicit savings endpoints to recover when sdk polymorphic parsing
       misses savings variants in some runtime combinations.
     """
+    if 'monetary_account' in _ENDPOINT_DISCOVERY_CACHE:
+        return _ENDPOINT_DISCOVERY_CACHE['monetary_account']
+
     direct_candidates = (
         'MonetaryAccountApiObject',
         'MonetaryAccount',
@@ -1220,6 +1224,7 @@ def discover_monetary_account_endpoints():
     for name in direct_candidates:
         add_candidate(name, name, getattr(endpoint, name, None))
 
+    _ENDPOINT_DISCOVERY_CACHE['monetary_account'] = discovered
     return discovered
 
 def list_monetary_accounts():
@@ -1412,11 +1417,14 @@ def _is_payment_list_endpoint(name, candidate):
 
 def discover_payment_endpoints():
     """Discover payment endpoints ordered by preference.
-    
+
     The canonical SDK class is PaymentApiObject. We list it first so it is
     always tried before any fallback variant. The list() signature is:
         PaymentApiObject.list(monetary_account_id=None, params=None, custom_headers=None)
     """
+    if 'payment' in _ENDPOINT_DISCOVERY_CACHE:
+        return _ENDPOINT_DISCOVERY_CACHE['payment']
+
     direct_candidates = (
         'PaymentApiObject',   # SDK canonical name (endpoint.py)
         'Payment',            # Legacy / aliased name
@@ -1475,6 +1483,7 @@ def discover_payment_endpoints():
                     getattr(module, class_name, None),
                 )
 
+    _ENDPOINT_DISCOVERY_CACHE['payment'] = discovered
     return discovered
 
 def _is_card_payment_list_endpoint(name, candidate):
@@ -1496,6 +1505,9 @@ def _is_card_payment_list_endpoint(name, candidate):
 
 def discover_card_payment_endpoints():
     """Discover card-payment endpoints ordered by preference."""
+    if 'card_payment' in _ENDPOINT_DISCOVERY_CACHE:
+        return _ENDPOINT_DISCOVERY_CACHE['card_payment']
+
     direct_candidates = (
         'CardPaymentApiObject',
         'CardPayment',
@@ -1553,6 +1565,7 @@ def discover_card_payment_endpoints():
                     getattr(module, class_name, None),
                 )
 
+    _ENDPOINT_DISCOVERY_CACHE['card_payment'] = discovered
     return discovered
 
 def _call_payment_list(payment_endpoint, account_id, mode, params=None):
@@ -1890,6 +1903,9 @@ def _is_credential_password_ip_endpoint(name_hint, candidate):
     return callable(getattr(candidate, 'create', None)) or callable(getattr(candidate, 'post', None))
 
 def discover_credential_password_endpoints():
+    if 'credential_password' in _ENDPOINT_DISCOVERY_CACHE:
+        return _ENDPOINT_DISCOVERY_CACHE['credential_password']
+
     direct_candidates = (
         'CredentialPasswordIp',
         'CredentialPasswordIpApiObject',
@@ -1935,9 +1951,13 @@ def discover_credential_password_endpoints():
                     continue
                 add_candidate(module_name, class_name, getattr(module, class_name, None))
 
+    _ENDPOINT_DISCOVERY_CACHE['credential_password'] = discovered
     return discovered
 
 def discover_credential_password_ip_endpoints():
+    if 'credential_password_ip' in _ENDPOINT_DISCOVERY_CACHE:
+        return _ENDPOINT_DISCOVERY_CACHE['credential_password_ip']
+
     direct_candidates = (
         'CredentialPasswordIpIp',
         'CredentialPasswordIpIpApiObject',
@@ -1983,6 +2003,7 @@ def discover_credential_password_ip_endpoints():
                     continue
                 add_candidate(module_name, class_name, getattr(module, class_name, None))
 
+    _ENDPOINT_DISCOVERY_CACHE['credential_password_ip'] = discovered
     return discovered
 
 def get_bunq_user_id():
