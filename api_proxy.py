@@ -1534,50 +1534,39 @@ def _extract_payment_numeric_id(payment):
     except (TypeError, ValueError):
         return None
 
-def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
-    """List payments for one monetary account across bunq-sdk variants."""
-    global _PAYMENT_ENDPOINT, _PAYMENT_LIST_MODE
+_PAYMENT_LIST_MODES = (
+    'kw_monetary_account_id_params',   # canonical SDK call
+    'kw_monetary_account_id',          # canonical SDK call, no extra params
+    'kw_account_id_params',
+    'kw_account_id',
+    'kw_monetary_account_bank_id_params',
+    'kw_monetary_account_bank_id',
+    'positional_with_count',
+    'positional',
+    'positional_with_params',
+)
 
-    # Ensure the Bunq session token is still valid before any SDK call.
-    ensure_bunq_session_active()
-
-    page_size = _BUNQ_PAYMENT_PAGE_SIZE
-    max_pages = _BUNQ_PAYMENT_MAX_PAGES
-
-    # SDK canonical call signature (from endpoint.py):
-    # PaymentApiObject.list(monetary_account_id=None, params=None, custom_headers=None)
-    # Priority order: named kwargs with params first (most specific), then fallbacks.
-    modes = (
-        'kw_monetary_account_id_params',   # canonical SDK call
-        'kw_monetary_account_id',          # canonical SDK call, no extra params
-        'kw_account_id_params',
-        'kw_account_id',
-        'kw_monetary_account_bank_id_params',
-        'kw_monetary_account_bank_id',
-        'positional_with_count',
-        'positional',
-        'positional_with_params',
-    )
-
+def _list_payments_paginated(
+    account_id, cutoff_date, return_meta,
+    cached_endpoint, cached_mode,
+    page_size, max_pages,
+    discover_fn, source_name, missing_error,
+):
+    """Shared paginated payment-list core used by both payment and card-payment fetchers."""
     candidates = []
-    if _PAYMENT_ENDPOINT is not None and _PAYMENT_LIST_MODE is not None:
-        candidates.append(('cached', _PAYMENT_ENDPOINT, (_PAYMENT_LIST_MODE,)))
+    if cached_endpoint is not None and cached_mode is not None:
+        candidates.append(('cached', cached_endpoint, (cached_mode,)))
 
-    for name, candidate in discover_payment_endpoints():
-        if _PAYMENT_ENDPOINT is not None and candidate is _PAYMENT_ENDPOINT:
+    for name, candidate in discover_fn():
+        if cached_endpoint is not None and candidate is cached_endpoint:
             continue
-        candidates.append((name, candidate, modes))
+        candidates.append((name, candidate, _PAYMENT_LIST_MODES))
 
     if not candidates:
-        payment_like = [name for name in dir(endpoint) if 'payment' in name.lower()]
-        logger.error(
-            "❌ No payment endpoints discovered. payment-like exports: %s",
-            payment_like[:20] if payment_like else 'none'
-        )
-        raise RuntimeError('bunq-sdk missing payment endpoint')
+        raise RuntimeError(missing_error)
 
     last_exc = None
-    for name, payment_endpoint, candidate_modes in candidates:
+    for name, ep, candidate_modes in candidates:
         for mode in candidate_modes:
             older_id = None
             collected = []
@@ -1591,7 +1580,7 @@ def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
                     if older_id is not None:
                         query_params['older_id'] = older_id
 
-                    result = _call_payment_list(payment_endpoint, account_id, mode, params=query_params)
+                    result = _call_payment_list(ep, account_id, mode, params=query_params)
                     pages_fetched += 1
                     payments = getattr(result, 'value', result)
                     if payments is None:
@@ -1604,7 +1593,6 @@ def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
 
                     oldest_payment_id = None
                     oldest_payment_created = None
-
                     for payment in payments:
                         payment_id_raw = get_obj_field(payment, 'id_', 'id')
                         dedupe_key = str(payment_id_raw) if payment_id_raw is not None else f"obj:{id(payment)}"
@@ -1626,7 +1614,6 @@ def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
                     if cutoff_date and oldest_payment_created and oldest_payment_created < cutoff_date:
                         stop_reason = 'cutoff_reached'
                         break
-
                     if len(payments) < page_size:
                         stop_reason = 'short_page'
                         break
@@ -1640,13 +1627,11 @@ def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
                 else:
                     stop_reason = 'max_pages_reached'
 
-                if _PAYMENT_ENDPOINT is not payment_endpoint or _PAYMENT_LIST_MODE != mode:
-                    logger.info(f"Using bunq payment endpoint: {name} ({mode})")
-                _PAYMENT_ENDPOINT = payment_endpoint
-                _PAYMENT_LIST_MODE = mode
+                if ep is not cached_endpoint or mode != cached_mode:
+                    logger.info(f"Using bunq {source_name} endpoint: {name} ({mode})")
 
                 metadata = {
-                    'source': 'payment',
+                    'source': source_name,
                     'endpoint': name,
                     'mode': mode,
                     'page_size': page_size,
@@ -1657,142 +1642,47 @@ def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
                     'count': len(collected),
                 }
                 if return_meta:
-                    return collected, metadata
-                return collected
+                    return collected, metadata, ep, mode
+                return collected, None, ep, mode
             except TypeError as exc:
                 last_exc = exc
                 continue
             except Exception as exc:
                 last_exc = exc
-                logger.warning(f"⚠️ Bunq payment endpoint {name} ({mode}) failed: {exc}")
+                logger.warning(f"⚠️ Bunq {source_name} endpoint {name} ({mode}) failed: {exc}")
                 break
 
-    raise RuntimeError(f"bunq-sdk payment list failed: {last_exc}")
+    raise RuntimeError(f"bunq-sdk {source_name} list failed: {last_exc}")
+
+
+def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
+    """List payments for one monetary account across bunq-sdk variants."""
+    global _PAYMENT_ENDPOINT, _PAYMENT_LIST_MODE
+    ensure_bunq_session_active()
+    collected, metadata, ep, mode = _list_payments_paginated(
+        account_id, cutoff_date, return_meta,
+        _PAYMENT_ENDPOINT, _PAYMENT_LIST_MODE,
+        _BUNQ_PAYMENT_PAGE_SIZE, _BUNQ_PAYMENT_MAX_PAGES,
+        discover_payment_endpoints, 'payment', 'bunq-sdk missing payment endpoint',
+    )
+    _PAYMENT_ENDPOINT = ep
+    _PAYMENT_LIST_MODE = mode
+    return (collected, metadata) if return_meta else collected
+
 
 def list_card_payments_for_account(account_id, cutoff_date=None, return_meta=False):
     """List card payments for one monetary account when endpoint is available."""
     global _CARD_PAYMENT_ENDPOINT, _CARD_PAYMENT_LIST_MODE
-
     ensure_bunq_session_active()
-
-    page_size = _BUNQ_CARD_PAYMENT_PAGE_SIZE
-    max_pages = _BUNQ_CARD_PAYMENT_MAX_PAGES
-
-    modes = (
-        'kw_monetary_account_id_params',
-        'kw_monetary_account_id',
-        'kw_account_id_params',
-        'kw_account_id',
-        'kw_monetary_account_bank_id_params',
-        'kw_monetary_account_bank_id',
-        'positional_with_count',
-        'positional',
-        'positional_with_params',
+    collected, metadata, ep, mode = _list_payments_paginated(
+        account_id, cutoff_date, return_meta,
+        _CARD_PAYMENT_ENDPOINT, _CARD_PAYMENT_LIST_MODE,
+        _BUNQ_CARD_PAYMENT_PAGE_SIZE, _BUNQ_CARD_PAYMENT_MAX_PAGES,
+        discover_card_payment_endpoints, 'card_payment', 'bunq-sdk missing card payment endpoint',
     )
-
-    candidates = []
-    if _CARD_PAYMENT_ENDPOINT is not None and _CARD_PAYMENT_LIST_MODE is not None:
-        candidates.append(('cached', _CARD_PAYMENT_ENDPOINT, (_CARD_PAYMENT_LIST_MODE,)))
-
-    for name, candidate in discover_card_payment_endpoints():
-        if _CARD_PAYMENT_ENDPOINT is not None and candidate is _CARD_PAYMENT_ENDPOINT:
-            continue
-        candidates.append((name, candidate, modes))
-
-    if not candidates:
-        raise RuntimeError('bunq-sdk missing card payment endpoint')
-
-    last_exc = None
-    for name, card_payment_endpoint, candidate_modes in candidates:
-        for mode in candidate_modes:
-            older_id = None
-            collected = []
-            seen_payment_ids = set()
-            pages_fetched = 0
-            stop_reason = 'unknown'
-
-            try:
-                for _ in range(max_pages):
-                    query_params = {'count': page_size}
-                    if older_id is not None:
-                        query_params['older_id'] = older_id
-
-                    result = _call_payment_list(card_payment_endpoint, account_id, mode, params=query_params)
-                    pages_fetched += 1
-                    payments = getattr(result, 'value', result)
-                    if payments is None:
-                        payments = []
-                    if not isinstance(payments, list):
-                        payments = list(payments)
-                    if not payments:
-                        stop_reason = 'empty_page'
-                        break
-
-                    oldest_payment_id = None
-                    oldest_payment_created = None
-                    for payment in payments:
-                        payment_id_raw = get_obj_field(payment, 'id_', 'id')
-                        dedupe_key = str(payment_id_raw) if payment_id_raw is not None else f"obj:{id(payment)}"
-                        if dedupe_key in seen_payment_ids:
-                            continue
-                        seen_payment_ids.add(dedupe_key)
-                        collected.append(payment)
-
-                        payment_id = _extract_payment_numeric_id(payment)
-                        if payment_id is not None:
-                            if oldest_payment_id is None or payment_id < oldest_payment_id:
-                                oldest_payment_id = payment_id
-
-                        created_at = _extract_payment_created_datetime(payment)
-                        if created_at is not None:
-                            if oldest_payment_created is None or created_at < oldest_payment_created:
-                                oldest_payment_created = created_at
-
-                    if cutoff_date and oldest_payment_created and oldest_payment_created < cutoff_date:
-                        stop_reason = 'cutoff_reached'
-                        break
-
-                    if len(payments) < page_size:
-                        stop_reason = 'short_page'
-                        break
-                    if oldest_payment_id is None:
-                        stop_reason = 'missing_oldest_id'
-                        break
-                    if older_id is not None and oldest_payment_id == older_id:
-                        stop_reason = 'no_progress'
-                        break
-                    older_id = oldest_payment_id
-                else:
-                    stop_reason = 'max_pages_reached'
-
-                if _CARD_PAYMENT_ENDPOINT is not card_payment_endpoint or _CARD_PAYMENT_LIST_MODE != mode:
-                    logger.info(f"Using bunq card payment endpoint: {name} ({mode})")
-                _CARD_PAYMENT_ENDPOINT = card_payment_endpoint
-                _CARD_PAYMENT_LIST_MODE = mode
-
-                metadata = {
-                    'source': 'card_payment',
-                    'endpoint': name,
-                    'mode': mode,
-                    'page_size': page_size,
-                    'max_pages': max_pages,
-                    'pages_fetched': pages_fetched,
-                    'stop_reason': stop_reason,
-                    'truncated': stop_reason == 'max_pages_reached',
-                    'count': len(collected),
-                }
-                if return_meta:
-                    return collected, metadata
-                return collected
-            except TypeError as exc:
-                last_exc = exc
-                continue
-            except Exception as exc:
-                last_exc = exc
-                logger.warning(f"⚠️ Bunq card payment endpoint {name} ({mode}) failed: {exc}")
-                break
-
-    raise RuntimeError(f"bunq-sdk card payment list failed: {last_exc}")
+    _CARD_PAYMENT_ENDPOINT = ep
+    _CARD_PAYMENT_LIST_MODE = mode
+    return (collected, metadata) if return_meta else collected
 
 def _unwrap_endpoint_result(result):
     value = getattr(result, 'value', result)
