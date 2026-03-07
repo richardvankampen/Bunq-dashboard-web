@@ -4,7 +4,13 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-03-07
 
-### Opgeleverd
+### Opgeleverd (2 — frontend simplify)
+
+- `styles.css`: drie losse `cursor: pointer` classes samengevoegd (`clickable-kpi`, `clickable-kpi-detail`, `clickable-viz`); dode `.viz-card.featured-card` selector verwijderd; dubbele `height: 110px` in `.kpi-metric-chart` verwijderd; overbodige `max-width` op 4 modal-regels verwijderd (min() enforced al).
+- `index.html`: AOS stylesheet verplaatst van body-bottom naar `<head>` (voorkomt FOUC); `defer` toegevoegd aan Plotly, Chart.js en Particles.js zodat HTML-parsing niet langer geblokkeerd wordt.
+- `app.js`: onbereikbare branch verwijderd in `classifyAccountType`; `handleLogin` herstelt nu het icoontje in de loginknop na een mislukte login (gebruikte `textContent` i.p.v. `innerHTML`).
+
+### Opgeleverd (1 — api_proxy.py + tooling)
 
 - `api_proxy.py` code-kwaliteit en efficiency verbeterd (alle wijzigingen getest op productie):
   - `RateLimiter`: stale IP-entries worden nu direct verwijderd na sliding-window trim + periodieke full sweep elke 1000 requests (voorkwam onbegrensd geheugengebruik bij bots/scanners).

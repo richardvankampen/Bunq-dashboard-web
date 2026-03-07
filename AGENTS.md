@@ -23,5 +23,6 @@
 ## Current focus
 
 1. Keep Vaultwarden-first flow stable (`USE_VAULTWARDEN=true`).
-2. Continue resolving missing savings accounts in `/api/accounts`.
-3. Validate fixes with live logs and account output after each deploy.
+2. Savings accounts issue resolved (2026-03-01) — both `Spaarrekening` (EUR) and `Spaargeld in ZAR` validated in `/api/accounts`.
+3. Ongoing: code quality / efficiency improvements to `api_proxy.py` and frontend (`app.js`, `styles.css`, `index.html`).
+4. See `CLAUDE.md` for the authoritative session instructions and project conventions.

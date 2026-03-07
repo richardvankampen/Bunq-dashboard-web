@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-07 (api_proxy.py code-kwaliteitsverbeteringen: RateLimiter geheugenfix + endpoint discovery caching + discover_* merge + payment list merge + bool env parses + page-size constanten + executemany + dead code verwijderd)
+Laatste update: 2026-03-07 (frontend simplify: CSS dode selectors + duplicaten verwijderd; defer scripts; AOS CSS naar head; app.js dode branch + login icon fix; zie ook api_proxy.py verbeteringen eerder vandaag)
 
 ## Canonieke status
 
@@ -159,6 +159,12 @@ Dit bestand is de actuele bron voor overdracht.
 - Raceframes zijn nu dag-gebaseerd (i.p.v. maand-gebaseerd), met cumulatieve uitgaven per categorie per dag.
 - Playback draait op `2 fps` (`RACING_ANIMATION_FPS=2`), zodat ~90 dagen ongeveer 45 seconden animatie geven.
 - Slider/label tonen dagframes (datum) in plaats van maandlabels.
+
+## Frontend codestructuur (actueel)
+
+- `styles.css`: `.clickable-kpi`, `.clickable-kpi-detail`, `.clickable-viz` zijn samengevoegd tot één selector. `.viz-card.featured-card` en de dubbele `height` op `.kpi-metric-chart` zijn verwijderd. Modal `max-width` regels zijn verwijderd waar `min()` al de cap handhaaft.
+- `index.html`: AOS stylesheet staat in `<head>`. Plotly, Chart.js en Particles.js laden met `defer` zodat HTML-parsing niet geblokkeerd wordt.
+- `app.js`: onbereikbare `if (declaredType === 'checking')` branch verwijderd uit `classifyAccountType`. `handleLogin` herstelt nu `innerHTML` (met icon) bij reset van de loginknop.
 
 ## api_proxy.py codestructuur (actueel)
 
