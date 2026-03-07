@@ -2,6 +2,25 @@
 
 Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies geen impact heeft.
 
+## 2026-03-07
+
+### Opgeleverd
+
+- `api_proxy.py` code-kwaliteit en efficiency verbeterd (alle wijzigingen getest op productie):
+  - `RateLimiter`: stale IP-entries worden nu direct verwijderd na sliding-window trim + periodieke full sweep elke 1000 requests (voorkwam onbegrensd geheugengebruik bij bots/scanners).
+  - `discover_*_endpoints()`: resultaten worden nu gecachet in `_ENDPOINT_DISCOVERY_CACHE` na eerste aanroep; `dir(endpoint)` en `pkgutil.iter_modules` worden niet meer per request herhaald.
+  - Vijf `discover_*_endpoints()` functies samengevoegd tot één generieke `_discover_endpoints()` helper (~150 regels verwijderd).
+  - `list_payments_for_account` en `list_card_payments_for_account` samengevoegd: gedeelde paginatielogica geëxtraheerd naar `_list_payments_paginated()`; publieke functies zijn nu ~10 regels (~110 regels verwijderd).
+  - `CACHE_ENABLED`, `DATA_DB_ENABLED`, `FX_ENABLED` gebruiken nu `get_bool_env` (ondersteunt ook `'yes'`/`'1'`/`'on'`).
+  - `USE_VAULTWARDEN` wordt nu eenmalig op moduleniveau geladen; 4 inline `os.getenv`-parses verwijderd.
+  - Bunq page-size/max-pages constanten op moduleniveau gezet; `get_int_env` + clamp-logica in 4 functies verwijderd.
+  - `sorted(counterparty_account_ibans)[0]` vervangen door `next(iter(...), None)` (O(1)).
+  - Dode code verwijderd: `netflix`/`spotify`/`disney+` in `Entertainment`-branch van `categorize_transaction` waren onbereikbaar (Abonnementen-branch komt eerst).
+  - `persist_transactions`: individuele `execute()` per rij vervangen door `executemany()`.
+- `CLAUDE.md` toegevoegd aan repo root voor Claude Code sessie-context.
+- Workflow hersteld: alle wijzigingen via lokale Mac repo → commit → push → `git pull` op Synology.
+- `gh` CLI geïnstalleerd en geauthenticeerd (`richardvankampen`).
+
 ## 2026-03-06
 
 ### Opgeleverd

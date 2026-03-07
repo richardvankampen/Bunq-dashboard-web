@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-06 (savings-incident opgelost + SDK-first cleanup + detailtransacties in modal + docs EN/NL split + NL-taalopschoning + second-view feedback verwerkt + interne-transfer/Triodos-fix + cashflow detailview + categorie-race daganimatie + insight titels NL + negatieve-overboeking filterfix + geldstromen detail klikfix + cross-account reconcile + race fps 2 + overfilter guard inkomsten/uitgaven + deterministische internal detectie op account-id/IBAN + vast/sticky publiek IP advies in docs + particles-achtergrond zichtbaarheidsfix + whitelist script host-first IP auto-detect)
+Laatste update: 2026-03-07 (api_proxy.py code-kwaliteitsverbeteringen: RateLimiter geheugenfix + endpoint discovery caching + discover_* merge + payment list merge + bool env parses + page-size constanten + executemany + dead code verwijderd)
 
 ## Canonieke status
 
@@ -159,6 +159,15 @@ Dit bestand is de actuele bron voor overdracht.
 - Raceframes zijn nu dag-gebaseerd (i.p.v. maand-gebaseerd), met cumulatieve uitgaven per categorie per dag.
 - Playback draait op `2 fps` (`RACING_ANIMATION_FPS=2`), zodat ~90 dagen ongeveer 45 seconden animatie geven.
 - Slider/label tonen dagframes (datum) in plaats van maandlabels.
+
+## api_proxy.py codestructuur (actueel)
+
+- `_discover_endpoints()`: generieke endpoint-discovery helper met caching (`_ENDPOINT_DISCOVERY_CACHE`). Alle vijf `discover_*_endpoints()` functies zijn dunne wrappers.
+- `_list_payments_paginated()`: gedeelde paginatieloop voor payments en card payments. `list_payments_for_account()` en `list_card_payments_for_account()` zijn ~10-regel wrappers.
+- `RateLimiter`: stale IP-entries worden direct verwijderd na trim + periodieke full sweep elke 1000 requests.
+- `USE_VAULTWARDEN`, `CACHE_ENABLED`, `DATA_DB_ENABLED`, `FX_ENABLED`: moduleniveau constanten via `get_bool_env`.
+- Bunq page-size/max-pages: moduleniveau constanten (`_BUNQ_ACCOUNT_PAGE_SIZE`, `_BUNQ_PAYMENT_PAGE_SIZE`, etc.).
+- `persist_transactions`: gebruikt `executemany` in plaats van per-rij `execute`.
 
 ## Savings-incident status
 
