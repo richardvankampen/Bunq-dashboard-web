@@ -152,14 +152,23 @@ from api_proxy import init_bunq, set_bunq_api_whitelist_ip
 
 target_ip = (os.getenv("TARGET_IP", "") or "").strip() or None
 
-if not init_bunq(force_recreate=False, refresh_key=True, run_auto_whitelist=False):
-    print("ERROR: Bunq init failed before whitelist update")
+# Try whitelist API with existing context first.
+if init_bunq(force_recreate=False, refresh_key=True, run_auto_whitelist=False):
+    result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=False)
+    if result.get("success"):
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        sys.exit(0)
+    print(f"INFO: whitelist API unavailable ({result.get('error', 'unknown')}), falling back to context recreate")
+else:
+    print("INFO: no existing context, falling back to context recreate")
+
+# Fallback: force-recreate context from current IP.
+# This registers the device with Bunq and authorizes the current public IP.
+if not init_bunq(force_recreate=True, refresh_key=True, run_auto_whitelist=False):
+    print("ERROR: Bunq context force-recreate failed")
     sys.exit(1)
 
-result = set_bunq_api_whitelist_ip(target_ip=target_ip, deactivate_others=False)
-print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-if not result.get("success"):
-    sys.exit(1)
+print(json.dumps({"success": True, "method": "context_recreate", "ip": target_ip}, ensure_ascii=False, sort_keys=True))
 PY
   2>&1)" || {
   echo "ERROR: whitelist update failed"
