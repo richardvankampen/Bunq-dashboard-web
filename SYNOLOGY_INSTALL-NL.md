@@ -397,7 +397,7 @@ sudo docker swarm init
 ```bash
 sudo docker swarm init --advertise-addr 192.168.1.100
 ```
-Vervang dit met het IP van je NAS (bijv. `192.168.1.242`).
+Vervang dit met het IP van je NAS (bijv. `192.168.2.13`).
 
 **Netwerk (voor Vaultwarden koppeling):**
 ```bash

@@ -65,6 +65,9 @@ services:
       - /volume1/docker/bunq-dashboard/config:/app/config
       - /volume1/docker/bunq-dashboard/logs:/app/logs
 
+    extra_hosts:
+      - "vault.hadewych.synology.me:192.168.2.13"
+
     networks:
       - bunq-net
 
