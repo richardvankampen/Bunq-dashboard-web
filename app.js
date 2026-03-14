@@ -2183,6 +2183,11 @@ function showBalanceDetail(type) {
         ? ` (${balanceMetrics.missingFxCount} non-EUR rekening(en) zonder FX-rate)`
         : '';
 
+    const accountIds = new Set(accounts.map((acc) => String(acc.id)));
+    const allTx = getCurrentNormalizedTransactions({ excludeInternalTransfers: false });
+    const subset = allTx.filter((tx) => accountIds.has(String(tx.account_id)));
+    const transactionRows = buildTransactionTableRows(subset);
+
     const rows = [];
 
     let chartConfig = null;
@@ -2224,7 +2229,9 @@ function showBalanceDetail(type) {
         title: `<i class="fas fa-wallet"></i> ${label} - Verdeling`,
         summary: `Totaal: ${formatCurrency(total)}${nonEurNote}`,
         rows,
-        chart: chartConfig
+        chart: chartConfig,
+        transactionRows,
+        transactionsTitle: `Transacties op ${label.toLowerCase()} (${transactionRows.length})`
     });
 }
 

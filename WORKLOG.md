@@ -2,6 +2,15 @@
 
 Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies geen impact heeft.
 
+## 2026-03-15
+
+### Opgeleverd — betaal/spaarrekeningen detailmodal: transactielijst hersteld
+
+- `app.js` `showBalanceDetail`: transactiefiltering toegevoegd op basis van account-ID's van het betreffende type (checking of savings).
+- `transactionRows` en `transactionsTitle` worden nu meegegeven aan `openDetailModal`, zodat de sorteer/zoek/filter transactielijst ook verschijnt bij de betaalrekeningen- en spaarrekeningen-kaarten.
+- Gebruikt `excludeInternalTransfers: false` zodat ook interne overboekingen (bijv. stortingen op spaarrekening) zichtbaar zijn in de lijst.
+- Reden: bij een eerdere refactor was deze second-view per abuis weggevallen voor de balanswidgets.
+
 ## 2026-03-07
 
 ### Opgeleverd (2 — frontend simplify)

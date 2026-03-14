@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-07 (frontend simplify: CSS dode selectors + duplicaten verwijderd; defer scripts; AOS CSS naar head; app.js dode branch + login icon fix; zie ook api_proxy.py verbeteringen eerder vandaag)
+Laatste update: 2026-03-15 (betaal/spaarrekeningen detailmodal: transactielijst hersteld in showBalanceDetail)
 
 ## Canonieke status
 
@@ -53,6 +53,8 @@ Dit bestand is de actuele bron voor overdracht.
 
 - In de bestaande detailmodal staat nu een tweede sectie met individuele transacties.
 - Deze sectie is aangesloten voor:
+  - `Betaalrekeningen` (balanskaart — toont alle transacties op betaalrekeningen incl. interne)
+  - `Spaarrekeningen` (balanskaart — toont alle transacties op spaarrekeningen incl. interne)
   - `Inkomsten`
   - `Uitgaven`
   - `Spaarrekening mutaties`
