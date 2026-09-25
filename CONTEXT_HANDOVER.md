@@ -187,6 +187,7 @@ Dit bestand is de actuele bron voor overdracht.
 
 - `tests/` bevat een pytest-suite voor `api_proxy.py` (helpers, internal-transfer detectie/reconcile, categorisatie/accountclassificatie, auth/sessie/rate-limit, static allowlist, health-probes).
 - Draaien: `python -m pytest tests -q` in een venv met `requirements_web.txt`; geen Bunq/Vaultwarden/Docker nodig (`tests/conftest.py` zet de env vóór import).
+- CI: `.github/workflows/tests.yml` draait `pyflakes` + `pytest` op elke PR en push naar `main`.
 - Bekende categorisatie-eigenaardigheid: substring `'rent'` matcht ook `Rente` → uitgaande rente valt onder `Wonen`.
 
 ## Savings-incident status
