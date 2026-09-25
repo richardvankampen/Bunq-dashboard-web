@@ -5,7 +5,8 @@ Startup flow with --preload (API key fetched from Vaultwarden once, in the maste
 1. master imports api_proxy          -> API key fetched once
 2. on_starting (master)              -> preboot Bunq init: context file + auto-whitelist
 3. post_fork (each worker)           -> drop inherited Bunq state, keep the API key
-4. post_worker_init (each worker)    -> background Bunq warm-up from the context file
+4. post_worker_init (each worker)    -> background Bunq warm-up from the context file,
+                                        plus the monthly reconcile scheduler thread
 Recycled workers (max_requests) repeat steps 3-4 without fetching the key again.
 """
 
@@ -31,3 +32,5 @@ def post_worker_init(worker):
     import api_proxy
 
     api_proxy.start_background_bunq_init()
+    # Monthly nightly reconcile checker; a file lock lets only one worker run it.
+    api_proxy.start_reconcile_scheduler()

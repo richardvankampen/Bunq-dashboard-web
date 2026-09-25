@@ -65,6 +65,12 @@ Raw fallback only if SDK result lacks savings. Uses only official routes:
 - `/user/{id}/monetary-account-savings`
 - `/user/{id}/monetary-account-external-savings`
 
+## Transaction store (SQLite)
+
+- Table `bunq_transactions`, key `(account_id, source, bunq_id)`; `payload_json` = dashboard transaction dict; `deleted_at` = soft delete.
+- `/api/transactions` + `/api/statistics`: `load_transactions()` → incremental `sync_transactions()` (only pages newer than stored newest id; one-time backfill for longer periods) → read from store.
+- Monthly nightly reconcile (`run_full_reconcile`, 1st 03:00 Europe/Amsterdam, file-locked to one worker): inserts new, updates changed, soft-deletes missing only within the range Bunq still serves; older rows are kept and visible.
+
 ## Internal transfer filtering
 
 - Deterministic: match on own account-id + IBAN (from full fetched account list).

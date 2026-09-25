@@ -9,6 +9,7 @@ SECURED with session cookies and rate limiting
 from flask import Flask, jsonify, request, session, make_response, send_from_directory, abort
 from flask_cors import CORS
 from flask_caching import Cache
+from contextlib import contextmanager
 from functools import wraps
 from bunq.sdk.context.api_context import ApiContext
 from bunq.sdk.context.api_environment_type import ApiEnvironmentType
@@ -1551,8 +1552,14 @@ def _list_payments_paginated(
     cached_endpoint, cached_mode,
     page_size, max_pages,
     discover_fn, source_name, missing_error,
+    stop_at_id=None, start_older_id=None,
 ):
-    """Shared paginated payment-list core used by both payment and card-payment fetchers."""
+    """
+    Shared paginated payment-list core used by both payment and card-payment fetchers.
+    Walks newest -> oldest with bunq's documented `older_id` pagination.
+    - stop_at_id: stop once a page reaches an id <= this (already-stored newest id).
+    - start_older_id: start below this id instead of at the newest item (history backfill).
+    """
     candidates = []
     if cached_endpoint is not None and cached_mode is not None:
         candidates.append(('cached', cached_endpoint, (cached_mode,)))
@@ -1568,7 +1575,7 @@ def _list_payments_paginated(
     last_exc = None
     for name, ep, candidate_modes in candidates:
         for mode in candidate_modes:
-            older_id = None
+            older_id = start_older_id
             collected = []
             seen_payment_ids = set()
             pages_fetched = 0
@@ -1611,6 +1618,9 @@ def _list_payments_paginated(
                             if oldest_payment_created is None or created_at < oldest_payment_created:
                                 oldest_payment_created = created_at
 
+                    if stop_at_id is not None and oldest_payment_id is not None and oldest_payment_id <= stop_at_id:
+                        stop_reason = 'reached_known'
+                        break
                     if cutoff_date and oldest_payment_created and oldest_payment_created < cutoff_date:
                         stop_reason = 'cutoff_reached'
                         break
@@ -1655,30 +1665,34 @@ def _list_payments_paginated(
     raise RuntimeError(f"bunq-sdk {source_name} list failed: {last_exc}")
 
 
-def list_payments_for_account(account_id, cutoff_date=None, return_meta=False):
+def list_payments_for_account(account_id, cutoff_date=None, return_meta=False,
+                              stop_at_id=None, start_older_id=None, max_pages=None):
     """List payments for one monetary account across bunq-sdk variants."""
     global _PAYMENT_ENDPOINT, _PAYMENT_LIST_MODE
     ensure_bunq_session_active()
     collected, metadata, ep, mode = _list_payments_paginated(
         account_id, cutoff_date, return_meta,
         _PAYMENT_ENDPOINT, _PAYMENT_LIST_MODE,
-        _BUNQ_PAYMENT_PAGE_SIZE, _BUNQ_PAYMENT_MAX_PAGES,
+        _BUNQ_PAYMENT_PAGE_SIZE, max_pages or _BUNQ_PAYMENT_MAX_PAGES,
         discover_payment_endpoints, 'payment', 'bunq-sdk missing payment endpoint',
+        stop_at_id=stop_at_id, start_older_id=start_older_id,
     )
     _PAYMENT_ENDPOINT = ep
     _PAYMENT_LIST_MODE = mode
     return (collected, metadata) if return_meta else collected
 
 
-def list_card_payments_for_account(account_id, cutoff_date=None, return_meta=False):
+def list_card_payments_for_account(account_id, cutoff_date=None, return_meta=False,
+                                   stop_at_id=None, start_older_id=None, max_pages=None):
     """List card payments for one monetary account when endpoint is available."""
     global _CARD_PAYMENT_ENDPOINT, _CARD_PAYMENT_LIST_MODE
     ensure_bunq_session_active()
     collected, metadata, ep, mode = _list_payments_paginated(
         account_id, cutoff_date, return_meta,
         _CARD_PAYMENT_ENDPOINT, _CARD_PAYMENT_LIST_MODE,
-        _BUNQ_CARD_PAYMENT_PAGE_SIZE, _BUNQ_CARD_PAYMENT_MAX_PAGES,
+        _BUNQ_CARD_PAYMENT_PAGE_SIZE, max_pages or _BUNQ_CARD_PAYMENT_MAX_PAGES,
         discover_card_payment_endpoints, 'card_payment', 'bunq-sdk missing card payment endpoint',
+        stop_at_id=stop_at_id, start_older_id=start_older_id,
     )
     _CARD_PAYMENT_ENDPOINT = ep
     _CARD_PAYMENT_LIST_MODE = mode
@@ -2269,6 +2283,17 @@ _BUNQ_CARD_PAYMENT_PAGE_SIZE = min(200, max(1, get_int_env('BUNQ_CARD_PAYMENT_PA
 _BUNQ_PAYMENT_MAX_PAGES = max(1, get_int_env('BUNQ_PAYMENT_MAX_PAGES', 50))
 _BUNQ_CARD_PAYMENT_MAX_PAGES = max(1, get_int_env('BUNQ_CARD_PAYMENT_MAX_PAGES', _BUNQ_PAYMENT_MAX_PAGES))
 
+# Transaction store: incremental sync + monthly reconcile against Bunq.
+SYNC_MIN_INTERVAL_SECONDS = max(0, get_int_env('SYNC_MIN_INTERVAL_SECONDS', 60))
+RECONCILE_ENABLED = get_bool_env('RECONCILE_ENABLED', True)
+RECONCILE_DAY = min(28, max(1, get_int_env('RECONCILE_DAY', 1)))
+RECONCILE_HOUR = min(23, max(0, get_int_env('RECONCILE_HOUR', 3)))
+RECONCILE_WINDOW_HOURS = min(24, max(1, get_int_env('RECONCILE_WINDOW_HOURS', 3)))
+RECONCILE_TIMEZONE = os.getenv('RECONCILE_TIMEZONE', 'Europe/Amsterdam').strip() or 'Europe/Amsterdam'
+RECONCILE_CHECK_INTERVAL_SECONDS = max(60, get_int_env('RECONCILE_CHECK_INTERVAL_SECONDS', 900))
+RECONCILE_RETRY_SECONDS = max(300, get_int_env('RECONCILE_RETRY_SECONDS', 3600))
+RECONCILE_MAX_PAGES = max(1, get_int_env('RECONCILE_MAX_PAGES', 500))
+
 def get_data_db_connection():
     if not DATA_DB_ENABLED:
         return None
@@ -2308,12 +2333,14 @@ def init_data_store():
                 )
             """)
 
+            # One row per Bunq transaction. payload_json holds the full dashboard
+            # transaction dict; the other columns exist for querying.
+            # (The legacy transaction_cache table from older versions is no longer used.)
             connection.execute("""
-                CREATE TABLE IF NOT EXISTS transaction_cache (
-                    tx_key TEXT PRIMARY KEY,
-                    tx_id TEXT,
+                CREATE TABLE IF NOT EXISTS bunq_transactions (
                     account_id TEXT NOT NULL,
-                    account_name TEXT,
+                    source TEXT NOT NULL,
+                    bunq_id TEXT NOT NULL,
                     tx_date TEXT NOT NULL,
                     amount REAL NOT NULL,
                     currency TEXT,
@@ -2322,9 +2349,55 @@ def init_data_store():
                     counterparty TEXT,
                     merchant TEXT,
                     category TEXT,
-                    tx_type TEXT,
                     is_internal_transfer INTEGER NOT NULL DEFAULT 0,
-                    captured_at TEXT NOT NULL
+                    payload_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    captured_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    deleted_at TEXT,
+                    PRIMARY KEY (account_id, source, bunq_id)
+                )
+            """)
+
+            # Per account/source sync bookmark: data is complete from covered_from up
+            # to newest_bunq_id (or back to the start of history when history_complete).
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS bunq_sync_state (
+                    account_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    newest_bunq_id INTEGER,
+                    oldest_bunq_id INTEGER,
+                    covered_from TEXT,
+                    history_complete INTEGER NOT NULL DEFAULT 0,
+                    last_sync_at TEXT,
+                    last_reconcile_at TEXT,
+                    PRIMARY KEY (account_id, source)
+                )
+            """)
+
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS bunq_reconcile_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trigger TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    inserted INTEGER NOT NULL DEFAULT 0,
+                    updated INTEGER NOT NULL DEFAULT 0,
+                    restored INTEGER NOT NULL DEFAULT 0,
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    kept_too_old INTEGER NOT NULL DEFAULT 0,
+                    details_json TEXT,
+                    errors_json TEXT
+                )
+            """)
+
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS app_state (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT NOT NULL
                 )
             """)
 
@@ -2346,13 +2419,8 @@ def init_data_store():
             """)
 
             connection.execute("""
-                CREATE INDEX IF NOT EXISTS idx_transaction_cache_date
-                ON transaction_cache(tx_date)
-            """)
-
-            connection.execute("""
-                CREATE INDEX IF NOT EXISTS idx_transaction_cache_account
-                ON transaction_cache(account_id)
+                CREATE INDEX IF NOT EXISTS idx_bunq_transactions_date
+                ON bunq_transactions(tx_date)
             """)
 
             connection.execute("""
@@ -3245,81 +3313,696 @@ def persist_account_snapshots(accounts_data):
     finally:
         connection.close()
 
-def build_transaction_cache_key(transaction):
-    payload = "|".join([
-        str(transaction.get('id')),
-        str(transaction.get('account_id')),
-        str(transaction.get('date')),
-        str(transaction.get('amount')),
-        str(transaction.get('description')),
-    ])
-    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+# ============================================
+# TRANSACTION STORE (incremental sync + monthly reconcile)
+# ============================================
+#
+# Transactions are stored per Bunq object in bunq_transactions, keyed on
+# (account_id, source, bunq_id). Requests read from the store after an
+# incremental sync that only fetches pages newer than the stored newest id
+# (plus a one-time backfill when an older period is requested).
+# Once a month, at night, run_full_reconcile() refetches everything back to the
+# oldest stored transaction and applies inserts, changes and deletions.
 
-def persist_transactions(transactions):
-    if not DATA_DB_ENABLED or not transactions:
-        return
+_TX_SOURCES = ('payment', 'card_payment')
+# FX values can be filled in later without Bunq changing anything; they don't count as a change.
+_TX_HASH_EXCLUDED_FIELDS = ('amount_eur', 'fx_rate_to_eur', 'fx_converted')
+_TX_SYNC_LOCK = threading.Lock()
+_FETCH_COMPLETE_REASONS = ('cutoff_reached', 'empty_page', 'short_page')
+_HISTORY_END_REASONS = ('empty_page', 'short_page')
 
-    connection = get_data_db_connection()
-    if connection is None:
-        return
-    captured_at = datetime.now(timezone.utc).isoformat()
 
+def _utc_now():
+    return datetime.now(timezone.utc)
+
+
+def transaction_content_hash(tx):
+    payload = {key: value for key, value in tx.items() if key not in _TX_HASH_EXCLUDED_FIELDS}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode('utf-8')).hexdigest()
+
+
+def _tx_store_key(tx):
+    return (str(tx.get('account_id')), str(tx.get('source') or 'payment'), str(tx.get('id')))
+
+
+def _tx_numeric_id(tx):
     try:
-        rows = []
-        for transaction in transactions:
-            tx_key = build_transaction_cache_key(transaction)
-            amount = safe_float(transaction.get('amount'), default=0.0, context='transaction amount')
-            currency = (transaction.get('currency') or 'EUR').upper()
-            amount_eur = transaction.get('amount_eur')
-            if amount_eur is None:
-                tx_date = parse_bunq_datetime(transaction.get('date'), context='transaction date')
-                rate_date = tx_date.date().isoformat() if tx_date else None
-                amount_eur, _, _ = convert_amount_to_eur(amount, currency, rate_date=rate_date)
-            else:
-                amount_eur = safe_float(amount_eur, default=None, context='transaction amount_eur')
-            rows.append((
-                tx_key,
-                transaction.get('id'),
-                str(transaction.get('account_id')),
-                transaction.get('account_name'),
-                transaction.get('date'),
-                amount,
-                currency,
-                amount_eur,
-                transaction.get('description'),
-                transaction.get('counterparty'),
-                transaction.get('merchant'),
-                transaction.get('category'),
-                transaction.get('type'),
-                1 if transaction.get('is_internal_transfer') else 0,
-                captured_at,
-            ))
-        with connection:
-            connection.executemany(
-                """
-                INSERT INTO transaction_cache (
-                    tx_key, tx_id, account_id, account_name, tx_date, amount, currency, amount_eur,
-                    description, counterparty, merchant, category, tx_type, is_internal_transfer, captured_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(tx_key) DO UPDATE SET
-                    account_name = excluded.account_name,
-                    amount = excluded.amount,
-                    currency = excluded.currency,
-                    amount_eur = excluded.amount_eur,
-                    description = excluded.description,
-                    counterparty = excluded.counterparty,
-                    merchant = excluded.merchant,
-                    category = excluded.category,
-                    tx_type = excluded.tx_type,
-                    is_internal_transfer = excluded.is_internal_transfer,
-                    captured_at = excluded.captured_at
-                """,
-                rows,
+        return int(tx.get('id'))
+    except (TypeError, ValueError):
+        return None
+
+
+def _fetch_source_payments(source, account_id, **fetch_kwargs):
+    fetch = list_payments_for_account if source == 'payment' else list_card_payments_for_account
+    return fetch(account_id, return_meta=True, **fetch_kwargs)
+
+
+def _fetch_and_normalize(account, source, own_account_ids, own_ibans, **fetch_kwargs):
+    account_id = get_obj_field(account, 'id_', 'id')
+    account_name = get_obj_field(account, 'description', 'display_name')
+    payments, meta = _fetch_source_payments(source, account_id, **fetch_kwargs)
+    transactions = []
+    for payment in payments or []:
+        tx = normalize_bunq_payment(
+            source, payment, account_id, account_name,
+            own_account_ids=own_account_ids, own_ibans=own_ibans,
+        )
+        if tx is not None:
+            transactions.append(tx)
+    return transactions, (meta or {})
+
+
+def _oldest_tx_datetime(transactions):
+    dates = [parse_bunq_datetime(tx.get('date')) for tx in transactions]
+    dates = [value for value in dates if value is not None]
+    return min(dates) if dates else None
+
+
+def _empty_sync_state(account_id, source):
+    return {
+        'account_id': account_id,
+        'source': source,
+        'newest_bunq_id': None,
+        'oldest_bunq_id': None,
+        'covered_from': None,
+        'history_complete': 0,
+        'last_sync_at': None,
+        'last_reconcile_at': None,
+    }
+
+
+def _get_sync_state(connection, account_id, source):
+    row = connection.execute(
+        "SELECT * FROM bunq_sync_state WHERE account_id = ? AND source = ?",
+        (account_id, source),
+    ).fetchone()
+    return dict(row) if row else _empty_sync_state(account_id, source)
+
+
+def _save_sync_state(connection, state):
+    connection.execute(
+        """
+        INSERT INTO bunq_sync_state (
+            account_id, source, newest_bunq_id, oldest_bunq_id, covered_from,
+            history_complete, last_sync_at, last_reconcile_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(account_id, source) DO UPDATE SET
+            newest_bunq_id = excluded.newest_bunq_id,
+            oldest_bunq_id = excluded.oldest_bunq_id,
+            covered_from = excluded.covered_from,
+            history_complete = excluded.history_complete,
+            last_sync_at = excluded.last_sync_at,
+            last_reconcile_at = excluded.last_reconcile_at
+        """,
+        (
+            state['account_id'], state['source'], state['newest_bunq_id'], state['oldest_bunq_id'],
+            state['covered_from'], int(bool(state['history_complete'])),
+            state['last_sync_at'], state['last_reconcile_at'],
+        ),
+    )
+
+
+def _extend_state_ids(state, transactions):
+    ids = [value for value in (_tx_numeric_id(tx) for tx in transactions) if value is not None]
+    if not ids:
+        return
+    newest, oldest = max(ids), min(ids)
+    state['newest_bunq_id'] = newest if state['newest_bunq_id'] is None else max(state['newest_bunq_id'], newest)
+    state['oldest_bunq_id'] = oldest if state['oldest_bunq_id'] is None else min(state['oldest_bunq_id'], oldest)
+
+
+def _min_iso(first, second):
+    if first is None:
+        return second
+    if second is None:
+        return first
+    first_dt, second_dt = parse_bunq_datetime(first), parse_bunq_datetime(second)
+    return first if first_dt <= second_dt else second
+
+
+def _apply_downward_fetch_coverage(state, transactions, meta, cutoff_date):
+    """Update coverage after a newest->older fetch that ran down towards cutoff_date."""
+    stop_reason = meta.get('stop_reason')
+    oldest = _oldest_tx_datetime(transactions)
+    if stop_reason == 'cutoff_reached':
+        state['covered_from'] = _min_iso(state['covered_from'], cutoff_date.isoformat())
+    elif stop_reason in _HISTORY_END_REASONS:
+        state['history_complete'] = 1
+        if oldest is not None:
+            state['covered_from'] = _min_iso(state['covered_from'], oldest.isoformat())
+    elif oldest is not None:
+        # Truncated (page cap) or stopped early: complete only down to what was returned.
+        state['covered_from'] = _min_iso(state['covered_from'], oldest.isoformat())
+    return stop_reason not in _FETCH_COMPLETE_REASONS
+
+
+def upsert_stored_transactions(connection, transactions, now_iso):
+    """
+    Insert new rows, update changed rows (content hash differs) and restore rows
+    that were marked deleted but are returned by Bunq again.
+    """
+    counts = {'inserted': 0, 'updated': 0, 'restored': 0, 'unchanged': 0}
+    if not transactions:
+        return counts
+
+    groups = {(key[0], key[1]) for key in (_tx_store_key(tx) for tx in transactions)}
+    existing = {}
+    for account_id, source in groups:
+        rows = connection.execute(
+            "SELECT bunq_id, content_hash, deleted_at FROM bunq_transactions WHERE account_id = ? AND source = ?",
+            (account_id, source),
+        )
+        for row in rows:
+            existing[(account_id, source, row['bunq_id'])] = (row['content_hash'], row['deleted_at'])
+
+    inserts, updates, touches = [], [], []
+    seen = set()
+    for tx in transactions:
+        key = _tx_store_key(tx)
+        if key in seen:
+            continue
+        seen.add(key)
+        content_hash = transaction_content_hash(tx)
+        amount_eur = tx.get('amount_eur')
+        values = (
+            tx.get('date'),
+            safe_float(tx.get('amount'), default=0.0, context='stored transaction amount'),
+            (tx.get('currency') or 'EUR').upper(),
+            None if amount_eur is None else safe_float(amount_eur, default=None, context='stored amount_eur'),
+            tx.get('description'),
+            tx.get('counterparty'),
+            tx.get('merchant'),
+            tx.get('category'),
+            1 if tx.get('is_internal_transfer') else 0,
+            json.dumps(tx, default=str),
+            content_hash,
+        )
+        previous = existing.get(key)
+        if previous is None:
+            inserts.append(key + values + (now_iso, now_iso, now_iso))
+            counts['inserted'] += 1
+        elif previous[0] != content_hash or previous[1] is not None:
+            updates.append(values + (now_iso, now_iso) + key)
+            counts['restored' if previous[1] is not None else 'updated'] += 1
+        else:
+            touches.append((now_iso,) + key)
+            counts['unchanged'] += 1
+
+    if inserts:
+        connection.executemany(
+            """
+            INSERT INTO bunq_transactions (
+                account_id, source, bunq_id, tx_date, amount, currency, amount_eur, description,
+                counterparty, merchant, category, is_internal_transfer, payload_json, content_hash,
+                first_seen_at, captured_at, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            inserts,
+        )
+    if updates:
+        connection.executemany(
+            """
+            UPDATE bunq_transactions SET
+                tx_date = ?, amount = ?, currency = ?, amount_eur = ?, description = ?,
+                counterparty = ?, merchant = ?, category = ?, is_internal_transfer = ?,
+                payload_json = ?, content_hash = ?, captured_at = ?, last_seen_at = ?, deleted_at = NULL
+            WHERE account_id = ? AND source = ? AND bunq_id = ?
+            """,
+            updates,
+        )
+    if touches:
+        connection.executemany(
+            "UPDATE bunq_transactions SET last_seen_at = ? WHERE account_id = ? AND source = ? AND bunq_id = ?",
+            touches,
+        )
+    return counts
+
+
+def sync_account_source(connection, account, source, own_account_ids, own_ibans, cutoff_date, now=None):
+    """
+    Bring the store up to date for one account/source and make sure it covers cutoff_date.
+    Only fetches pages newer than the stored newest id, plus older pages when the
+    requested period reaches further back than what is stored.
+    """
+    now = now or _utc_now()
+    account_id = str(get_obj_field(account, 'id_', 'id'))
+    state = _get_sync_state(connection, account_id, source)
+    result = {'account_id': account_id, 'source': source, 'skipped': False, 'truncated': False, 'fetched': 0}
+
+    def covers_cutoff():
+        if state['history_complete']:
+            return True
+        covered = parse_bunq_datetime(state['covered_from']) if state['covered_from'] else None
+        return covered is not None and covered <= cutoff_date
+
+    last_sync = parse_bunq_datetime(state['last_sync_at']) if state['last_sync_at'] else None
+    if (
+        covers_cutoff()
+        and last_sync is not None
+        and (now - last_sync).total_seconds() < SYNC_MIN_INTERVAL_SECONDS
+    ):
+        result['skipped'] = True
+        return result
+
+    fetched = []
+    if state['newest_bunq_id'] is None:
+        transactions, meta = _fetch_and_normalize(
+            account, source, own_account_ids, own_ibans, cutoff_date=cutoff_date,
+        )
+        fetched.extend(transactions)
+        result['truncated'] = _apply_downward_fetch_coverage(state, transactions, meta, cutoff_date)
+    else:
+        transactions, meta = _fetch_and_normalize(
+            account, source, own_account_ids, own_ibans, stop_at_id=state['newest_bunq_id'],
+        )
+        fetched.extend(transactions)
+        if meta.get('stop_reason') not in ('reached_known',) + _HISTORY_END_REASONS:
+            # Didn't reach the stored data (page cap): there may be a gap below the
+            # fetched pages, so coverage restarts at the oldest fetched transaction.
+            oldest = _oldest_tx_datetime(transactions)
+            ids = [value for value in (_tx_numeric_id(tx) for tx in transactions) if value is not None]
+            if oldest is not None and ids:
+                state['covered_from'] = oldest.isoformat()
+                state['oldest_bunq_id'] = min(ids)
+                state['history_complete'] = 0
+            result['truncated'] = True
+
+        if not covers_cutoff() and state['oldest_bunq_id'] is not None:
+            older, older_meta = _fetch_and_normalize(
+                account, source, own_account_ids, own_ibans,
+                cutoff_date=cutoff_date, start_older_id=state['oldest_bunq_id'],
             )
-    except Exception as exc:
-        logger.warning(f"⚠️ Failed persisting transactions: {exc}")
+            fetched.extend(older)
+            if _apply_downward_fetch_coverage(state, older, older_meta, cutoff_date):
+                result['truncated'] = True
+
+    now_iso = now.isoformat()
+    with connection:
+        counts = upsert_stored_transactions(connection, fetched, now_iso)
+        _extend_state_ids(state, fetched)
+        state['last_sync_at'] = now_iso
+        _save_sync_state(connection, state)
+    result.update(counts)
+    result['fetched'] = len(fetched)
+    return result
+
+
+def sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date):
+    """Incremental sync for the given accounts. Returns (truncated_accounts, errors)."""
+    truncated_accounts, errors = [], []
+    connection = get_data_db_connection()
+    try:
+        with _TX_SYNC_LOCK:
+            for account in accounts:
+                account_id = get_obj_field(account, 'id_', 'id')
+                account_name = get_obj_field(account, 'description', 'display_name') or f"Account {account_id}"
+                truncated_sources = {}
+                for source in _TX_SOURCES:
+                    try:
+                        result = sync_account_source(
+                            connection, account, source, own_account_ids, own_ibans, cutoff_date,
+                        )
+                    except UnauthorizedException:
+                        raise
+                    except Exception as exc:
+                        if source == 'card_payment':
+                            # Optional endpoint; not available in every SDK/runtime variant.
+                            logger.debug(f"Card payment sync skipped for account {account_id}: {exc}")
+                        else:
+                            logger.warning(f"⚠️ Transaction sync failed for account {account_id}: {exc}")
+                            errors.append(f"{account_name}: {exc}")
+                        continue
+                    if result.get('truncated'):
+                        truncated_sources[source] = {'truncated': True}
+                    if result.get('inserted') or result.get('updated') or result.get('restored'):
+                        logger.info(
+                            "💾 Synced %s/%s: %d new, %d changed, %d restored",
+                            account_id, source,
+                            result.get('inserted', 0), result.get('updated', 0), result.get('restored', 0),
+                        )
+                if truncated_sources:
+                    truncated_accounts.append({
+                        'account_id': account_id,
+                        'account_name': account_name,
+                        'payment': truncated_sources.get('payment'),
+                        'card_payment': truncated_sources.get('card_payment'),
+                    })
     finally:
         connection.close()
+    return truncated_accounts, errors
+
+
+def read_stored_transactions(account_ids, cutoff_date):
+    """Stored, non-deleted transactions for the given accounts on/after cutoff_date."""
+    ids = [str(account_id) for account_id in account_ids]
+    if not ids:
+        return []
+    connection = get_data_db_connection()
+    try:
+        placeholders = ','.join('?' for _ in ids)
+        # Coarse SQL filter with a 1-day margin (ISO strings); exact check below.
+        margin_iso = (cutoff_date - timedelta(days=1)).isoformat()
+        rows = connection.execute(
+            f"""
+            SELECT payload_json, tx_date FROM bunq_transactions
+            WHERE deleted_at IS NULL AND tx_date >= ? AND account_id IN ({placeholders})
+            """,
+            [margin_iso] + ids,
+        ).fetchall()
+    finally:
+        connection.close()
+    transactions = []
+    for row in rows:
+        tx_date = parse_bunq_datetime(row['tx_date'])
+        if tx_date is None or tx_date < cutoff_date:
+            continue
+        transactions.append(json.loads(row['payload_json']))
+    return transactions
+
+
+def load_transactions(accounts, own_account_ids, own_ibans, cutoff_date):
+    """
+    Transactions for the given accounts since cutoff_date.
+    With the data store enabled: incremental sync, then read from the store.
+    Without it: fetch live from Bunq (legacy behaviour).
+    Returns (transactions, truncated_accounts, sync_errors).
+    """
+    if not DATA_DB_ENABLED:
+        transactions, truncated_accounts = [], []
+        for account in accounts:
+            account_id_value = get_obj_field(account, 'id_', 'id')
+            account_name = get_obj_field(account, 'description', 'display_name')
+            account_transactions, tx_meta = get_account_transactions(
+                account_id=account_id_value,
+                cutoff_date=cutoff_date,
+                own_account_ids=own_account_ids,
+                own_ibans=own_ibans,
+                account_name=account_name,
+                return_meta=True,
+            )
+            transactions.extend(account_transactions)
+            if tx_meta.get('truncated'):
+                truncated_accounts.append({
+                    'account_id': account_id_value,
+                    'account_name': account_name or f"Account {account_id_value}",
+                    'payment': tx_meta.get('payment'),
+                    'card_payment': tx_meta.get('card_payment'),
+                })
+        return transactions, truncated_accounts, []
+
+    truncated_accounts, errors = sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date)
+    account_ids = [get_obj_field(account, 'id_', 'id') for account in accounts]
+    transactions = read_stored_transactions(account_ids, cutoff_date)
+    if errors and not transactions:
+        raise RuntimeError(errors[0])
+    return transactions, truncated_accounts, errors
+
+
+# --- Monthly reconcile -------------------------------------------------------
+
+def _app_state_get(key):
+    connection = get_data_db_connection()
+    try:
+        row = connection.execute("SELECT value FROM app_state WHERE key = ?", (key,)).fetchone()
+        return row['value'] if row else None
+    finally:
+        connection.close()
+
+
+def _app_state_set(key, value):
+    connection = get_data_db_connection()
+    try:
+        with connection:
+            connection.execute(
+                """
+                INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, value, _utc_now().isoformat()),
+            )
+    finally:
+        connection.close()
+
+
+def reconcile_account_source(connection, account, source, own_account_ids, own_ibans, now=None):
+    """
+    Refetch one account/source back to its oldest stored transaction and make the
+    store match Bunq. Deletions only apply within the range Bunq still serves:
+    - Bunq returned transactions older than our oldest stored one (cutoff_reached):
+      it serves the whole stored period, so every missing stored row was deleted.
+    - Otherwise Bunq's history (or the page cap) ends at the oldest returned
+      transaction; stored rows older than that are too old for Bunq to serve and
+      are kept (and stay visible).
+    Returns a result dict, or None when nothing is stored for this account/source.
+    """
+    now = now or _utc_now()
+    now_iso = now.isoformat()
+    account_id = str(get_obj_field(account, 'id_', 'id'))
+    row = connection.execute(
+        "SELECT MIN(tx_date) AS oldest FROM bunq_transactions WHERE account_id = ? AND source = ? AND deleted_at IS NULL",
+        (account_id, source),
+    ).fetchone()
+    oldest_stored = parse_bunq_datetime(row['oldest']) if row and row['oldest'] else None
+    if oldest_stored is None:
+        return None
+
+    transactions, meta = _fetch_and_normalize(
+        account, source, own_account_ids, own_ibans,
+        cutoff_date=oldest_stored, max_pages=RECONCILE_MAX_PAGES,
+    )
+
+    result = {
+        'account_id': account_id, 'source': source, 'returned': len(transactions),
+        'stop_reason': meta.get('stop_reason'), 'deleted': 0, 'kept_too_old': 0,
+        'deleted_ids': [],
+    }
+    with connection:
+        result.update(upsert_stored_transactions(connection, transactions, now_iso))
+        oldest_returned = _oldest_tx_datetime(transactions)
+        if oldest_returned is not None:
+            served_from = oldest_stored if meta.get('stop_reason') == 'cutoff_reached' else oldest_returned
+            returned_ids = {str(tx.get('id')) for tx in transactions}
+            to_delete = []
+            stored = connection.execute(
+                "SELECT bunq_id, tx_date FROM bunq_transactions WHERE account_id = ? AND source = ? AND deleted_at IS NULL",
+                (account_id, source),
+            )
+            for stored_row in stored:
+                if stored_row['bunq_id'] in returned_ids:
+                    continue
+                tx_date = parse_bunq_datetime(stored_row['tx_date'])
+                if tx_date is not None and tx_date >= served_from:
+                    to_delete.append(stored_row['bunq_id'])
+                else:
+                    result['kept_too_old'] += 1
+            if to_delete:
+                connection.executemany(
+                    "UPDATE bunq_transactions SET deleted_at = ? WHERE account_id = ? AND source = ? AND bunq_id = ?",
+                    [(now_iso, account_id, source, bunq_id) for bunq_id in to_delete],
+                )
+            result['deleted'] = len(to_delete)
+            result['deleted_ids'] = to_delete[:50]
+
+        state = _get_sync_state(connection, account_id, source)
+        _extend_state_ids(state, transactions)
+        state['last_reconcile_at'] = now_iso
+        _save_sync_state(connection, state)
+    return result
+
+
+def run_full_reconcile(trigger='manual'):
+    """Compare the whole store with Bunq and apply new, changed and deleted transactions."""
+    if not DATA_DB_ENABLED:
+        return {'status': 'skipped', 'reason': 'Historical data store disabled'}
+
+    started_at = _utc_now().isoformat()
+    connection = get_data_db_connection()
+    totals = {'inserted': 0, 'updated': 0, 'restored': 0, 'deleted': 0, 'kept_too_old': 0}
+    details, errors = [], []
+    status = 'success'
+    try:
+        with connection:
+            run_id = connection.execute(
+                "INSERT INTO bunq_reconcile_runs (trigger, status, started_at) VALUES (?, 'running', ?)",
+                (trigger, started_at),
+            ).lastrowid
+        logger.info(f"🔎 Monthly reconcile started ({trigger})")
+        try:
+            if not ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=False):
+                raise RuntimeError(_BUNQ_INIT_LAST_ERROR or 'Bunq API context not initialized')
+            accounts = list_monetary_accounts()
+            own_account_ids = extract_own_account_ids(accounts)
+            own_ibans = extract_own_ibans(accounts)
+            for account in accounts:
+                for source in _TX_SOURCES:
+                    try:
+                        # Lock per account/source so dashboard requests in this worker
+                        # aren't blocked for the whole run.
+                        with _TX_SYNC_LOCK:
+                            result = reconcile_account_source(connection, account, source, own_account_ids, own_ibans)
+                    except Exception as exc:
+                        if source == 'payment':
+                            errors.append(f"{get_obj_field(account, 'id_', 'id')}/{source}: {exc}")
+                        continue
+                    if result is None:
+                        continue
+                    details.append(result)
+                    for key in totals:
+                        totals[key] += result.get(key, 0)
+            if errors:
+                status = 'partial'
+        except Exception as exc:
+            status = 'failed'
+            errors.append(str(exc))
+
+        with connection:
+            connection.execute(
+                """
+                UPDATE bunq_reconcile_runs SET
+                    status = ?, finished_at = ?, inserted = ?, updated = ?, restored = ?,
+                    deleted = ?, kept_too_old = ?, details_json = ?, errors_json = ?
+                WHERE id = ?
+                """,
+                (
+                    status, _utc_now().isoformat(), totals['inserted'], totals['updated'], totals['restored'],
+                    totals['deleted'], totals['kept_too_old'],
+                    json.dumps(details, default=str), json.dumps(errors),
+                    run_id,
+                ),
+            )
+    finally:
+        connection.close()
+
+    logger.info(
+        "🔎 Reconcile %s: %d new, %d changed, %d restored, %d deleted, %d kept (too old for Bunq)%s",
+        status, totals['inserted'], totals['updated'], totals['restored'], totals['deleted'],
+        totals['kept_too_old'], f" — errors: {errors}" if errors else "",
+    )
+    return {'status': status, 'trigger': trigger, 'started_at': started_at, **totals, 'errors': errors}
+
+
+def _reconcile_lock_path():
+    return os.path.join(os.path.dirname(DATA_DB_PATH) or '.', 'reconcile.lock')
+
+
+@contextmanager
+def _reconcile_file_lock():
+    """Cross-process lock (all Gunicorn workers share config/). Yields False when busy."""
+    import fcntl
+
+    lock_path = _reconcile_lock_path()
+    os.makedirs(os.path.dirname(lock_path) or '.', exist_ok=True)
+    with open(lock_path, 'a') as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def run_reconcile_exclusive(trigger):
+    """Run a reconcile unless another process holds the lock. Returns None when busy."""
+    with _reconcile_file_lock() as acquired:
+        if not acquired:
+            return None
+        return run_full_reconcile(trigger=trigger)
+
+
+def _reconcile_local_now():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo(RECONCILE_TIMEZONE))
+    except Exception as exc:
+        logger.warning(f"⚠️ Unknown RECONCILE_TIMEZONE '{RECONCILE_TIMEZONE}' ({exc}); using UTC")
+        return datetime.now(timezone.utc)
+
+
+def is_reconcile_due(now_local, last_success_month, last_attempt_at):
+    """
+    Due once per calendar month, inside the night window starting at RECONCILE_HOUR
+    on or after RECONCILE_DAY. A missed night (NAS off) is caught up the next night;
+    failed attempts are retried after RECONCILE_RETRY_SECONDS.
+    """
+    if now_local.day < RECONCILE_DAY:
+        return False
+    hours_since_start = (now_local.hour - RECONCILE_HOUR) % 24
+    if hours_since_start >= RECONCILE_WINDOW_HOURS:
+        return False
+    if last_success_month == now_local.strftime('%Y-%m'):
+        return False
+    last_attempt = parse_bunq_datetime(last_attempt_at) if last_attempt_at else None
+    if last_attempt is not None:
+        if (now_local.astimezone(timezone.utc) - last_attempt).total_seconds() < RECONCILE_RETRY_SECONDS:
+            return False
+    return True
+
+
+def try_run_scheduled_reconcile(now_local=None):
+    if not (RECONCILE_ENABLED and DATA_DB_ENABLED):
+        return None
+    now_local = now_local or _reconcile_local_now()
+    if not is_reconcile_due(now_local, _app_state_get('reconcile_last_success_month'),
+                            _app_state_get('reconcile_last_attempt_at')):
+        return None
+
+    with _reconcile_file_lock() as acquired:
+        if not acquired:
+            return None  # another worker is running it
+        # Re-check under the lock: another worker may have just finished it.
+        if not is_reconcile_due(now_local, _app_state_get('reconcile_last_success_month'),
+                                _app_state_get('reconcile_last_attempt_at')):
+            return None
+        _app_state_set('reconcile_last_attempt_at', _utc_now().isoformat())
+        result = run_full_reconcile(trigger='schedule')
+        if result.get('status') == 'success':
+            _app_state_set('reconcile_last_success_month', now_local.strftime('%Y-%m'))
+        return result
+
+
+def start_reconcile_scheduler():
+    """Background checker (one per worker; the file lock lets only one run at a time)."""
+    if not (RECONCILE_ENABLED and DATA_DB_ENABLED):
+        return None
+
+    def _loop():
+        while True:
+            time.sleep(RECONCILE_CHECK_INTERVAL_SECONDS)
+            try:
+                try_run_scheduled_reconcile()
+            except Exception as exc:
+                logger.warning(f"⚠️ Scheduled reconcile check failed: {exc}")
+
+    thread = threading.Thread(target=_loop, name='bunq-reconcile-scheduler', daemon=True)
+    thread.start()
+    return thread
+
+
+def get_reconcile_status(limit=5):
+    if not DATA_DB_ENABLED:
+        return {'enabled': False}
+    connection = get_data_db_connection()
+    try:
+        runs = [
+            {key: row[key] for key in row.keys() if key != 'details_json'}
+            for row in connection.execute(
+                "SELECT * FROM bunq_reconcile_runs ORDER BY id DESC LIMIT ?", (limit,)
+            )
+        ]
+    finally:
+        connection.close()
+    return {
+        'enabled': RECONCILE_ENABLED,
+        'schedule': {
+            'day': RECONCILE_DAY, 'hour': RECONCILE_HOUR,
+            'window_hours': RECONCILE_WINDOW_HOURS, 'timezone': RECONCILE_TIMEZONE,
+        },
+        'last_success_month': _app_state_get('reconcile_last_success_month'),
+        'recent_runs': runs,
+    }
 
 # ============================================
 # AUTHENTICATION ENDPOINTS
@@ -3953,9 +4636,9 @@ def build_data_quality_summary(days=90):
                 SUM(CASE WHEN amount_eur IS NOT NULL THEN 1 ELSE 0 END) AS amount_eur_known,
                 MIN(tx_date) AS earliest_transaction_at,
                 MAX(tx_date) AS latest_transaction_at,
-                MAX(captured_at) AS latest_capture_at
-            FROM transaction_cache
-            WHERE tx_date >= ?
+                MAX(last_seen_at) AS latest_capture_at
+            FROM bunq_transactions
+            WHERE tx_date >= ? AND deleted_at IS NULL
             """,
             (cutoff_iso,),
         ).fetchone()
@@ -4016,12 +4699,12 @@ def build_data_quality_summary(days=90):
         earliest_transaction_raw = tx_row['earliest_transaction_at']
         earliest_transaction_dt = parse_bunq_datetime(
             earliest_transaction_raw,
-            context='transaction_cache.earliest_transaction_at'
+            context='bunq_transactions.earliest_transaction_at'
         )
         latest_transaction_raw = tx_row['latest_transaction_at']
         latest_transaction_dt = parse_bunq_datetime(
             latest_transaction_raw,
-            context='transaction_cache.latest_transaction_at'
+            context='bunq_transactions.latest_transaction_at'
         )
         dataset_span_days = 0
         if earliest_transaction_dt and latest_transaction_dt:
@@ -4032,7 +4715,7 @@ def build_data_quality_summary(days=90):
 
         capture_freshness_hours = None
         latest_capture_raw = tx_row['latest_capture_at']
-        latest_capture_dt = parse_bunq_datetime(latest_capture_raw, context='transaction_cache.latest_capture_at')
+        latest_capture_dt = parse_bunq_datetime(latest_capture_raw, context='bunq_transactions.latest_capture_at')
         if latest_capture_dt is not None:
             capture_freshness_hours = round(
                 max((datetime.now(timezone.utc) - latest_capture_dt).total_seconds(), 0) / 3600,
@@ -4507,6 +5190,34 @@ def get_admin_status():
     }
     return jsonify(response)
 
+@app.route('/api/admin/reconcile', methods=['GET'])
+@requires_auth
+@rate_limit('general')
+def get_admin_reconcile_status():
+    """Monthly reconcile schedule and recent runs."""
+    return jsonify({'success': True, 'data': get_reconcile_status()})
+
+@app.route('/api/admin/reconcile', methods=['POST'])
+@requires_auth
+@rate_limit('general')
+def trigger_admin_reconcile():
+    """Start a full reconcile against Bunq in the background (same logic as the monthly run)."""
+    if not DATA_DB_ENABLED:
+        return jsonify({'success': False, 'error': 'Historical data store disabled'}), 400
+
+    def _run():
+        try:
+            if run_reconcile_exclusive(trigger='manual') is None:
+                logger.info("🔎 Manual reconcile skipped: another reconcile is running")
+        except Exception as exc:
+            logger.warning(f"⚠️ Manual reconcile failed: {exc}")
+
+    threading.Thread(target=_run, name='bunq-reconcile-manual', daemon=True).start()
+    return jsonify({
+        'success': True,
+        'message': 'Reconcile started; see GET /api/admin/reconcile for the result.',
+    }), 202
+
 @app.route('/api/admin/data-quality', methods=['GET'])
 @requires_auth
 @rate_limit('general')
@@ -4921,27 +5632,9 @@ def get_transactions():
         else:
             selected_accounts = accounts
         
-        all_transactions = []
-        truncated_accounts = []
-        for account in selected_accounts:
-            account_id_value = get_obj_field(account, 'id_', 'id')
-            transactions, tx_meta = get_account_transactions(
-                account_id=account_id_value,
-                cutoff_date=cutoff_date,
-                sort_desc=sort_desc,
-                own_account_ids=own_account_ids,
-                own_ibans=own_ibans,
-                account_name=get_obj_field(account, 'description', 'display_name'),
-                return_meta=True
-            )
-            all_transactions.extend(transactions)
-            if tx_meta.get('truncated'):
-                truncated_accounts.append({
-                    'account_id': account_id_value,
-                    'account_name': get_obj_field(account, 'description', 'display_name') or f"Account {account_id_value}",
-                    'payment': tx_meta.get('payment'),
-                    'card_payment': tx_meta.get('card_payment'),
-                })
+        all_transactions, truncated_accounts, sync_errors = load_transactions(
+            selected_accounts, own_account_ids, own_ibans, cutoff_date,
+        )
 
         reconciled_count = reconcile_internal_transfers(all_transactions, own_account_ids)
         if reconciled_count > 0:
@@ -4950,7 +5643,6 @@ def get_transactions():
         if exclude_internal:
             all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]
 
-        persist_transactions(all_transactions)
         all_transactions.sort(key=lambda t: t['date'], reverse=sort_desc)
         total_count = len(all_transactions)
         amount_eur_missing_count = sum(
@@ -4971,6 +5663,7 @@ def get_transactions():
             'truncated': bool(truncated_accounts),
             'truncated_accounts': truncated_accounts,
             'amount_eur_missing_count': amount_eur_missing_count,
+            'sync_errors': sync_errors,
         }
         
         if cache_allowed():
@@ -4992,6 +5685,117 @@ def get_transactions():
             'success': False,
             'error': str(e)
         }), 500
+
+def normalize_bunq_payment(source_name, payment, account_id, account_name=None,
+                           own_account_ids=None, own_ibans=None):
+    """
+    Convert one bunq payment / card payment object into the dashboard transaction dict.
+    Returns None when the object has no usable created timestamp.
+    """
+    own_account_ids = own_account_ids or set()
+    own_ibans = own_ibans or set()
+    payment_id = get_obj_field(payment, 'id_', 'id', default='unknown')
+    description = get_obj_field(payment, 'description', 'label', default='') or ''
+    created_raw = get_obj_field(payment, 'created', 'created_at', 'date')
+    if not created_raw:
+        logger.warning(f"⚠️ Payment {payment_id} missing created timestamp; skipping")
+        return None
+    created = parse_bunq_datetime(
+        created_raw,
+        context=f"payment {payment_id} created"
+    )
+    if created is None:
+        logger.warning(f"⚠️ Payment {payment_id} has invalid created timestamp; skipping")
+        return None
+
+    is_internal_transfer = False
+    counterparty_alias = get_obj_field(payment, 'counterparty_alias', 'counterparty')
+    counterparty_monetary_account = get_obj_field(payment, 'monetary_account_counterparty')
+    merchant_reference = get_obj_field(payment, 'merchant_reference', 'merchant_reference_')
+    counterparty_account_id = (
+        get_obj_field(counterparty_monetary_account, 'id_', 'id', 'monetary_account_id')
+        or get_obj_field(counterparty_alias, 'monetary_account_id', 'id_', 'id')
+        or extract_alias_account_id(counterparty_alias)
+    )
+    counterparty_account_id = str(counterparty_account_id) if counterparty_account_id is not None else None
+    counterparty_name = extract_counterparty_name(counterparty_alias)
+    counterparty_account_name = get_obj_field(counterparty_monetary_account, 'description', 'display_name', 'name')
+    counterparty_iban = extract_alias_iban(counterparty_alias)
+    counterparty_account_ibans = set()
+    if counterparty_iban:
+        counterparty_account_ibans.add(counterparty_iban)
+    counterparty_account_ibans.update(extract_account_ibans(counterparty_monetary_account))
+    merchant_reference_iban = normalize_iban(merchant_reference)
+    current_account_id = str(account_id) if account_id is not None else None
+    if (
+        counterparty_account_id
+        and counterparty_account_id in own_account_ids
+        and counterparty_account_id != current_account_id
+    ):
+        # Deterministic: transfer between known own monetary accounts.
+        is_internal_transfer = True
+    elif counterparty_account_ibans and any(iban in own_ibans for iban in counterparty_account_ibans):
+        is_internal_transfer = True
+    elif merchant_reference_iban and merchant_reference_iban in own_ibans:
+        is_internal_transfer = True
+    amount_value, amount_currency = parse_monetary_value(
+        get_obj_field(payment, 'amount', 'monetary_value'),
+        context=f"payment {payment_id} amount"
+    )
+    rate_date = created.date().isoformat()
+    amount_eur_value, fx_rate_to_eur, fx_converted = convert_amount_to_eur(
+        amount_value,
+        amount_currency,
+        rate_date=rate_date,
+    )
+    merchant_category_code = (
+        extract_alias_merchant_category_code(counterparty_alias)
+        or get_obj_field(payment, 'merchant_category_code', 'mcc')
+    )
+    category = categorize_transaction(
+        description,
+        counterparty_name,
+        is_internal_transfer,
+        merchant_category_code=merchant_category_code,
+        amount=amount_value
+    )
+    merchant_candidates = [counterparty_account_name, counterparty_name, description, merchant_reference]
+    merchant_label = next(
+        (
+            value.strip()
+            for value in merchant_candidates
+            if isinstance(value, str) and value.strip() and not is_opaque_reference_value(value)
+        ),
+        None
+    )
+    if merchant_label is None:
+        merchant_label = next(
+            (value.strip() for value in merchant_candidates if isinstance(value, str) and value.strip()),
+            'Onbekend'
+        )
+
+    return {
+        'id': payment_id,
+        'date': created.isoformat(),
+        'amount': amount_value,
+        'currency': amount_currency,
+        'amount_eur': amount_eur_value,
+        'fx_rate_to_eur': fx_rate_to_eur,
+        'fx_converted': fx_converted,
+        'description': description,
+        'counterparty': counterparty_account_name or counterparty_name,
+        'counterparty_account_name': counterparty_account_name,
+        'counterparty_account_id': counterparty_account_id,
+        'counterparty_iban': next(iter(counterparty_account_ibans), None),
+        'merchant': merchant_label,
+        'category': category,
+        'type': get_obj_field(payment, 'type_', 'type'),
+        'source': source_name,
+        'account_id': account_id,
+        'account_name': account_name,
+        'is_internal_transfer': is_internal_transfer
+    }
+
 
 def get_account_transactions(
     account_id,
@@ -5031,126 +5835,28 @@ def get_account_transactions(
     entries = [('payment', item) for item in payments] + [('card_payment', item) for item in card_payments]
 
     transactions = []
-    own_account_ids = own_account_ids or set()
-    own_ibans = own_ibans or set()
     seen_transaction_keys = set()
 
     for source_name, payment in entries:
-        payment_id = get_obj_field(payment, 'id_', 'id', default='unknown')
-        description = get_obj_field(payment, 'description', 'label', default='') or ''
-        created_raw = get_obj_field(payment, 'created', 'created_at', 'date')
-        if not created_raw:
-            logger.warning(f"⚠️ Payment {payment_id} missing created timestamp; skipping")
-            continue
-        created = parse_bunq_datetime(
-            created_raw,
-            context=f"payment {payment_id} created"
+        tx = normalize_bunq_payment(
+            source_name, payment, account_id, account_name,
+            own_account_ids=own_account_ids, own_ibans=own_ibans,
         )
-        if created is None:
-            logger.warning(f"⚠️ Payment {payment_id} has invalid created timestamp; skipping")
+        if tx is None:
             continue
-
-        if cutoff_date and created < cutoff_date:
+        if cutoff_date and parse_bunq_datetime(tx['date']) < cutoff_date:
             continue
-
-        is_internal_transfer = False
-        counterparty_alias = get_obj_field(payment, 'counterparty_alias', 'counterparty')
-        counterparty_monetary_account = get_obj_field(payment, 'monetary_account_counterparty')
-        merchant_reference = get_obj_field(payment, 'merchant_reference', 'merchant_reference_')
-        counterparty_account_id = (
-            get_obj_field(counterparty_monetary_account, 'id_', 'id', 'monetary_account_id')
-            or get_obj_field(counterparty_alias, 'monetary_account_id', 'id_', 'id')
-            or extract_alias_account_id(counterparty_alias)
-        )
-        counterparty_account_id = str(counterparty_account_id) if counterparty_account_id is not None else None
-        counterparty_name = extract_counterparty_name(counterparty_alias)
-        counterparty_account_name = get_obj_field(counterparty_monetary_account, 'description', 'display_name', 'name')
-        counterparty_iban = extract_alias_iban(counterparty_alias)
-        counterparty_account_ibans = set()
-        if counterparty_iban:
-            counterparty_account_ibans.add(counterparty_iban)
-        counterparty_account_ibans.update(extract_account_ibans(counterparty_monetary_account))
-        merchant_reference_iban = normalize_iban(merchant_reference)
-        current_account_id = str(account_id) if account_id is not None else None
-        if (
-            counterparty_account_id
-            and counterparty_account_id in own_account_ids
-            and counterparty_account_id != current_account_id
-        ):
-            # Deterministic: transfer between known own monetary accounts.
-            is_internal_transfer = True
-        elif counterparty_account_ibans and any(iban in own_ibans for iban in counterparty_account_ibans):
-            is_internal_transfer = True
-        elif merchant_reference_iban and merchant_reference_iban in own_ibans:
-            is_internal_transfer = True
-        amount_value, amount_currency = parse_monetary_value(
-            get_obj_field(payment, 'amount', 'monetary_value'),
-            context=f"payment {payment_id} amount"
-        )
         dedupe_key = "|".join([
-            str(payment_id),
-            created.isoformat(),
-            str(amount_value),
-            str(amount_currency),
-            description,
+            str(tx['id']),
+            tx['date'],
+            str(tx['amount']),
+            str(tx['currency']),
+            tx['description'],
         ])
         if dedupe_key in seen_transaction_keys:
             continue
         seen_transaction_keys.add(dedupe_key)
-
-        rate_date = created.date().isoformat()
-        amount_eur_value, fx_rate_to_eur, fx_converted = convert_amount_to_eur(
-            amount_value,
-            amount_currency,
-            rate_date=rate_date,
-        )
-        merchant_category_code = (
-            extract_alias_merchant_category_code(counterparty_alias)
-            or get_obj_field(payment, 'merchant_category_code', 'mcc')
-        )
-        category = categorize_transaction(
-            description,
-            counterparty_name,
-            is_internal_transfer,
-            merchant_category_code=merchant_category_code,
-            amount=amount_value
-        )
-        merchant_candidates = [counterparty_account_name, counterparty_name, description, merchant_reference]
-        merchant_label = next(
-            (
-                value.strip()
-                for value in merchant_candidates
-                if isinstance(value, str) and value.strip() and not is_opaque_reference_value(value)
-            ),
-            None
-        )
-        if merchant_label is None:
-            merchant_label = next(
-                (value.strip() for value in merchant_candidates if isinstance(value, str) and value.strip()),
-                'Onbekend'
-            )
-
-        transactions.append({
-            'id': payment_id,
-            'date': created.isoformat(),
-            'amount': amount_value,
-            'currency': amount_currency,
-            'amount_eur': amount_eur_value,
-            'fx_rate_to_eur': fx_rate_to_eur,
-            'fx_converted': fx_converted,
-            'description': description,
-            'counterparty': counterparty_account_name or counterparty_name,
-            'counterparty_account_name': counterparty_account_name,
-            'counterparty_account_id': counterparty_account_id,
-            'counterparty_iban': next(iter(counterparty_account_ibans), None),
-            'merchant': merchant_label,
-            'category': category,
-            'type': get_obj_field(payment, 'type_', 'type'),
-            'source': source_name,
-            'account_id': account_id,
-            'account_name': account_name,
-            'is_internal_transfer': is_internal_transfer
-        })
+        transactions.append(tx)
 
     if return_meta:
         return transactions, {
@@ -5301,19 +6007,7 @@ def get_statistics():
         accounts = list_monetary_accounts()
         own_account_ids = extract_own_account_ids(accounts)
         own_ibans = extract_own_ibans(accounts)
-        all_transactions = []
-        
-        for account in accounts:
-            account_id_value = get_obj_field(account, 'id_', 'id')
-            transactions = get_account_transactions(
-                account_id=account_id_value,
-                cutoff_date=cutoff_date,
-                sort_desc=True,
-                own_account_ids=own_account_ids,
-                own_ibans=own_ibans,
-                account_name=get_obj_field(account, 'description', 'display_name')
-            )
-            all_transactions.extend(transactions)
+        all_transactions, _, _ = load_transactions(accounts, own_account_ids, own_ibans, cutoff_date)
 
         reconciled_count = reconcile_internal_transfers(all_transactions, own_account_ids)
         if reconciled_count > 0:

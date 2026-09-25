@@ -4,6 +4,22 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — transactie-opslag met incrementele sync en maandelijkse controle
+
+- Analyse vooraf: de DB was alleen een bijproduct. Transacties werden nooit uit de DB gelezen; elke request haalde de hele periode opnieuw uit Bunq (per pagina opnieuw, cache-key per pagina). Sleutel `transaction_cache` = hash incl. bedrag/omschrijving → wijzigingen bij Bunq gaven dubbele rijen; verwijderingen werden nooit verwerkt; `/api/statistics` persisteerde niet; `exclude_internal=true` filterde vóór opslaan.
+- `api_proxy.py`:
+  - nieuwe tabellen `bunq_transactions`, `bunq_sync_state`, `bunq_reconcile_runs`, `app_state`; `transaction_cache` niet meer gebruikt.
+  - `_list_payments_paginated`: `stop_at_id` (stop bij bekend nieuwste id) en `start_older_id` (backfill); zelfde gedocumenteerde `older_id`-paginatie.
+  - `normalize_bunq_payment()` uit `get_account_transactions` gehaald (gedeeld door live pad, sync en controle).
+  - `load_transactions()` / `sync_transactions()` / `read_stored_transactions()`: `/api/transactions` en `/api/statistics` lezen na incrementele sync uit de opslag.
+  - `run_full_reconcile()` + `reconcile_account_source()`: nieuw/gewijzigd/hersteld/verwijderd; verwijderen alleen binnen door Bunq aangeleverd bereik; te oude rijen blijven zichtbaar.
+  - scheduler (`start_reconcile_scheduler`, via Gunicorn `post_worker_init`), `is_reconcile_due`, file-lock; admin `GET/POST /api/admin/reconcile`.
+  - data-quality summary leest `bunq_transactions` (zonder verwijderde rijen), versheid via `last_seen_at`.
+- `requirements_web.txt`: `tzdata` (tijdzone voor schema in slim image). `.env.example`: optionele `SYNC_MIN_INTERVAL_SECONDS`/`RECONCILE_*`.
+- Docs: TROUBLESHOOTING EN/NL 5b, CLAUDE.md sectie Transaction store.
+- Tests: `tests/test_transaction_store.py` (29 tests; nep-Bunq via echte paginatie). Suite: 203 groen. Smoke-test Gunicorn met DB: tabellen aangemaakt, scheduler actief, admin-endpoint OK.
+- Let op: eerste load na deploy vult de nieuwe tabel vanuit Bunq (zelfde duur als voorheen); daarna alleen nieuwe data. Eerste maandelijkse controle draait de eerstvolgende nacht (nog geen succesvolle run deze maand).
+
 ### Opgeleverd — API key nog maar 1x ophalen bij opstarten
 
 - Voorheen per start 4+ Vaultwarden-fetches (~35s elk): preboot-import, preboot `init_bunq(refresh_key=True)`, import per Gunicorn-worker, en opnieuw bij elke worker-recycle (`max_requests`).
