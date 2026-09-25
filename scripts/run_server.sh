@@ -34,6 +34,7 @@ PY
 fi
 
 exec gunicorn \
+  --config "$(dirname "$0")/gunicorn_conf.py" \
   --bind "${BIND_HOST}:${BIND_PORT}" \
   --workers "${WORKERS}" \
   --threads "${THREADS}" \

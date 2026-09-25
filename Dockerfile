@@ -74,6 +74,7 @@ RUN pip install --no-cache-dir -r requirements_web.txt
 COPY api_proxy.py .
 COPY app.js .
 COPY scripts/run_server.sh ./scripts/run_server.sh
+COPY scripts/gunicorn_conf.py ./scripts/gunicorn_conf.py
 
 # Copy static files
 COPY index.html .

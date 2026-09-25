@@ -4,6 +4,14 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — Bunq warm-up per Gunicorn-worker
+
+- Nieuw `scripts/gunicorn_conf.py` (`post_worker_init`) → `api_proxy.start_background_bunq_init()`: elke worker initialiseert zijn eigen BunqContext direct bij start in een achtergrondthread.
+- `ensure_bunq_context_for_api_requests` wacht (max `BUNQ_WARMUP_WAIT_SECONDS`, default 60s) op een lopende warm-up, zodat eerste requests niet door de retry-throttle zonder Bunq-context doorlopen. Probes (`/api/live`, `/api/health`, `/api/ready`) wachten nooit.
+- `scripts/run_server.sh`: Gunicorn start met `--config scripts/gunicorn_conf.py`; `Dockerfile` kopieert het bestand.
+- Reden: preboot-init draait in een apart proces; workers hadden pas na het eerste echte API-request een Bunq-context. `/api/health` rapporteerde daardoor `api_key_only` (HTTP 503) terwijl alles werkte.
+- Tests: `tests/test_worker_warmup.py` (5 tests); smoke-test met echte Gunicorn (2 workers): beide workers starten init zonder request, `/api/live` 200.
+
 ### Opgeleverd — healthcheck start-periode 20s → 300s
 
 - `docker-compose.yml`, `Dockerfile`, `SYNOLOGY_INSTALL-NL.md`: healthcheck `start_period` van 20s naar 300s.
