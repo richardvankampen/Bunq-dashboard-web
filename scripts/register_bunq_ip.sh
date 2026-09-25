@@ -148,7 +148,7 @@ WHITELIST_RESULT="$($DOCKER_CMD exec \
 import json
 import os
 import sys
-from api_proxy import init_bunq, set_bunq_api_whitelist_ip
+from api_proxy import get_public_egress_ip, init_bunq, set_bunq_api_whitelist_ip
 
 target_ip = (os.getenv("TARGET_IP", "") or "").strip() or None
 
@@ -168,7 +168,11 @@ if not init_bunq(force_recreate=True, refresh_key=True, run_auto_whitelist=False
     print("ERROR: Bunq context force-recreate failed")
     sys.exit(1)
 
-print(json.dumps({"success": True, "method": "context_recreate", "ip": target_ip}, ensure_ascii=False, sort_keys=True))
+# Context recreate registers the container's egress IP, not TARGET_IP: report what was actually used.
+egress_ip = get_public_egress_ip()
+if target_ip and egress_ip and egress_ip != target_ip:
+    print(f"WARN: context registered egress IP {egress_ip}, which differs from requested TARGET_IP {target_ip}")
+print(json.dumps({"success": True, "method": "context_recreate", "ip": egress_ip, "requested_ip": target_ip}, ensure_ascii=False, sort_keys=True))
 PY
   2>&1)" || {
   echo "ERROR: whitelist update failed"

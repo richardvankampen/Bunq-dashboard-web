@@ -131,6 +131,9 @@ USE_VAULTWARDEN=true
 VAULTWARDEN_ACCESS_METHOD=cli
 VAULTWARDEN_URL=https://vault.yourdomain.com
 VAULTWARDEN_ITEM_NAME=Bunq API Key
+# Optional: pin the Vaultwarden hostname to a LAN IP inside the container
+# (when Docker DNS is stale/wrong). Format: <hostname>:<ip>
+# VAULTWARDEN_EXTRA_HOST=vault.yourdomain.com:192.168.1.100
 
 BUNQ_ENVIRONMENT=PRODUCTION
 FLASK_DEBUG=false

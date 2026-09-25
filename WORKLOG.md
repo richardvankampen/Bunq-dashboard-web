@@ -2,6 +2,26 @@
 
 Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies geen impact heeft.
 
+## 2026-09-25
+
+### Opgeleverd — repo-review fixes (hardcoded host, whitelist-rapportage, lint, docs)
+
+- `docker-compose.yml`: hardcoded `extra_hosts` (eigen Vaultwarden-hostnaam + LAN-IP) vervangen door `${VAULTWARDEN_EXTRA_HOST:-vaultwarden-extra-host.invalid:127.0.0.1}`.
+  - Reden: persoonlijke hostnaam/IP hoort niet in de repo en brak deploys voor anderen / bij volgende subnetwijziging.
+  - Actie op NAS: `VAULTWARDEN_EXTRA_HOST=<vault-hostnaam>:<nas-lan-ip>` in `.env` zetten vóór de volgende full stack deploy (quick redeploy behoudt de bestaande service-spec).
+- `.env.example`, `SYNOLOGY_INSTALL(.md|-NL.md)`, `TROUBLESHOOTING(.md|-NL.md)`: nieuwe optionele variabele `VAULTWARDEN_EXTRA_HOST` gedocumenteerd (EN/NL in sync).
+- `SYNOLOGY_INSTALL-NL.md`: voorbeeld-IP bij `--advertise-addr` terug naar generiek `192.168.1.100` (echte NAS-IP was in docs beland).
+- `scripts/register_bunq_ip.sh` (stap 4 fallback): rapporteert nu het daadwerkelijk geregistreerde container-egress-IP (`ip`) naast `requested_ip`, met `WARN` als die verschillen. Reden: context-recreate registreert het egress-IP, niet `TARGET_IP`; oude output toonde altijd `TARGET_IP`.
+- `api_proxy.py` lint (pyflakes schoon): ongebruikte `Response` import, 4 f-strings zonder placeholders en ongebruikte `global` in `ensure_bunq_initialized` verwijderd. Geen gedragswijziging.
+- Resultaat: `py_compile`, `sh -n`, `node --check` en `pyflakes` groen; compose YAML valide.
+
+## 2026-03-14
+
+### Opgeleverd — IP/DNS-herstel na subnetwijziging (achteraf gelogd)
+
+- `scripts/register_bunq_ip.sh` stap 4: eerst whitelist-API met bestaande context; bij ontbrekende context of SDK-beperking (`credential-password` endpoint) fallback naar force-recreate van de Bunq context vanaf het huidige publieke IP (commit `5c63dbd`).
+- `docker-compose.yml`: `extra_hosts` toegevoegd voor verouderde Docker DNS van de Vaultwarden-host na NAS-subnetwijziging (commit `95efdc1`; op 2026-09-25 geparametriseerd via `.env`).
+
 ## 2026-03-15
 
 ### Opgeleverd — betaal/spaarrekeningen detailmodal: transactielijst hersteld
