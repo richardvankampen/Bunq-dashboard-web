@@ -184,3 +184,15 @@ def test_classify_explicit_type_fields(ap):
     assert ap.classify_account_type({'id': 1, 'sub_type': 'SAVINGS'}) == 'savings'
     assert ap.classify_account_type({'id': 2, 'monetary_account_profile': {'profile_type': 'PAYMENT'},
                                      'description': 'Spaar'}) == 'checking'
+
+
+@pytest.mark.parametrize('description, expected', [
+    ('Shared household', 'checking'),     # 'share' only as a whole word
+    ('Stockholm reis', 'checking'),       # 'stock' only as a whole word
+    ('Share account', 'investment'),
+    ('Beleggingen', 'investment'),
+    ('Crypto wallet', 'investment'),
+    ('Vakantie sparen', 'savings'),
+])
+def test_account_name_hints_match_whole_words(ap, description, expected):
+    assert ap.classify_account_type(MonetaryAccountBank(description=description)) == expected

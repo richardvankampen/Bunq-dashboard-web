@@ -22,6 +22,12 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Sparen
+- Saldohistorie (`Spaarrekeningen (totaal)`, `Betaalrekeningen`) wordt voor elke dag van de periode opgebouwd uit de opgeslagen transacties, in plaats van snapshots van dagen waarop het dashboard toevallig open was (geen dips naar €0 meer, geen trends "sinds eerste gebruik"). Saldotrends tonen `n.v.t.` zonder beginsaldo, en een +/−-teken en kleur.
+- `Sparen` telt ook overboekingen naar spaarrekeningen die niet geselecteerd zijn, en herkent verplaatsingen tussen spaarrekeningen op rekening, IBAN of naam. `Savings Rate` heet nu `Spaarquote`. Beleggingsrekeningen tellen niet als sparen.
+- 50/30/20 en het actieplan noemen inkomen min uitgaven "overgehouden" (inclusief wat op de betaalrekening blijft), zodat het niet meer met `Sparen` wordt verward.
+- Rekeningnamen als "Shared household" of "Stockholm reis" worden niet meer als belegging ingedeeld.
+
 ### Categorieën
 - Trefwoorden matchen op hele woorden: namen en woorden als "Bart", "lens", "nov", "Gastouder", "Pinterest" of "Disney Plus" komen niet meer in Horeca, Vervoer, Utilities, Rente of Boodschappen terecht.
 - Meer merchantcodes van kaartbetalingen herkend (trein, parkeren, brandstof, vluchten, hotels, bouwmarkten, kleding, opticiens, ziekenhuizen); nieuwe categorieën `Reizen`, `Sport` en `Kinderopvang`; drogisterijen zijn `Zorg`, bij kaartbetaling én overboeking.

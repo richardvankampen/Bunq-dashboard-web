@@ -562,3 +562,95 @@ def test_new_rows_store_merchant_category_code(ap, store):
     assert payload['merchant_category_code'] == '5812'
     assert payload['category'] == 'Horeca'
     assert payload['counterparty_name'] == 'Shop 10'
+
+
+# --- balance history rebuilt from the store ------------------------------------
+
+def _summary(account_id, balance, account_type='savings', currency='EUR', balance_eur=None):
+    return {
+        'id': account_id, 'account_type': account_type, 'account_class': 'MonetaryAccountBank',
+        'balance': {'value': balance, 'currency': currency},
+        'balance_eur': {'value': balance if balance_eur is None else balance_eur, 'currency': 'EUR'},
+    }
+
+
+def test_reconstruct_walks_back_from_current_balance(ap):
+    today = NOW.date()
+    payments = {'1': [
+        (NOW - timedelta(days=2), 500.0),   # deposit two days ago
+        (NOW, -200.0),                      # withdrawal today
+    ]}
+    series, missing = ap.reconstruct_balance_series(
+        [_summary('1', 1500.0)], payments, {'1': None}, today - timedelta(days=3), today
+    )
+    assert missing == 0
+    assert [point['total'] for point in series['savings']] == [1200.0, 1700.0, 1700.0, 1500.0]
+    assert all(point['total'] == 0.0 for point in series['checking'])
+
+
+def test_reconstruct_uses_dutch_calendar_days(ap):
+    # 22:30 UTC on the 23rd is 00:30 on the 24th in Amsterdam (summer time).
+    late = datetime(2026, 9, 23, 22, 30, tzinfo=timezone.utc)
+    series, _ = ap.reconstruct_balance_series(
+        [_summary('1', 100.0)], {'1': [(late, 40.0)]}, {'1': None},
+        datetime(2026, 9, 23).date(), datetime(2026, 9, 24).date()
+    )
+    assert [point['total'] for point in series['savings']] == [60.0, 100.0]
+
+
+def test_reconstruct_starts_where_every_account_is_covered(ap):
+    today = NOW.date()
+    series, _ = ap.reconstruct_balance_series(
+        [_summary('1', 100.0), _summary('2', 50.0, 'checking')], {},
+        {'1': None, '2': today - timedelta(days=1)}, today - timedelta(days=5), today
+    )
+    assert [point['date'] for point in series['savings']] == [
+        (today - timedelta(days=1)).isoformat(), today.isoformat()
+    ]
+
+
+def test_reconstruct_converts_foreign_currency_at_current_rate(ap):
+    today = NOW.date()
+    series, _ = ap.reconstruct_balance_series(
+        [_summary('1', 200.0, currency='USD', balance_eur=180.0)], {'1': [(NOW, 100.0)]},
+        {'1': None}, today - timedelta(days=1), today
+    )
+    assert [point['total'] for point in series['savings']] == [90.0, 180.0]
+
+
+def test_balance_history_from_store(ap, store, monkeypatch):
+    store.add(10, 3, amount=500.0, description='Van betaalrekening')
+    store.add(11, 1, amount=-100.0, description='Naar betaalrekening')
+    _sync(ap, days=30)
+    account = {'id': 1, 'description': 'Spaarrekening', 'balance': {'value': '1400.00', 'currency': 'EUR'}}
+    monkeypatch.setattr(ap, '_BUNQ_CONTEXT_INITIALIZED', True)
+    monkeypatch.setattr(ap, 'get_monetary_accounts', lambda: [account])
+
+    history = ap.build_balance_history_from_store(5, now=NOW)
+    assert history['source'] == 'transactions'
+    totals = [point['total'] for point in history['series']['savings']]
+    assert totals == [1000.0, 1000.0, 1500.0, 1500.0, 1400.0, 1400.0]
+    assert history['latest_totals']['savings'] == 1400.0
+    assert [acc['id'] for acc in history['account_breakdown']['savings']] == [1]
+
+
+def test_balance_history_needs_a_synced_store(ap, store, monkeypatch):
+    account = {'id': 1, 'description': 'Spaarrekening', 'balance': {'value': '10.00', 'currency': 'EUR'}}
+    monkeypatch.setattr(ap, '_BUNQ_CONTEXT_INITIALIZED', True)
+    monkeypatch.setattr(ap, 'get_monetary_accounts', lambda: [account])
+    assert ap.build_balance_history_from_store(5, now=NOW) is None   # never synced -> snapshots
+
+
+def test_history_endpoint_falls_back_to_snapshots(ap, store, auth_client, monkeypatch):
+    store.add(10, 3, amount=500.0)
+    _sync(ap, days=100)
+    account = {'id': 1, 'description': 'Spaarrekening', 'balance': {'value': '500.00', 'currency': 'EUR'}}
+    monkeypatch.setattr(ap, 'get_monetary_accounts', lambda: [account])
+
+    monkeypatch.setattr(ap, '_BUNQ_CONTEXT_INITIALIZED', True)
+    data = auth_client.get('/api/history/balances?days=7').get_json()['data']
+    assert data['source'] == 'transactions'
+
+    monkeypatch.setattr(ap, '_BUNQ_CONTEXT_INITIALIZED', False)
+    data = auth_client.get('/api/history/balances?days=7').get_json()['data']
+    assert data['source'] == 'snapshots'

@@ -4,6 +4,20 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — spaarlogica gecontroleerd en gecorrigeerd
+
+- Review van spaarrekening-classificatie, `Sparen`/`Savings Rate`, saldo-tegels en 50/30/20; 8 bevindingen, allemaal opgelost:
+  1. Saldohistorie alleen uit snapshots (dagen waarop het dashboard open was; ontbrekende spaarsnapshot = €0-dip; oude classificatie) → `build_balance_history_from_store()` reconstrueert uit de transactie-opslag per Nederlandse dag; snapshots alleen als fallback.
+  2. Frontend-fallback reconstrueerde uit gefilterde data (interne overboekingen eruit → spaarlijn vlak) → ongefilterde data.
+  3. Rekeningnaam "Shared household"/"Stockholm reis" → belegging → korte hints alleen als heel woord (backend + frontend); frontend volgt backend-type.
+  4. `Sparen` = €0 als spaarrekeningen niet geselecteerd → overboekingen vanaf geselecteerde rekeningen naar niet-geselecteerde spaarrekeningen tellen mee.
+  5. Twee betekenissen van "sparen" → 50/30/20 en actieplan heten nu "overgehouden" (inkomen − uitgaven), met uitleg; `Sparen` = stortingen op spaarrekeningen.
+  6. Spaar→spaar alleen via backend-vlag → ook op id/IBAN/naam.
+  7. Saldotrend `0.0%` bij startwaarde 0, geen kleur, `N/A` → `n.v.t.`, +/−-teken en kleur.
+  8. `Savings Rate` → `Spaarquote`; hover-teksten voor Spaarrekeningen/Sparen/Spaarquote/50/30/20-fit.
+- Beslissing gebruiker: beleggingsrekeningen tellen niet mee in `Sparen`/`Spaarquote`.
+- Verificatie: pytest 273 groen, pyflakes schoon; headless Chromium met gemockte API (3 rekeningen): Sparen €1.005 (2× €500 + €5 rente, spaar→spaar €200 via IBAN uitgesloten), alleen betaalrekening geselecteerd → €1.000 via overboekingen, spaarsaldo-trend +13,2% uit ongefilterde data, label Spaarquote, geen JS-fouten.
+
 ### Opgeleverd — categorisatielogica gecontroleerd en gecorrigeerd
 
 - Review van `categorize_transaction` + frontendgebruik; 8 bevindingen, allemaal opgelost:

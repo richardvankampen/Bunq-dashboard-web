@@ -22,6 +22,12 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Savings
+- Balance history (`Spaarrekeningen (totaal)`, `Betaalrekeningen`) is rebuilt from the stored transactions for every day of the period, instead of snapshots from days the dashboard happened to be opened (no more dips to €0, no more "since first use" trends). Balance trends show `n.v.t.` without a start balance, and a +/− sign and colour.
+- `Sparen` also counts transfers into savings accounts that are not selected, and recognises moves between savings accounts by account, IBAN or name. `Savings Rate` is now `Spaarquote`. Investment accounts are not counted as savings.
+- 50/30/20 and the action plan call income minus spending "overgehouden" (it includes money left on the checking account), so it is no longer confused with `Sparen`.
+- Account names like "Shared household" or "Stockholm reis" are no longer classified as investments.
+
 ### Categories
 - Keywords match whole words: names and words like "Bart", "lens", "nov", "Gastouder", "Pinterest" or "Disney Plus" no longer land in Horeca, Vervoer, Utilities, Rente or Boodschappen.
 - More card merchant codes recognised (train, parking, fuel, flights, hotels, DIY stores, clothing, opticians, hospitals); new categories `Reizen`, `Sport` and `Kinderopvang`; drugstores are `Zorg` for both card payments and transfers.
