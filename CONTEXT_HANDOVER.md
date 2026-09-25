@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (pytest-suite toegevoegd in `tests/`)
+Laatste update: 2026-09-25 (categorisatie: `Rente` niet meer als `Wonen`)
 
 ## Canonieke status
 
@@ -183,12 +183,16 @@ Dit bestand is de actuele bron voor overdracht.
 - Bunq page-size/max-pages: moduleniveau constanten (`_BUNQ_ACCOUNT_PAGE_SIZE`, `_BUNQ_PAYMENT_PAGE_SIZE`, etc.).
 - `persist_transactions`: gebruikt `executemany` in plaats van per-rij `execute`.
 
+## Categorisatie (actueel)
+
+- `categorize_transaction`: `Wonen` matcht `huur`, `hypotheek`, `mortgage`, `vve` als substring, maar `rent` alleen als heel woord (`\brent\b`).
+- Uitgaande `rente`/`interest` (bijv. debetrente) valt onder `Rente`; hypotheekrente blijft `Wonen` via `hypotheek`.
+
 ## Tests (actueel)
 
 - `tests/` bevat een pytest-suite voor `api_proxy.py` (helpers, internal-transfer detectie/reconcile, categorisatie/accountclassificatie, auth/sessie/rate-limit, static allowlist, health-probes).
 - Draaien: `python -m pytest tests -q` in een venv met `requirements_web.txt`; geen Bunq/Vaultwarden/Docker nodig (`tests/conftest.py` zet de env vóór import).
 - CI: `.github/workflows/tests.yml` draait `pyflakes` + `pytest` op elke PR en push naar `main`.
-- Bekende categorisatie-eigenaardigheid: substring `'rent'` matcht ook `Rente` → uitgaande rente valt onder `Wonen`.
 
 ## Savings-incident status
 
