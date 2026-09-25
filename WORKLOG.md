@@ -4,6 +4,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — `config/` in `.gitignore`
+
+- `.gitignore`: `/config/` toegevoegd (runtime-state: Bunq context, `vaultwarden_device_id`, history-DB; bind-mount naar `/app/config`).
+- Reden: op de NAS was `config/vaultwarden_device_id` per ongeluk in een lokale commit beland; bij `git reset --hard origin/main` zou dat live bestand verwijderd worden (nieuw Vaultwarden device-ID). Op `main` stond niets onder `config/` in git.
+- NAS-herstel (handmatig uitgevoerd): lokale commits bewaard in branch `nas-backup-20260925` + stash, device-ID veiliggesteld, reset naar `origin/main`, compose-overrides verplaatst naar `.env` (`VAULTWARDEN_EXTRA_HOST` toegevoegd; `VAULTWARDEN_URL`/`ALLOWED_ORIGINS` stonden er al).
+
 ### Opgeleverd — dev-dependencies gesplitst
 
 - `requirements_web.txt`: `pytest` en `black` verwijderd; bevat nu alleen runtime-dependencies (dit bestand wordt in de Docker image geïnstalleerd).

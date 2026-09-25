@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (dev-tooling naar `requirements_dev.txt`)
+Laatste update: 2026-09-25 (`config/` in `.gitignore`)
 
 ## Canonieke status
 
@@ -187,6 +187,11 @@ Dit bestand is de actuele bron voor overdracht.
 
 - `categorize_transaction`: `Wonen` matcht `huur`, `hypotheek`, `mortgage`, `vve` als substring, maar `rent` alleen als heel woord (`\brent\b`).
 - Uitgaande `rente`/`interest` (bijv. debetrente) valt onder `Rente`; hypotheekrente blijft `Wonen` via `hypotheek`.
+
+## Repo-hygiëne (actueel)
+
+- `config/` staat in `.gitignore`: bevat alleen runtime-state (Bunq context, `vaultwarden_device_id`, `dashboard_data.db`) en mag nooit gecommit worden.
+- NAS-specifieke instellingen horen in `.env`, niet als lokale wijziging in `docker-compose.yml`.
 
 ## Tests (actueel)
 
