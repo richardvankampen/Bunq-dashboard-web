@@ -5,7 +5,7 @@
 Python/Flask web dashboard for Bunq bank data. Deployed on Synology NAS via Docker Swarm + Gunicorn.
 
 - Backend: `api_proxy.py` (Flask + Bunq SDK)
-- Dependencies: `requirements_web.txt`
+- Dependencies: `requirements_web.txt` (runtime) + `requirements_dev.txt` (tests/lint)
 - Deployment: `docker-compose.yml` + `scripts/`
 - Secrets: Vaultwarden (`USE_VAULTWARDEN=true`)
 - Auth: session-based with secure cookies
@@ -16,7 +16,8 @@ Python/Flask web dashboard for Bunq bank data. Deployed on Synology NAS via Dock
 |------|---------|
 | `api_proxy.py` | Main backend — all API routes and Bunq SDK logic |
 | `docker-compose.yml` | Docker Swarm stack config |
-| `requirements_web.txt` | Python dependencies |
+| `requirements_web.txt` | Python runtime dependencies (installed in Docker image) |
+| `requirements_dev.txt` | Dev/test tooling: pytest, pyflakes, black (includes runtime deps) |
 | `scripts/quick_redeploy.sh` | Fast redeploy without stack restart |
 | `scripts/install_or_update_synology.sh` | Full install/update on Synology |
 | `scripts/check_accounts_api.py` | Validate savings accounts in `/api/accounts` |
