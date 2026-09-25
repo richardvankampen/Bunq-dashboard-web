@@ -5,6 +5,26 @@
 - Nederlands (dit bestand): [RELEASE_NOTES-NL.md](RELEASE_NOTES-NL.md)
 - English: [RELEASE_NOTES.md](RELEASE_NOTES.md)
 
+## 2026-09-25
+
+### Data en snelheid
+- Transacties worden opgeslagen in SQLite: het dashboard leest uit de database, haalt bij Bunq alleen nieuwe transacties op (op de achtergrond als de periode al is opgeslagen) en hergebruikt de rekeninglijst een minuut.
+- Maandelijkse nachtelijke controle (de 1e, 03:00–06:00) tegen Bunq: nieuwe en gewijzigde transacties worden verwerkt; transacties die Bunq niet meer teruggeeft worden verborgen, behalve als ze ouder zijn dan Bunq nog aanlevert.
+- Opstarten: API key wordt 1x uit Vaultwarden gehaald; elke worker verbindt direct met Bunq; healthcheck-startperiode 300s.
+
+### Grafieken
+- Dagen worden in Nederlandse tijd geteld (een betaling om 00:30 hoort bij die dag).
+- `Sparen`: trend en mini-grafiek volgen nu het spaarbedrag zelf, en de tegel houdt rekening met de rekeningselectie.
+- Trends tonen `n.v.t.` in plaats van `0.0%` als de eerste helft van de periode geen waarde heeft.
+- Budgetdiscipline (50/30/20): maanden die maar deels in de periode vallen worden weggelaten, de lopende maand is gemarkeerd als `(lopend)`, terugbetalingen verlagen de uitgaven in plaats van als inkomen te tellen, maanden zonder inkomen zijn gaten; inzichten gebruiken de laatste volledige maand.
+- `Maandverdeling` (spreiding uitgaven): bedragklassen €0–5 … €1000+, top 4 categorieën op bedrag, aandeel van de betalingen per categorie.
+- Eén regel voor interne overboekingen in alle tegels en grafieken, volgens de instelling.
+- Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
+- Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
+
+### Tooling
+- Testsuite (`tests/`, pytest) en GitHub Actions CI; dev-tools verplaatst naar `requirements_dev.txt`.
+
 ## 2026-03-07
 
 ### Backend verbeteringen

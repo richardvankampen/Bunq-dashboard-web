@@ -5,6 +5,26 @@
 - English (this file): [RELEASE_NOTES.md](RELEASE_NOTES.md)
 - Dutch: [RELEASE_NOTES-NL.md](RELEASE_NOTES-NL.md)
 
+## 2026-09-25
+
+### Data and speed
+- Transactions are stored in SQLite: the dashboard reads from the database, only fetches new transactions from Bunq (in the background when the period is already stored), and reuses the account list for a minute.
+- Monthly nightly check (1st, 03:00–06:00 Dutch time) against Bunq: new and changed transactions are applied; transactions Bunq no longer returns are hidden, except when they are older than Bunq still serves.
+- Startup: the API key is fetched from Vaultwarden once; each worker connects to Bunq right away; healthcheck start period 300s.
+
+### Charts
+- Days are counted in Dutch time (a payment at 00:30 belongs to that day).
+- `Sparen`: trend and mini-chart now follow the savings figure itself, and the tile respects the account selection.
+- Trends show `n.v.t.` instead of `0.0%` when the first half of the period has no value.
+- Budget discipline (50/30/20): months only partly inside the period are left out, the running month is marked `(lopend)`, refunds lower spending instead of counting as income, months without income show as gaps; insights use the last complete month.
+- `Maandverdeling` (spending spread): amount buckets €0–5 … €1000+, top 4 categories by amount, share of payments per category.
+- One internal-transfer rule for all tiles and charts, following the setting.
+- Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
+- Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
+
+### Tooling
+- Test suite (`tests/`, pytest) and GitHub Actions CI; dev tools moved to `requirements_dev.txt`.
+
 ## 2026-03-07
 
 ### Backend improvements
