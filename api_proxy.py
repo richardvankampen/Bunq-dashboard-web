@@ -5167,8 +5167,11 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
         'ov-chip', 'ovchip', 'arriva', 'connexxion', 'ret ', 'gvb', 'qbuzz'
     ]):
         return 'Vervoer'
-    elif any(word in combined for word in ['huur', 'rent', 'hypotheek', 'mortgage', 'vve']):
+    # 'rent' as a whole word only: substring matching also hit 'rente' (interest).
+    elif any(word in combined for word in ['huur', 'hypotheek', 'mortgage', 'vve']) or re.search(r'\brent\b', combined):
         return 'Wonen'
+    elif any(word in combined for word in ['rente', 'interest']):
+        return 'Rente'
     elif any(word in combined for word in [
         'verzekering', 'insur', 'aegon', 'allianz', 'ohra', 'unive',
         'zilveren kruis', 'interpolis', 'vgz', 'cz ', 'menzis', 'fbto', 'asr '

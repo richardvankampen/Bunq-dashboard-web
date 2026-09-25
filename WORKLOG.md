@@ -4,6 +4,15 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — categorisatie: uitgaande rente niet meer als `Wonen`
+
+- `api_proxy.py` `categorize_transaction`: `rent` matcht nu alleen als heel woord (`\brent\b`); daarna nieuwe regel `rente`/`interest` → `Rente` (ongeacht teken).
+  - Reden: substring `'rent'` matchte ook `Rente`/`Debetrente`, waardoor uitgaande rente als `Wonen` (essentiële uitgave) telde.
+  - Hypotheekrente blijft `Wonen` (via `hypotheek`, dat eerder wordt gecontroleerd).
+- `tests/test_categorization.py`: regressietests (`Rente`, `Debetrente`, `Interest charge` → `Rente`; `Hypotheekrente`, `Rent march` → `Wonen`; `Parenting` → niet `Wonen`). Falen op oude code, slagen nu.
+- Effect: bestaande transacties met rente in de omschrijving verschuiven bij volgende ophaling van `Wonen` naar `Rente`.
+- Resultaat: 164 tests groen, `pyflakes` schoon.
+
 ### Opgeleverd — pytest-suite voor api_proxy.py
 
 - Nieuwe map `tests/` (158 tests, draait in <1s, geen netwerk/Bunq/Vaultwarden/Docker nodig):

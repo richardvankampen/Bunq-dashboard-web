@@ -68,6 +68,18 @@ def test_incoming_amount_rules(ap, description, expected):
     assert ap.categorize_transaction(description, 'Werkgever BV', amount=100) == expected
 
 
+@pytest.mark.parametrize('description, counterparty, expected', [
+    ('Rente', 'Bank', 'Rente'),                          # outgoing interest (regression: was Wonen)
+    ('Debetrente maart', '', 'Rente'),
+    ('Interest charge', '', 'Rente'),
+    ('Hypotheekrente', 'Hypotheek Bank', 'Wonen'),       # mortgage interest stays housing
+    ('Rent march', 'Landlord Ltd', 'Wonen'),             # whole-word 'rent' still matches
+    ('Parenting magazine', 'Uitgeverij', 'Overig'),      # 'rent' inside another word does not
+])
+def test_rent_vs_rente(ap, description, counterparty, expected):
+    assert ap.categorize_transaction(description, counterparty, amount=-25) == expected
+
+
 def test_incoming_rules_only_apply_to_positive_amounts(ap):
     assert ap.categorize_transaction('Refund order 123', 'Werkgever BV', amount=-100) == 'Overig'
 
