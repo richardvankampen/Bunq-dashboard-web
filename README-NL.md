@@ -171,6 +171,8 @@ python3 -m venv .venv
 .venv/bin/python -m pytest tests -q
 ```
 
+GitHub Actions (`.github/workflows/tests.yml`) draait dezelfde tests plus `pyflakes` bij elke pull request en push naar `main`.
+
 ---
 
 ## 📄 License

@@ -13,6 +13,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `test_categorization.py`: MCC-mapping, tekstregels, inkomende-bedragregels, `classify_account_type`.
   - `test_auth_routes.py`: login/logout/status, cookie-flags, login rate limit (5/min → 429), 401 op beschermde endpoints, verlopen/ongeldige sessie, static allowlist (geen `api_proxy.py`/`.env` etc.), liveness/readiness.
 - `README.md` / `README-NL.md`: sectie over tests draaien toegevoegd.
+- `.github/workflows/tests.yml`: GitHub Actions draait `pyflakes` + `pytest` (Python 3.11, gelijk aan Dockerfile) op elke PR en push naar `main`.
 - Bevinding (niet gewijzigd): `categorize_transaction` matcht `'rent'` als substring, waardoor een uitgaande `Rente`-betaling als `Wonen` wordt gecategoriseerd.
 - Lokale noot: `bunq-sdk==1.28.0` bouwt niet met Debian's systeem-setuptools (`install_layout`-fout); in een venv met recente setuptools wel.
 - Resultaat: `pytest tests` 158 passed; `pyflakes` schoon.
