@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (API key 1x ophalen bij opstarten via Gunicorn --preload)
+Laatste update: 2026-09-25 (transactie-opslag: incrementele sync + maandelijkse controle)
 
 ## Canonieke status
 
@@ -187,6 +187,15 @@ Dit bestand is de actuele bron voor overdracht.
 
 - `categorize_transaction`: `Wonen` matcht `huur`, `hypotheek`, `mortgage`, `vve` als substring, maar `rent` alleen als heel woord (`\brent\b`).
 - Uitgaande `rente`/`interest` (bijv. debetrente) valt onder `Rente`; hypotheekrente blijft `Wonen` via `hypotheek`.
+
+## Transactie-opslag (actueel)
+
+- Transacties staan in SQLite-tabel `bunq_transactions` (sleutel `account_id + source + bunq_id`, `payload_json` = volledige transactie, `content_hash` voor wijzigingsdetectie, `deleted_at` = soft delete). Oude tabel `transaction_cache` wordt niet meer gebruikt (blijft ongemoeid in bestaande DB's).
+- `/api/transactions` en `/api/statistics` lezen uit de opslag na een incrementele sync (`load_transactions` → `sync_transactions`): alleen pagina's nieuwer dan het opgeslagen nieuwste id (`stop_at_id`), eenmalige backfill (`start_older_id`) bij een langere periode dan opgeslagen. Hooguit 1 Bunq-check per `SYNC_MIN_INTERVAL_SECONDS` (60s) per rekening/bron, dus pagina 2+ komt uit de opslag.
+- Sync-bookmark per rekening/bron in `bunq_sync_state` (`newest_bunq_id`, `oldest_bunq_id`, `covered_from`, `history_complete`).
+- Maandelijkse nachtelijke controle (`run_full_reconcile`): 1e van de maand, 03:00–06:00 Europe/Amsterdam (instelbaar via `RECONCILE_*`), 1 worker via file-lock `config/reconcile.lock`, gemiste nacht wordt de volgende nacht ingehaald, retry na 1 uur bij fout. Haalt alles op tot de oudste opgeslagen transactie en: voegt nieuwe toe, werkt gewijzigde bij, herstelt teruggekeerde, markeert ontbrekende als verwijderd **alleen binnen het bereik dat Bunq nog aanlevert** (bij `cutoff_reached` de hele opgeslagen periode, anders vanaf de oudste teruggegeven transactie). Oudere rijen blijven bewaard en zichtbaar. Bij een fout per rekening: geen verwijderingen voor die rekening.
+- Runs worden gelogd in `bunq_reconcile_runs`; status via `GET /api/admin/reconcile`, handmatig starten via `POST /api/admin/reconcile` of `run_reconcile_exclusive('manual')` (TROUBLESHOOTING 5b).
+- Zonder `DATA_DB_ENABLED` blijft het oude gedrag (live ophalen per request).
 
 ## Opstartflow (actueel)
 

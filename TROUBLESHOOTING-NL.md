@@ -213,6 +213,27 @@ Als dit faalt: run eerst full maintenance en herhaal checker.
 
 ## Veel voorkomende problemen
 
+### 5b. Transactie-opslag en maandelijkse controle
+
+Transacties worden opgeslagen in SQLite (`config/dashboard_data.db`, tabel `bunq_transactions`). Bij het laden van het dashboard vraagt de app Bunq alleen om transacties die nieuwer zijn dan de nieuwste opgeslagen transactie (hooguit eens per `SYNC_MIN_INTERVAL_SECONDS`), plus eenmalig oudere pagina's als je een langere periode kiest dan er is opgeslagen.
+
+Eens per maand (standaard: de 1e, 03:00–06:00 Europe/Amsterdam) haalt de app alles opnieuw op tot aan de oudste opgeslagen transactie en verwerkt de verschillen:
+- nieuwe transacties worden toegevoegd, gewijzigde bijgewerkt;
+- transacties die Bunq niet meer teruggeeft worden als verwijderd gemarkeerd en verborgen (de rij blijft in de database);
+- transacties die ouder zijn dan wat Bunq nog aanlevert blijven bewaard en zichtbaar.
+
+Laatste runs bekijken:
+```bash
+sudo docker service logs --since 48h bunq_bunq-dashboard 2>&1 | grep "Reconcile"
+```
+
+Nu een controle draaien (zelfde logica als de maandelijkse run):
+```bash
+BUNQ_CONTAINER=$(sudo docker ps -q -f name=bunq_bunq-dashboard | head -n1)
+sudo docker exec "$BUNQ_CONTAINER" python3 -c "import api_proxy; print(api_proxy.run_reconcile_exclusive('manual'))"
+```
+Via de API (ingelogd): `POST /api/admin/reconcile` (starten) en `GET /api/admin/reconcile` (status en recente runs).
+
 ### 6. CORS errors
 
 Controleer `.env`:

@@ -194,6 +194,27 @@ Actions:
 - increase page tuning env vars if needed
 - verify FX conversion settings
 
+### 5b. Transaction store and monthly reconcile
+
+Transactions are stored in SQLite (`config/dashboard_data.db`, table `bunq_transactions`). A dashboard load only asks Bunq for transactions newer than the newest stored one (at most once per `SYNC_MIN_INTERVAL_SECONDS`), plus older pages once when you pick a longer period than is stored.
+
+Once a month (default: the 1st, 03:00–06:00 Europe/Amsterdam) the app refetches everything back to the oldest stored transaction and applies the differences:
+- new transactions are added, changed ones updated;
+- transactions Bunq no longer returns are marked deleted and hidden (the row stays in the database);
+- transactions older than what Bunq still serves are kept and stay visible.
+
+Check the last runs:
+```bash
+sudo docker service logs --since 48h bunq_bunq-dashboard 2>&1 | grep "Reconcile"
+```
+
+Run a reconcile now (same logic as the monthly run):
+```bash
+BUNQ_CONTAINER=$(sudo docker ps -q -f name=bunq_bunq-dashboard | head -n1)
+sudo docker exec "$BUNQ_CONTAINER" python3 -c "import api_proxy; print(api_proxy.run_reconcile_exclusive('manual'))"
+```
+Logged-in API alternative: `POST /api/admin/reconcile` (start) and `GET /api/admin/reconcile` (status and recent runs).
+
 ### 6. New frontend changes not visible
 
 Likely browser cache issue.
