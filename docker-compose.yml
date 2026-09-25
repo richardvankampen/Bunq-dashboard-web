@@ -85,8 +85,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      # Startup fetches the API key from Vaultwarden (~35s per fetch, several fetches)
-      # before Gunicorn serves requests; failed checks during this period don't count.
+      # Startup fetches the API key from Vaultwarden (~35s) and initialises Bunq before
+      # Gunicorn serves requests; failed checks during this period don't count.
       start_period: 300s
 
 # Network configuration

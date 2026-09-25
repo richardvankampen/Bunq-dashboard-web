@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (healthcheck start_period 300s + Bunq warm-up per worker)
+Laatste update: 2026-09-25 (API key 1x ophalen bij opstarten via Gunicorn --preload)
 
 ## Canonieke status
 
@@ -188,11 +188,17 @@ Dit bestand is de actuele bron voor overdracht.
 - `categorize_transaction`: `Wonen` matcht `huur`, `hypotheek`, `mortgage`, `vve` als substring, maar `rent` alleen als heel woord (`\brent\b`).
 - Uitgaande `rente`/`interest` (bijv. debetrente) valt onder `Rente`; hypotheekrente blijft `Wonen` via `hypotheek`.
 
+## Opstartflow (actueel)
+
+- Gunicorn draait met `--preload`: de API key wordt 1x uit Vaultwarden gehaald (import in de master); workers erven hem, ook na recycling (`max_requests`).
+- `scripts/gunicorn_conf.py`: `on_starting` (master) → `run_preboot_init()` (context-file + auto-whitelist, `BUNQ_PREBOOT_INIT`); `post_fork` → `reset_bunq_state_after_fork()`; `post_worker_init` → `start_background_bunq_init()` (context restore per worker).
+- Na key-rotatie in Vaultwarden: service herstarten (`docker service update --force`).
+
 ## Healthcheck (actueel)
 
 - Elke Gunicorn-worker start bij opstarten een Bunq-init in de achtergrond (`scripts/gunicorn_conf.py` → `start_background_bunq_init`); `/api/health` is daardoor kort na start al accuraat. API-requests wachten max `BUNQ_WARMUP_WAIT_SECONDS` (60s) op die warm-up.
 
-- Healthcheck op `/api/live` met `start_period: 300s` (compose + Dockerfile): opstarten haalt de API key meerdere keren uit Vaultwarden (~35s per keer) voordat Gunicorn antwoordt.
+- Healthcheck op `/api/live` met `start_period: 300s` (compose + Dockerfile) als marge voor key-fetch (~35s) + Bunq-init bij opstarten.
 - `VAULTWARDEN_ITEM_NAME` is hoofdlettergevoelig (exacte match op item-naam); productie-item heet `Bunq API Key`.
 
 ## Repo-hygiëne (actueel)

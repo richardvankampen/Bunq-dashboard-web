@@ -4371,6 +4371,33 @@ def ensure_bunq_context_for_api_requests():
     _BUNQ_WARMUP_DONE.wait(timeout=BUNQ_WARMUP_WAIT_SECONDS)
     ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=False)
 
+def run_preboot_init():
+    """
+    One-time Bunq init in the Gunicorn master (on_starting hook, after --preload).
+    Reuses the API key fetched at import instead of fetching it again, then
+    creates/restores the context file and runs the auto-whitelist once.
+    """
+    if not get_bool_env('BUNQ_PREBOOT_INIT', True):
+        return None
+    ok = init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=True)
+    if ok:
+        logger.info("Preboot init: Bunq API initialized.")
+    else:
+        logger.warning("Preboot init: Bunq API not initialized (service continues; lazy init stays active).")
+    return ok
+
+def reset_bunq_state_after_fork():
+    """
+    Called in each forked worker (post_fork hook). The worker inherits the API key
+    from the master, but must build its own BunqContext: clear the inherited init
+    state so the worker warm-up restores the context from CONFIG_FILE.
+    """
+    global _BUNQ_CONTEXT_INITIALIZED, _BUNQ_INIT_LAST_ATTEMPT_TS, _BUNQ_INIT_LAST_ERROR, _BUNQ_INIT_LOCK
+    _BUNQ_CONTEXT_INITIALIZED = False
+    _BUNQ_INIT_LAST_ATTEMPT_TS = 0.0
+    _BUNQ_INIT_LAST_ERROR = None
+    _BUNQ_INIT_LOCK = threading.Lock()
+
 def start_background_bunq_init():
     """
     Warm up the Bunq context in this process without blocking it.

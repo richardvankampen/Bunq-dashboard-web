@@ -168,13 +168,15 @@ Vaultwarden hostname resolves to the wrong/old IP inside the container (e.g. aft
 
 ### 4b. Container restarts with `non-zero exit (137): unhealthy container`
 
-Startup fetches the API key from Vaultwarden (several fetches of ~35s each) before Gunicorn answers `/api/live`. The healthcheck `start_period` (300s) covers this. If an older deployment still uses a short start period, apply it to the running service without redeploying:
+Startup fetches the API key from Vaultwarden (~35s, once, in the Gunicorn master) and initialises Bunq before Gunicorn answers `/api/live`. The healthcheck `start_period` (300s) covers this. If an older deployment still uses a short start period, apply it to the running service without redeploying:
 
 ```bash
 sudo docker service update --health-start-period 300s bunq_bunq-dashboard
 ```
 
 Also check the logs for `Vault item '...' not found`: `VAULTWARDEN_ITEM_NAME` in `.env` must match the vault item name exactly (case-sensitive).
+
+After rotating the Bunq API key in Vaultwarden, restart the service (`sudo docker service update --force bunq_bunq-dashboard`): workers reuse the key fetched at startup.
 
 ### 5. Charts load but numbers look incomplete
 
