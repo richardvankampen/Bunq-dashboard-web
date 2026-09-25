@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (repo-review fixes: `VAULTWARDEN_EXTRA_HOST`, whitelist-rapportage register_bunq_ip.sh, lint)
+Laatste update: 2026-09-25 (pytest-suite toegevoegd in `tests/`)
 
 ## Canonieke status
 
@@ -182,6 +182,12 @@ Dit bestand is de actuele bron voor overdracht.
 - `USE_VAULTWARDEN`, `CACHE_ENABLED`, `DATA_DB_ENABLED`, `FX_ENABLED`: moduleniveau constanten via `get_bool_env`.
 - Bunq page-size/max-pages: moduleniveau constanten (`_BUNQ_ACCOUNT_PAGE_SIZE`, `_BUNQ_PAYMENT_PAGE_SIZE`, etc.).
 - `persist_transactions`: gebruikt `executemany` in plaats van per-rij `execute`.
+
+## Tests (actueel)
+
+- `tests/` bevat een pytest-suite voor `api_proxy.py` (helpers, internal-transfer detectie/reconcile, categorisatie/accountclassificatie, auth/sessie/rate-limit, static allowlist, health-probes).
+- Draaien: `python -m pytest tests -q` in een venv met `requirements_web.txt`; geen Bunq/Vaultwarden/Docker nodig (`tests/conftest.py` zet de env vóór import).
+- Bekende categorisatie-eigenaardigheid: substring `'rent'` matcht ook `Rente` → uitgaande rente valt onder `Wonen`.
 
 ## Savings-incident status
 

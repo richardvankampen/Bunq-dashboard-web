@@ -168,6 +168,18 @@ When to use `NO_CACHE=true`:
 
 ---
 
+## 🧪 Tests (development)
+
+Backend unit/route tests live in `tests/` and run without Bunq, Vaultwarden, or Docker (all external access is disabled via environment variables in `tests/conftest.py`):
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements_web.txt
+.venv/bin/python -m pytest tests -q
+```
+
+---
+
 ## 📄 License
 
 MIT License - See [LICENSE](LICENSE)

@@ -4,6 +4,19 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — pytest-suite voor api_proxy.py
+
+- Nieuwe map `tests/` (158 tests, draait in <1s, geen netwerk/Bunq/Vaultwarden/Docker nodig):
+  - `conftest.py`: zet env vóór import (`USE_VAULTWARDEN=false`, lege `BUNQ_API_KEY`, `BUNQ_INIT_AUTO_ATTEMPT=false`, `DATA_DB_ENABLED=false`, vaste testcredentials) en reset de globale rate limiter per test.
+  - `test_helpers.py`: env/config helpers, `safe_float`, `parse_monetary_value`, `clamp_days`, `parse_pagination`, IBAN/alias-extractie, datetime/IPv4-validatie, whitelist-helpers, `RateLimiter` (limieten, window, sweep).
+  - `test_internal_transfers.py`: `is_own_bunq_account` (Triodos `MonetaryAccountExternal` niet intern, `ExternalSavings` wel), eigen account-ids/IBANs, `reconcile_internal_transfers` (payment-id + minuut + bedrag + valuta, tegengesteld teken, verschillende eigen rekeningen).
+  - `test_categorization.py`: MCC-mapping, tekstregels, inkomende-bedragregels, `classify_account_type`.
+  - `test_auth_routes.py`: login/logout/status, cookie-flags, login rate limit (5/min → 429), 401 op beschermde endpoints, verlopen/ongeldige sessie, static allowlist (geen `api_proxy.py`/`.env` etc.), liveness/readiness.
+- `README.md` / `README-NL.md`: sectie over tests draaien toegevoegd.
+- Bevinding (niet gewijzigd): `categorize_transaction` matcht `'rent'` als substring, waardoor een uitgaande `Rente`-betaling als `Wonen` wordt gecategoriseerd.
+- Lokale noot: `bunq-sdk==1.28.0` bouwt niet met Debian's systeem-setuptools (`install_layout`-fout); in een venv met recente setuptools wel.
+- Resultaat: `pytest tests` 158 passed; `pyflakes` schoon.
+
 ### Opgeleverd — repo-review fixes (hardcoded host, whitelist-rapportage, lint, docs)
 
 - `docker-compose.yml`: hardcoded `extra_hosts` (eigen Vaultwarden-hostnaam + LAN-IP) vervangen door `${VAULTWARDEN_EXTRA_HOST:-vaultwarden-extra-host.invalid:127.0.0.1}`.
