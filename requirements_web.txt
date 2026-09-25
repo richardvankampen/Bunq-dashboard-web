@@ -13,6 +13,4 @@ requests==2.32.3  # HTTP client (Vaultwarden)
 python-dotenv==1.2.1  # Environment variable management
 flask-caching==2.3.1  # Response caching for better performance
 
-# Development dependencies (optional)
-pytest==9.0.2  # For testing
-black==26.1.0  # Code formatting
+# Development/test tooling lives in requirements_dev.txt (not installed in the Docker image).

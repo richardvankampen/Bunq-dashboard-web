@@ -1,0 +1,7 @@
+# Bunq Dashboard Web - Development/test requirements
+# Not installed in the Docker image. Includes the runtime requirements.
+-r requirements_web.txt
+
+pytest==9.0.2    # Test runner (tests/)
+pyflakes==3.4.0  # Lint (also run in CI)
+black==26.1.0    # Code formatting

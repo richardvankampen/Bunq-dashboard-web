@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (categorisatie: `Rente` niet meer als `Wonen`)
+Laatste update: 2026-09-25 (dev-tooling naar `requirements_dev.txt`)
 
 ## Canonieke status
 
@@ -191,8 +191,9 @@ Dit bestand is de actuele bron voor overdracht.
 ## Tests (actueel)
 
 - `tests/` bevat een pytest-suite voor `api_proxy.py` (helpers, internal-transfer detectie/reconcile, categorisatie/accountclassificatie, auth/sessie/rate-limit, static allowlist, health-probes).
-- Draaien: `python -m pytest tests -q` in een venv met `requirements_web.txt`; geen Bunq/Vaultwarden/Docker nodig (`tests/conftest.py` zet de env vóór import).
-- CI: `.github/workflows/tests.yml` draait `pyflakes` + `pytest` op elke PR en push naar `main`.
+- Draaien: `python -m pytest tests -q` in een venv met `requirements_dev.txt` (bevat ook `requirements_web.txt`); geen Bunq/Vaultwarden/Docker nodig (`tests/conftest.py` zet de env vóór import).
+- Dependencies gesplitst: `requirements_web.txt` = alleen runtime (Docker image); `requirements_dev.txt` = runtime + `pytest`, `pyflakes`, `black`.
+- CI: `.github/workflows/tests.yml` installeert `requirements_dev.txt` en draait `pyflakes` + `pytest` op elke PR en push naar `main`.
 
 ## Savings-incident status
 

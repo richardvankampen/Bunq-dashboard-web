@@ -4,6 +4,14 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — dev-dependencies gesplitst
+
+- `requirements_web.txt`: `pytest` en `black` verwijderd; bevat nu alleen runtime-dependencies (dit bestand wordt in de Docker image geïnstalleerd).
+- Nieuw `requirements_dev.txt`: `-r requirements_web.txt` + `pytest`, `pyflakes`, `black` (versies gepind).
+- `.github/workflows/tests.yml`: installeert `requirements_dev.txt` (pip-cache key op beide bestanden).
+- `README.md` / `README-NL.md`, `CLAUDE.md`: test-instructies en dependency-overzicht bijgewerkt.
+- Effect: Docker image bevat geen test/format-tooling meer (kleiner, minder attack surface). De pip-layer wordt bij de volgende image-build opnieuw gebouwd omdat `requirements_web.txt` wijzigt.
+
 ### Opgeleverd — categorisatie: uitgaande rente niet meer als `Wonen`
 
 - `api_proxy.py` `categorize_transaction`: `rent` matcht nu alleen als heel woord (`\brent\b`); daarna nieuwe regel `rente`/`interest` → `Rente` (ongeacht teken).

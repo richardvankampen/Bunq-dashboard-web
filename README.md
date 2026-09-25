@@ -174,7 +174,7 @@ Backend unit/route tests live in `tests/` and run without Bunq, Vaultwarden, or 
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements_web.txt
+.venv/bin/pip install -r requirements_dev.txt
 .venv/bin/python -m pytest tests -q
 ```
 
