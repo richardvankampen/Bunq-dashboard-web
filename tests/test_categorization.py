@@ -90,6 +90,71 @@ def test_handles_missing_text_and_bad_amount(ap):
     assert ap.categorize_transaction('Refund order 123', '', amount='not-a-number') == 'Overig'
 
 
+@pytest.mark.parametrize('description, counterparty', [
+    # Keywords must match whole words: these used to hit 'bar', 'ns', 'ov', 'bus',
+    # 'gas', 'interest', 'shop', 'action', 'hema', 'coop', 'aldi' and 'dirk'.
+    ('Bart de Vries', 'Bart de Vries'),
+    ('Kapper Barbershop', ''),
+    ('Terugbetaling lens', 'Pieter'),
+    ('Factuur 12 nov 2025', ''),
+    ('Abonnement', 'Bunq Business'),
+    ('Las Vegas trip', ''),
+    ('Pinterest ads', ''),
+    ('Workshop fotografie', ''),
+    ('Payment transaction fee', ''),
+    ('Thema avond', ''),
+    ('Cooper', ''),
+    ('Rinaldi', ''),
+    ('Tikkie', 'Dirk Jansen'),
+    ('Burgerzaken', ''),
+])
+def test_keywords_do_not_match_inside_other_words(ap, description, counterparty):
+    assert ap.categorize_transaction(description, counterparty, amount=-20) == 'Overig'
+
+
+@pytest.mark.parametrize('description, counterparty, expected', [
+    ('Disney Plus', 'Disney', 'Abonnementen'),          # not the Plus supermarket
+    ('PLUS Tiel', '', 'Boodschappen'),
+    ('Training', 'Basic-Fit', 'Sport'),                  # not 'train' -> Vervoer
+    ('Gastouderbureau', '', 'Kinderopvang'),             # not 'gas' -> Utilities
+    ('Kinderopvang maart', '', 'Kinderopvang'),
+    ('Ticket', 'KLM', 'Reizen'),
+    ('Reservering', 'Booking.com', 'Reizen'),
+    ('Aankoop', 'Gamma', 'Shopping'),
+    ('Autohuur', 'Sixt', 'Vervoer'),                     # not 'huur' -> Wonen
+    ('Premie zorgverzekering', '', 'Verzekering'),
+    ('Aankoop', 'Kruidvat', 'Zorg'),                     # same as drugstore MCC 5912
+    ('Café de Zwaan', '', 'Horeca'),                     # accents are ignored
+    ('Pathe Arena', '', 'Entertainment'),
+    ('Terugbetaling', 'Dirk van den Broek', 'Boodschappen'),
+])
+def test_specific_rules_win(ap, description, counterparty, expected):
+    assert ap.categorize_transaction(description, counterparty, amount=-20) == expected
+
+
+@pytest.mark.parametrize('mcc, expected', [
+    ('4112', 'Vervoer'), ('7523', 'Vervoer'), ('5983', 'Vervoer'), ('4511', 'Reizen'), ('3050', 'Reizen'),
+    ('7011', 'Reizen'), ('5200', 'Shopping'), ('5310', 'Shopping'), ('5691', 'Shopping'), ('8043', 'Zorg'),
+    ('8062', 'Zorg'), ('7997', 'Sport'), ('8351', 'Kinderopvang'),
+])
+def test_added_mcc_codes(ap, mcc, expected):
+    assert ap.categorize_transaction('x', 'y', merchant_category_code=mcc, amount=-10) == expected
+
+
+@pytest.mark.parametrize('description, counterparty, mcc, expected', [
+    ('Tikkie pizza', 'Jan', None, 'Refund'),                      # money back for a shared dinner
+    ('Albert Heijn', '', '5411', 'Refund'),                       # card reversal
+    ('Jaarafrekening', 'Eneco', None, 'Refund'),
+    ('Toeslag', 'Belastingdienst', None, 'Belastingen'),          # allowances stay tax
+    ('Huurtoeslag', 'Belastingdienst', None, 'Belastingen'),
+    ('Declaratie', 'Zilveren Kruis', None, 'Verzekering'),
+    ('Terugbetaling', 'Wagenaar', None, 'Refund'),
+    ('Voor de boodschappen', 'Wagenaar', None, 'Overig'),         # 'wage' is a whole word only
+])
+def test_incoming_money(ap, description, counterparty, mcc, expected):
+    assert ap.categorize_transaction(description, counterparty, merchant_category_code=mcc, amount=25) == expected
+
+
 # --- classify_account_type ---------------------------------------------------
 
 def test_classify_none_is_checking(ap):

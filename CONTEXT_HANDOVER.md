@@ -207,8 +207,13 @@ Dit bestand is de actuele bron voor overdracht.
 
 ## Categorisatie (actueel)
 
-- `categorize_transaction`: `Wonen` matcht `huur`, `hypotheek`, `mortgage`, `vve` als substring, maar `rent` alleen als heel woord (`\brent\b`).
-- Uitgaande `rente`/`interest` (bijv. debetrente) valt onder `Rente`; hypotheekrente blijft `Wonen` via `hypotheek`.
+- `categorize_transaction` (backend, bij ophalen): intern → `Internal Transfer`; inkomend: refund-woorden → `Refund`, rente → `Rente`, salaris → `Salaris`; dan MCC (`_MCC_CATEGORIES`), dan tekstregels (`_TEXT_RULES`, eerste match wint); anders `Overig`.
+- Tekstregels matchen op beschrijving + tegenrekeningnaam, kleine letters, accenten genegeerd. `words` alleen als heel woord (dus `bar` ≠ `Bart`, `ns` ≠ `lens`, `plus` ≠ `Disney Plus`); `stems` ook binnen Nederlandse samenstellingen (`zorgverzekering`, `debetrente`, `huurtoeslag`) en daarom alleen lange, eenduidige stammen.
+- Volgorde: Abonnementen → Boodschappen → Horeca → Reizen → Vervoer → Belastingen (incl. `toeslag`) → Wonen → Rente → Verzekering → Kinderopvang → Utilities → Sport → Entertainment → Zorg → Shopping. Hypotheekrente = `Wonen`; drogisterij (Kruidvat/Etos, MCC 5912) = `Zorg`; bouwmarkt = `Shopping`; autohuur = `Vervoer`.
+- Inkomend geld in een uitgavencategorie (kaartretour, Tikkie voor gedeeld etentje, eindafrekening energie) wordt `Refund`; alleen `Belastingen` (toeslagen/teruggave), `Verzekering` (uitkering), `Wonen`, `Rente`, `Salaris`, `Overig` blijven staan.
+- Nieuwe categorieën: `Reizen`, `Sport`, `Kinderopvang` (noodzakelijk + vaste last in de frontend).
+- Payload bewaart `merchant_category_code` en `counterparty_name`. Bij een regelwijziging `CATEGORIZATION_VERSION` ophogen: `migrate_stored_categories()` hercategoriseert bij opstart (import, 1× in de Gunicorn-master) eenmalig alle opgeslagen rijen (kolom + payload + hash), ook rijen die Bunq niet meer aanlevert. Oude kaartbetalingen zonder opgeslagen MCC houden hun oude categorie als de tekstregels niets vinden.
+- Frontend toont Nederlandse namen via `CATEGORY_DISPLAY_NAMES` in `resolveCategoryLabel`: `Internal Transfer` → `Interne overboeking`, `Refund` → `Terugbetaling`, `Utilities` → `Energie & telecom`, `Shopping` → `Winkelen`, `Entertainment` → `Vrije tijd`. Frontendsets (`ESSENTIAL_CATEGORIES`, `FIXED_COST_CATEGORIES`, kleuren) gebruiken de Nederlandse namen.
 
 ## Transactie-opslag (actueel)
 
