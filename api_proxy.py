@@ -4175,6 +4175,10 @@ ENVIRONMENT_TYPE = ApiEnvironmentType.SANDBOX if ENVIRONMENT_LABEL == 'SANDBOX' 
 CONFIG_FILE = 'config/bunq_sandbox.conf' if ENVIRONMENT_LABEL == 'SANDBOX' else 'config/bunq_production.conf'
 BUNQ_INIT_AUTO_ATTEMPT = get_bool_env('BUNQ_INIT_AUTO_ATTEMPT', True)
 BUNQ_INIT_RETRY_SECONDS = max(get_int_env('BUNQ_INIT_RETRY_SECONDS', 120), 15)
+BUNQ_WARMUP_WAIT_SECONDS = max(get_int_env('BUNQ_WARMUP_WAIT_SECONDS', 60), 0)
+# Set while no worker warm-up is running; cleared by start_background_bunq_init().
+_BUNQ_WARMUP_DONE = threading.Event()
+_BUNQ_WARMUP_DONE.set()
 
 # Validate configuration
 if not API_KEY:
@@ -4362,7 +4366,32 @@ def ensure_bunq_context_for_api_requests():
         return
     if path in ('/api/health', '/api/live', '/api/ready', '/api/demo-data'):
         return
+    # Let the first requests wait for a running worker warm-up instead of
+    # hitting the retry throttle and proceeding without a Bunq context.
+    _BUNQ_WARMUP_DONE.wait(timeout=BUNQ_WARMUP_WAIT_SECONDS)
     ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=False)
+
+def start_background_bunq_init():
+    """
+    Warm up the Bunq context in this process without blocking it.
+    Called from the Gunicorn post_worker_init hook: each worker has its own
+    BunqContext, so the preboot init in run_server.sh doesn't cover workers.
+    """
+    if not BUNQ_INIT_AUTO_ATTEMPT:
+        return None
+
+    def _warmup():
+        try:
+            ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=False)
+        except Exception as exc:
+            logger.warning(f"⚠️ Worker Bunq warm-up failed: {exc}")
+        finally:
+            _BUNQ_WARMUP_DONE.set()
+
+    _BUNQ_WARMUP_DONE.clear()
+    thread = threading.Thread(target=_warmup, name='bunq-warmup', daemon=True)
+    thread.start()
+    return thread
 
 # ============================================
 # API ENDPOINTS (PROTECTED)

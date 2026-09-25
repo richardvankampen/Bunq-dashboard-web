@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (healthcheck start_period 300s)
+Laatste update: 2026-09-25 (healthcheck start_period 300s + Bunq warm-up per worker)
 
 ## Canonieke status
 
@@ -189,6 +189,8 @@ Dit bestand is de actuele bron voor overdracht.
 - Uitgaande `rente`/`interest` (bijv. debetrente) valt onder `Rente`; hypotheekrente blijft `Wonen` via `hypotheek`.
 
 ## Healthcheck (actueel)
+
+- Elke Gunicorn-worker start bij opstarten een Bunq-init in de achtergrond (`scripts/gunicorn_conf.py` → `start_background_bunq_init`); `/api/health` is daardoor kort na start al accuraat. API-requests wachten max `BUNQ_WARMUP_WAIT_SECONDS` (60s) op die warm-up.
 
 - Healthcheck op `/api/live` met `start_period: 300s` (compose + Dockerfile): opstarten haalt de API key meerdere keren uit Vaultwarden (~35s per keer) voordat Gunicorn antwoordt.
 - `VAULTWARDEN_ITEM_NAME` is hoofdlettergevoelig (exacte match op item-naam); productie-item heet `Bunq API Key`.
