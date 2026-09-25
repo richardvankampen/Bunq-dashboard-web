@@ -4,6 +4,14 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — healthcheck start-periode 20s → 300s
+
+- `docker-compose.yml`, `Dockerfile`, `SYNOLOGY_INSTALL-NL.md`: healthcheck `start_period` van 20s naar 300s.
+- Reden: op productie werd de container herhaaldelijk als `unhealthy` gekild (exit 137). Opstarten haalt de API key meerdere keren uit Vaultwarden (~35s per keer: import in preboot, `init_bunq(refresh_key=True)`, import per Gunicorn-worker) voordat `/api/live` antwoordt; 20s + 3×30s was te kort.
+- Mede-oorzaak op de NAS: `.env` had `VAULTWARDEN_ITEM_NAME` met kleine `k` (`Bunq API key`), vault-item heet `Bunq API Key` → key niet gevonden, extra vertraging. Handmatig gecorrigeerd in `.env`.
+- `TROUBLESHOOTING(.md|-NL.md)`: sectie 4b toegevoegd (exit 137 unhealthy + item-naam hoofdlettergevoelig, directe fix via `docker service update --health-start-period`).
+- Vervolgkandidaat (niet gedaan): dubbele key-fetch bij opstarten verminderen.
+
 ### Opgeleverd — `config/` in `.gitignore`
 
 - `.gitignore`: `/config/` toegevoegd (runtime-state: Bunq context, `vaultwarden_device_id`, history-DB; bind-mount naar `/app/config`).
