@@ -161,6 +161,18 @@ Wanneer `NO_CACHE=true` gebruiken:
 
 ---
 
+## 🧪 Tests (ontwikkeling)
+
+Backend unit- en routetests staan in `tests/` en draaien zonder Bunq, Vaultwarden of Docker (alle externe toegang wordt via omgevingsvariabelen in `tests/conftest.py` uitgeschakeld):
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements_web.txt
+.venv/bin/python -m pytest tests -q
+```
+
+---
+
 ## 📄 License
 
 MIT License - See [LICENSE](LICENSE)
