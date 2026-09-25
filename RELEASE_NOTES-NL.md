@@ -22,6 +22,13 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Categorieën
+- Trefwoorden matchen op hele woorden: namen en woorden als "Bart", "lens", "nov", "Gastouder", "Pinterest" of "Disney Plus" komen niet meer in Horeca, Vervoer, Utilities, Rente of Boodschappen terecht.
+- Meer merchantcodes van kaartbetalingen herkend (trein, parkeren, brandstof, vluchten, hotels, bouwmarkten, kleding, opticiens, ziekenhuizen); nieuwe categorieën `Reizen`, `Sport` en `Kinderopvang`; drogisterijen zijn `Zorg`, bij kaartbetaling én overboeking.
+- Inkomend geld voor een aankoop (kaartretour, Tikkie voor een gedeeld etentje, eindafrekening energie) telt als terugbetaling in plaats van inkomen in een uitgavencategorie; toeslagen en verzekeringsuitkeringen houden hun categorie.
+- Categorienamen zijn Nederlands in het dashboard (`Interne overboeking`, `Terugbetaling`, `Energie & telecom`, `Winkelen`, `Vrije tijd`).
+- Opgeslagen transacties worden na een update eenmalig opnieuw gecategoriseerd, zodat verbeterde regels ook voor de historie gelden.
+
 ### Inzichten
 - Waar het ertoe doet op maandbasis (salaris en huur zijn maandelijks): trend, inkomens-/uitgavenalerts en het venster `Uitgavenmomentum` vergelijken de laatste volledige maand met de maand(en) daarvoor.
 - `Liquiditeitsrunway`: gemiddeld maandnetto van volledige maanden per kalenderdag (was: netto van de laatste 30 dagen gedeeld door dagen *met* transacties).

@@ -1348,17 +1348,20 @@ function getCategoryColor(category) {
         'Horeca': '#8b5cf6',
         'Vervoer': '#ec4899',
         'Wonen': '#ef4444',
-        'Utilities': '#f59e0b',
+        'Energie & telecom': '#f59e0b',
         'Abonnementen': '#eab308',
         'Verzekering': '#a855f7',
         'Belastingen': '#f97316',
-        'Shopping': '#10b981',
-        'Entertainment': '#06b6d4',
+        'Kinderopvang': '#fb7185',
+        'Winkelen': '#10b981',
+        'Vrije tijd': '#06b6d4',
+        'Sport': '#84cc16',
+        'Reizen': '#2dd4bf',
         'Zorg': '#6366f1',
         'Salaris': '#22c55e',
-        'Refund': '#14b8a6',
+        'Terugbetaling': '#14b8a6',
         'Rente': '#0ea5e9',
-        'Internal Transfer': '#94a3b8',
+        'Interne overboeking': '#94a3b8',
         'Overig': '#6b7280'
     };
     return colors[category] || '#6b7280';
@@ -1579,9 +1582,9 @@ function generateDemoTransactions(days) {
         'Horeca': { avg: -35, std: 20, freq: 0.3, color: '#8b5cf6' },
         'Vervoer': { avg: -45, std: 15, freq: 0.35, color: '#ec4899' },
         'Wonen': { avg: -850, std: 50, freq: 0.033, color: '#ef4444' },
-        'Utilities': { avg: -120, std: 30, freq: 0.033, color: '#f59e0b' },
-        'Shopping': { avg: -65, std: 40, freq: 0.2, color: '#10b981' },
-        'Entertainment': { avg: -25, std: 15, freq: 0.17, color: '#06b6d4' },
+        'Energie & telecom': { avg: -120, std: 30, freq: 0.033, color: '#f59e0b' },
+        'Winkelen': { avg: -65, std: 40, freq: 0.2, color: '#10b981' },
+        'Vrije tijd': { avg: -25, std: 15, freq: 0.17, color: '#06b6d4' },
         'Zorg': { avg: -80, std: 30, freq: 0.067, color: '#6366f1' },
         'Salaris': { avg: 2800, std: 100, freq: 0.033, color: '#22c55e' }
     };
@@ -1591,9 +1594,9 @@ function generateDemoTransactions(days) {
         'Horeca': ['Starbucks', 'De Kroeg', 'Restaurant Plaza', 'Burger King', 'Dominos'],
         'Vervoer': ['NS', 'Shell', 'Parking Amsterdam', 'Uber', 'Swapfiets'],
         'Wonen': ['Verhuurder B.V.', 'Hypotheek Bank'],
-        'Utilities': ['Eneco', 'Ziggo', 'Waternet'],
-        'Shopping': ['Bol.com', 'Zara', 'H&M', 'MediaMarkt', 'Coolblue'],
-        'Entertainment': ['Netflix', 'Spotify', 'Pathé', 'Concert Tickets'],
+        'Energie & telecom': ['Eneco', 'Ziggo', 'Waternet'],
+        'Winkelen': ['Bol.com', 'Zara', 'H&M', 'MediaMarkt', 'Coolblue'],
+        'Vrije tijd': ['Pathé', 'Concert Tickets', 'Efteling'],
         'Zorg': ['Apotheek', 'Tandarts', 'Fysiotherapie'],
         'Salaris': ['Werkgever B.V.']
     };
@@ -1714,10 +1717,20 @@ function resolveMerchantLabel(transaction) {
     return fallback.trim();
 }
 
+// The backend stores a few category keys in English; show Dutch names in the UI.
+const CATEGORY_DISPLAY_NAMES = {
+    'Internal Transfer': 'Interne overboeking',
+    'Refund': 'Terugbetaling',
+    'Utilities': 'Energie & telecom',
+    'Shopping': 'Winkelen',
+    'Entertainment': 'Vrije tijd'
+};
+
 function resolveCategoryLabel(transaction) {
     const raw = transaction?.category;
     if (typeof raw === 'string' && raw.trim()) {
-        return raw.trim();
+        const key = raw.trim();
+        return CATEGORY_DISPLAY_NAMES[key] || key;
     }
     return 'Overig';
 }
@@ -4285,7 +4298,8 @@ function renderRacingChart(data) {
 const ESSENTIAL_CATEGORIES = new Set([
     'Boodschappen',
     'Wonen',
-    'Utilities',
+    'Energie & telecom',
+    'Kinderopvang',
     'Verzekering',
     'Belastingen',
     'Vervoer',
@@ -4358,7 +4372,7 @@ function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12, options 
         const bucket = byMonth.get(monthKey);
         const amount = Number(transaction.amount) || 0;
         if (amount >= 0) {
-            if (transaction.category === 'Refund') {
+            if (transaction.category === 'Terugbetaling') {
                 refundsByMonth.set(monthKey, (refundsByMonth.get(monthKey) || 0) + amount);
                 return;
             }
@@ -4425,7 +4439,7 @@ const AVG_DAYS_PER_MONTH = 30.44;
 // They still count in totals and in the 50/30/20 figures.
 const NON_ACTIONABLE_CATEGORIES = new Set(['Wonen', 'Belastingen']);
 // Fixed costs: left out of the spending-volatility measure.
-const FIXED_COST_CATEGORIES = new Set(['Wonen', 'Verzekering', 'Belastingen', 'Utilities', 'Abonnementen']);
+const FIXED_COST_CATEGORIES = new Set(['Wonen', 'Verzekering', 'Belastingen', 'Energie & telecom', 'Abonnementen', 'Kinderopvang']);
 
 function monthKeyOf(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;

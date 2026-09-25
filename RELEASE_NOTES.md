@@ -22,6 +22,13 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Categories
+- Keywords match whole words: names and words like "Bart", "lens", "nov", "Gastouder", "Pinterest" or "Disney Plus" no longer land in Horeca, Vervoer, Utilities, Rente or Boodschappen.
+- More card merchant codes recognised (train, parking, fuel, flights, hotels, DIY stores, clothing, opticians, hospitals); new categories `Reizen`, `Sport` and `Kinderopvang`; drugstores are `Zorg` for both card payments and transfers.
+- Incoming money for a purchase (card reversal, a Tikkie for a shared dinner, an energy settlement) counts as a refund instead of income in a spending category; tax allowances and insurance payouts keep their category.
+- Category names are Dutch in the dashboard (`Interne overboeking`, `Terugbetaling`, `Energie & telecom`, `Winkelen`, `Vrije tijd`).
+- Stored transactions are recategorised once after an update, so improved rules also apply to history.
+
 ### Insights
 - Month-based where it matters (salary and rent are monthly): trend, income/spending alerts and the `Uitgavenmomentum` popup compare the last complete month with the month(s) before it.
 - `Liquiditeitsrunway`: average monthly net of complete months per calendar day (was: net of the last 30 days divided by days *with* transactions).

@@ -72,6 +72,12 @@ Raw fallback only if SDK result lacks savings. Uses only official routes:
 - Request handlers use `get_monetary_accounts()` (per-process cache, background refresh), not `list_monetary_accounts()` (~6s at Bunq incl. raw savings fallback). Reconcile uses the live list.
 - Monthly nightly reconcile (`run_full_reconcile`, 1st 03:00 Europe/Amsterdam, file-locked to one worker): inserts new, updates changed, soft-deletes missing only within the range Bunq still serves; older rows are kept and visible.
 
+## Categorisation
+
+- `categorize_transaction` (backend): internal → MCC (`_MCC_CATEGORIES`) → text rules (`_TEXT_RULES`, first match wins; `words` whole-word only, `stems` may sit inside Dutch compounds). Incoming money in a spending category becomes `Refund`.
+- After changing rules, bump `CATEGORIZATION_VERSION`: stored rows are recategorised once at startup (`migrate_stored_categories`).
+- Frontend shows Dutch names via `CATEGORY_DISPLAY_NAMES`; frontend category sets use those Dutch names.
+
 ## Internal transfer filtering
 
 - Deterministic: match on own account-id + IBAN (from full fetched account list).

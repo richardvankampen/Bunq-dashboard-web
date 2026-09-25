@@ -30,6 +30,7 @@ import importlib
 import pkgutil
 import inspect
 import re
+import unicodedata
 import ipaddress
 import shutil
 import subprocess
@@ -5911,11 +5912,13 @@ def normalize_bunq_payment(source_name, payment, account_id, account_name=None,
         'fx_converted': fx_converted,
         'description': description,
         'counterparty': counterparty_account_name or counterparty_name,
+        'counterparty_name': counterparty_name,
         'counterparty_account_name': counterparty_account_name,
         'counterparty_account_id': counterparty_account_id,
         'counterparty_iban': next(iter(counterparty_account_ibans), None),
         'merchant': merchant_label,
         'category': category,
+        'merchant_category_code': str(merchant_category_code).strip() if merchant_category_code else None,
         'type': get_obj_field(payment, 'type_', 'type'),
         'source': source_name,
         'account_id': account_id,
@@ -5993,115 +5996,286 @@ def get_account_transactions(
         }
     return transactions
 
+# Bump when the rules below change: stored transactions are recategorised once
+# at startup (migrate_stored_categories), so a rule fix also applies to history.
+CATEGORIZATION_VERSION = '2'
+
+
+def _mcc_codes(*items):
+    codes = set()
+    for item in items:
+        if isinstance(item, tuple):
+            codes.update(str(code) for code in range(item[0], item[1] + 1))
+        else:
+            codes.add(str(item))
+    return frozenset(codes)
+
+
+# Merchant category codes (card payments), checked before the text rules.
+_MCC_CATEGORIES = (
+    ('Boodschappen', _mcc_codes(5411, 5422, 5441, 5451, 5462, 5499, 5921)),
+    ('Horeca', _mcc_codes(5811, 5812, 5813, 5814)),
+    ('Vervoer', _mcc_codes(4111, 4112, 4121, 4131, 4784, 4789, 5541, 5542, 5983, 7512, 7523, 7542, (3351, 3441))),
+    ('Reizen', _mcc_codes(4511, 4722, 7011, (3000, 3299), (3501, 3999))),
+    ('Utilities', _mcc_codes(4814, 4900)),
+    ('Verzekering', _mcc_codes(5960, 6300)),
+    ('Belastingen', _mcc_codes(9211, 9222, 9311, 9399)),
+    ('Zorg', _mcc_codes(5912, 5976, 8011, 8021, 8031, 8041, 8042, 8043, 8049, 8050, 8062, 8071, 8099)),
+    ('Kinderopvang', _mcc_codes(8351)),
+    ('Sport', _mcc_codes(7941, 7997)),
+    ('Entertainment', _mcc_codes(7832, 7922, 7991, 7996, 7998, 7999)),
+    ('Abonnementen', _mcc_codes(4899, 5734, 5815, 5817, 5818, 5968)),
+    ('Shopping', _mcc_codes(
+        5200, 5211, 5251, 5261, 5310, 5311, 5331, 5399, 5611, 5621, 5631, 5641, 5651, 5655, 5661,
+        5691, 5699, 5712, 5719, 5722, 5732, 5941, 5942, 5943, 5945, 5947, 5977,
+    )),
+)
+
+_REFUND_WORDS = ('refund', 'refunds', 'terugbetaling', 'chargeback', 'retour', 'reversal', 'terugstorting')
+_SALARY_WORDS = ('salary', 'wage', 'wages', 'loon', 'nettoloon')
+_SALARY_STEMS = ('salaris',)
+_INTEREST_WORDS = ('interest',)
+_INTEREST_STEMS = ('rente',)
+
+# Text rules, first match wins. `words` must match as whole words (so 'bar' does
+# not hit 'Bart', 'ns' not 'lens'); `stems` may sit inside a Dutch compound
+# ('zorgverzekering', 'debetrente') and are therefore only long, unambiguous stems.
+# Order matters: specific merchants before generic words ('Disney Plus' is a
+# subscription, not the Plus supermarket).
+_TEXT_RULES = (
+    ('Abonnementen', {
+        'words': ['netflix', 'spotify', 'disney', 'disney+', 'videoland', 'amazon prime', 'prime video',
+                  'youtube premium', 'adobe', 'microsoft 365', 'office 365', 'icloud', 'google one',
+                  'hbo', 'hbo max', 'viaplay', 'npo plus', 'dazn', 'storytel', 'audible', 'kobo plus'],
+    }),
+    ('Boodschappen', {
+        'words': ['albert heijn', 'ah', 'ah to go', 'jumbo', 'lidl', 'aldi', 'plus', 'dirk van den broek',
+                  'dirk vd broek', 'picnic', 'ekoplaza', 'spar', 'coop', 'carrefour', 'dekamarkt', 'hoogvliet',
+                  'vomar', 'poiesz', 'jan linders', 'appie', 'flink', 'gorillas', 'getir', 'hellofresh', 'crisp'],
+        'stems': ['supermarkt'],
+    }),
+    ('Horeca', {
+        'words': ['cafe', 'bar', 'pizza', 'pizzeria', 'burger', 'burgers', 'burger king', 'starbucks',
+                  'thuisbezorgd', 'uber eats', 'ubereats', 'deliveroo', 'mcdonalds', 'mcdonald', 'kfc', 'subway',
+                  'febo', 'dominos', 'new york pizza', 'bistro', 'brasserie', 'lunchroom', 'eetcafe', 'snackbar'],
+        'stems': ['restaurant'],
+    }),
+    ('Reizen', {
+        'words': ['klm', 'transavia', 'ryanair', 'easyjet', 'vueling', 'booking.com', 'airbnb', 'hotels.com',
+                  'expedia', 'tui', 'corendon', 'sunweb', 'schiphol', 'hotel'],
+    }),
+    ('Vervoer', {
+        'words': ['ns', 'ns groep', 'ns reizigers', 'trein', 'train', 'bus', 'taxi', 'uber', 'ov', 'ov-chipkaart',
+                  'ovpay', 'parking', 'q-park', 'shell', 'texaco', 'esso', 'total', 'totalenergies', 'bp', 'tinq',
+                  'avia', 'tango', 'yellowbrick', 'anwb', 'arriva', 'connexxion', 'ret', 'gvb', 'qbuzz', 'keolis',
+                  'ebs', 'sixt', 'hertz', 'europcar', 'greenwheels', 'mywheels', 'swapfiets', 'benzine'],
+        'stems': ['parkeer', 'ovchip', 'autohuur', 'tankstation'],
+    }),
+    ('Belastingen', {
+        'words': ['tax', 'cjib', 'rdw', 'duo', 'bsgw', 'gbt', 'svhw', 'gblt'],
+        'stems': ['belasting', 'gemeente', 'waterschap', 'toeslag'],
+    }),
+    ('Wonen', {
+        'words': ['rent', 'mortgage', 'vve'],
+        'stems': ['huur', 'hypotheek'],
+    }),
+    ('Rente', {
+        'words': list(_INTEREST_WORDS),
+        'stems': list(_INTEREST_STEMS),
+    }),
+    ('Verzekering', {
+        'words': ['insurance', 'aegon', 'allianz', 'ohra', 'unive', 'zilveren kruis', 'interpolis', 'vgz', 'cz',
+                  'menzis', 'fbto', 'asr', 'dsw', 'anderzorg', 'ditzo', 'inshared', 'centraal beheer',
+                  'nationale nederlanden'],
+        'stems': ['verzekering', 'verzekeraar', 'verzekeren'],
+    }),
+    ('Kinderopvang', {
+        'words': ['bso', 'kdv', 'partou', 'humankind', 'kinderrijk'],
+        'stems': ['kinderopvang', 'gastouder', 'kinderdagverblijf'],
+    }),
+    ('Utilities', {
+        'words': ['eneco', 'essent', 'gas', 'water', 'ziggo', 'kpn', 'odido', 'vodafone', 't-mobile', 'tele2',
+                  'youfone', 'hollandsnieuwe', 'delta fiber', 'caiway', 'greenchoice', 'enexis', 'liander',
+                  'stedin', 'waternet', 'vitens', 'evides', 'dunea', 'oasen', 'brabant water', 'vattenfall',
+                  'vandebron', 'oxxio', 'engie', 'lebara'],
+        'stems': ['energie', 'telecom'],
+    }),
+    ('Sport', {
+        'words': ['basic-fit', 'basic fit', 'basicfit', 'sportcity', 'trainmore', 'david lloyd', 'anytime fitness',
+                  'zwembad', 'sportclub', 'sportvereniging'],
+        'stems': ['sportschool', 'fitness'],
+    }),
+    ('Entertainment', {
+        'words': ['youtube', 'cinema', 'bioscoop', 'pathe', 'kinepolis', 'vue', 'concert', 'ticketmaster',
+                  'eventim', 'steam', 'nintendo', 'playstation', 'xbox', 'efteling', 'museum'],
+    }),
+    ('Zorg', {
+        'words': ['pharmacy', 'dokter', 'doctor', 'dentist', 'hospital', 'kruidvat', 'etos', 'trekpleister',
+                  'opticien', 'specsavers', 'hans anders', 'pearle', 'psycholoog'],
+        'stems': ['apotheek', 'tandarts', 'huisarts', 'ziekenhuis', 'fysio', 'mondzorg'],
+    }),
+    ('Shopping', {
+        'words': ['bol.com', 'coolblue', 'mediamarkt', 'amazon', 'zara', 'h&m', 'hema', 'action', 'ikea',
+                  'primark', 'zalando', 'wehkamp', 'blokker', 'xenos', 'decathlon', 'intertoys', 'bijenkorf',
+                  'gamma', 'praxis', 'karwei', 'hornbach', 'shop', 'webshop'],
+    }),
+)
+
+
+# Incoming money keeps these categories (tax refunds/allowances, insurance payouts,
+# rent received). Incoming money in any other spending category is money back
+# for a purchase (card reversal, Tikkie for a shared dinner) and becomes Refund.
+_INCOMING_KEEP_CATEGORIES = frozenset({'Belastingen', 'Verzekering', 'Wonen', 'Rente', 'Salaris', 'Overig'})
+
+
+def _normalize_category_text(value):
+    if not value:
+        return ''
+    text = unicodedata.normalize('NFKD', str(value).lower())
+    return ''.join(char for char in text if not unicodedata.combining(char))
+
+
+def _word_pattern(words):
+    alternatives = '|'.join(re.escape(word) for word in sorted(words, key=len, reverse=True))
+    return re.compile(rf'(?<![a-z0-9])(?:{alternatives})(?![a-z0-9])')
+
+
+_COMPILED_TEXT_RULES = tuple(
+    (
+        category,
+        _word_pattern(rule['words']) if rule.get('words') else None,
+        tuple(rule.get('stems', ())),
+    )
+    for category, rule in _TEXT_RULES
+)
+_REFUND_PATTERN = _word_pattern(_REFUND_WORDS)
+_SALARY_PATTERN = _word_pattern(_SALARY_WORDS)
+_INTEREST_PATTERN = _word_pattern(_INTEREST_WORDS)
+
+
+def _matches(text, pattern, stems):
+    return bool((pattern is not None and pattern.search(text)) or any(stem in text for stem in stems))
+
+
+def _categorize_by_mcc(merchant_category_code):
+    mcc = str(merchant_category_code or '').strip()
+    if not mcc:
+        return None
+    for category, codes in _MCC_CATEGORIES:
+        if mcc in codes:
+            return category
+    return None
+
+
+def _categorize_by_text(text):
+    for category, pattern, stems in _COMPILED_TEXT_RULES:
+        if _matches(text, pattern, stems):
+            return category
+    return 'Overig'
+
+
 def categorize_transaction(description, counterparty_name, is_internal=False, merchant_category_code=None, amount=None):
-    """Rule-based categorization with MCC fallback."""
+    """Rule-based categorization: merchant category code first, then text rules."""
     if is_internal:
         return 'Internal Transfer'
 
-    desc_lower = description.lower() if description else ''
-    counter_lower = counterparty_name.lower() if counterparty_name else ''
-    combined = f"{desc_lower} {counter_lower}".strip()
+    combined = f"{_normalize_category_text(description)} {_normalize_category_text(counterparty_name)}".strip()
     try:
         amount_value = 0.0 if amount is None else float(amount)
     except (TypeError, ValueError):
         amount_value = 0.0
 
-    mcc = str(merchant_category_code or '').strip()
-    if mcc:
-        if mcc in {'5411', '5422', '5441', '5451', '5462', '5499'}:
-            return 'Boodschappen'
-        if mcc in {'5812', '5813', '5814'}:
-            return 'Horeca'
-        if mcc in {'4111', '4121', '4789', '5541', '5542'}:
-            return 'Vervoer'
-        if mcc in {'4900', '4814'}:
-            return 'Utilities'
-        if mcc in {'5960', '5966', '6300'}:
-            return 'Verzekering'
-        if mcc in {'9211', '9311', '9399'}:
-            return 'Belastingen'
-        if mcc in {'5912', '8011', '8021', '8099'}:
-            return 'Zorg'
-        if mcc in {'7832', '7922', '7997', '7999'}:
-            return 'Entertainment'
-        if mcc in {'4899', '5815', '5968', '5734'}:
-            return 'Abonnementen'
-        if mcc in {'5311', '5331', '5399', '5651', '5732'}:
-            return 'Shopping'
-
     if amount_value > 0:
-        if any(word in combined for word in ['refund', 'terugbetaling', 'chargeback', 'retour', 'reversal']):
+        if _REFUND_PATTERN.search(combined):
             return 'Refund'
-        if any(word in combined for word in ['rente', 'interest']):
+        if _matches(combined, _INTEREST_PATTERN, _INTEREST_STEMS):
             return 'Rente'
-        if any(word in combined for word in ['salaris', 'salary', 'loon', 'wage']):
+        if _matches(combined, _SALARY_PATTERN, _SALARY_STEMS):
             return 'Salaris'
 
-    if any(word in combined for word in [
-        'albert heijn', ' ah ', 'jumbo', 'lidl', 'aldi', 'plus', 'dirk',
-        'picnic', 'ekoplaza', 'spar ', 'coop', 'supermarkt', 'carrefour',
-        'dekamarkt', 'hoogvliet', 'vomar', 'poiesz', 'jan linders', 'appie',
-        'flink', 'gorillas', 'getir', 'hellofresh'
-    ]):
-        return 'Boodschappen'
-    elif any(word in combined for word in [
-        'restaurant', 'cafe', 'bar', 'pizza', 'burger', 'starbucks',
-        'thuisbezorgd', 'ubereats', 'deliveroo', 'mcdonald', 'kfc', 'subway'
-    ]):
-        return 'Horeca'
-    elif any(word in combined for word in [
-        'ns ', 'train', 'bus', 'taxi', 'uber', 'ov ', 'parking',
-        'q-park', 'shell', 'texaco', 'esso', 'total', 'benzine',
-        'bp ', 'tinq', 'avia', 'ok tank', 'yellowbrick', 'anwb',
-        'ov-chip', 'ovchip', 'arriva', 'connexxion', 'ret ', 'gvb', 'qbuzz'
-    ]):
-        return 'Vervoer'
-    # 'rent' as a whole word only: substring matching also hit 'rente' (interest).
-    elif any(word in combined for word in ['huur', 'hypotheek', 'mortgage', 'vve']) or re.search(r'\brent\b', combined):
-        return 'Wonen'
-    elif any(word in combined for word in ['rente', 'interest']):
-        return 'Rente'
-    elif any(word in combined for word in [
-        'verzekering', 'insur', 'aegon', 'allianz', 'ohra', 'unive',
-        'zilveren kruis', 'interpolis', 'vgz', 'cz ', 'menzis', 'fbto', 'asr '
-    ]):
-        return 'Verzekering'
-    elif any(word in combined for word in [
-        'belasting', 'belastingdienst', 'tax', 'gemeente', 'waterschap',
-        'cjib', 'rdw', 'duo '
-    ]):
-        return 'Belastingen'
-    elif any(word in combined for word in [
-        'eneco', 'essent', 'energie', 'gas', 'water', 'ziggo', 'kpn', 'telecom',
-        'odido', 'vodafone', 't-mobile', 'tele2', 'youfone', 'hollandsnieuwe',
-        'delta fiber', 'caiway', 'budget energie', 'greenchoice', 'enexis', 'liander',
-        'stedin', 'waternet', 'vitens'
-    ]):
-        return 'Utilities'
-    elif any(word in combined for word in [
-        'netflix', 'spotify', 'disney+', 'videoland', 'amazon prime', 'youtube premium',
-        'adobe', 'microsoft 365', 'office 365', 'icloud', 'google one'
-    ]):
-        return 'Abonnementen'
-    elif any(word in combined for word in [
-        'bol.com', 'coolblue', 'mediamarkt', 'amazon', 'zara', 'h&m', 'shop',
-        'hema', 'action', 'ikea', 'primark', 'kruidvat', 'etos', 'zalando'
-    ]):
-        return 'Shopping'
-    elif any(word in combined for word in [
-        'youtube', 'cinema', 'pathé', 'concert', 'steam',
-        'nintendo', 'playstation', 'xbox'
-    ]):
-        return 'Entertainment'
-    elif any(word in combined for word in [
-        'apotheek', 'pharmacy', 'dokter', 'doctor', 'tandarts', 'dentist',
-        'huisarts', 'ziekenhuis', 'hospital', 'zorgverzekeraar'
-    ]):
-        return 'Zorg'
-    elif any(word in combined for word in ['salaris', 'salary', 'loon', 'wage']):
-        return 'Salaris'
-    else:
-        return 'Overig'
+    category = _categorize_by_mcc(merchant_category_code) or _categorize_by_text(combined)
+    if amount_value > 0 and category not in _INCOMING_KEEP_CATEGORIES:
+        return 'Refund'
+    return category
+
+
+def _is_card_transaction(tx):
+    tx_type = str(tx.get('type') or '').upper()
+    return tx.get('source') == 'card_payment' or 'MASTERCARD' in tx_type or 'MAESTRO' in tx_type
+
+
+def recategorize_stored_transaction(tx):
+    """
+    Category for a stored transaction under the current rules. Rows stored before
+    the merchant category code was kept have no code: for card payments the old
+    (code-based) category is kept when the text rules find nothing better.
+    """
+    old_category = tx.get('category')
+    if tx.get('is_internal_transfer'):
+        return 'Internal Transfer'
+    new_category = categorize_transaction(
+        tx.get('description'),
+        tx.get('counterparty_name') or tx.get('counterparty'),
+        merchant_category_code=tx.get('merchant_category_code'),
+        amount=tx.get('amount'),
+    )
+    legacy_row = 'merchant_category_code' not in tx
+    if (
+        legacy_row
+        and new_category == 'Overig'
+        and _is_card_transaction(tx)
+        and old_category not in (None, '', 'Overig', 'Internal Transfer')
+    ):
+        if _safe_tx_amount(tx) > 0 and old_category not in _INCOMING_KEEP_CATEGORIES:
+            return 'Refund'
+        return old_category
+    return new_category
+
+
+def migrate_stored_categories():
+    """
+    Recategorise all stored transactions once per CATEGORIZATION_VERSION, so rule
+    fixes also apply to history (including rows Bunq no longer serves).
+    """
+    if not DATA_DB_ENABLED:
+        return 0
+    try:
+        if _app_state_get('categorization_version') == CATEGORIZATION_VERSION:
+            return 0
+        connection = get_data_db_connection()
+        changed = 0
+        try:
+            with connection:
+                rows = connection.execute(
+                    "SELECT account_id, source, bunq_id, category, payload_json FROM bunq_transactions"
+                ).fetchall()
+                for row in rows:
+                    tx = json.loads(row['payload_json'])
+                    category = recategorize_stored_transaction(tx)
+                    if category == tx.get('category') and category == row['category']:
+                        continue
+                    tx['category'] = category
+                    connection.execute(
+                        """
+                        UPDATE bunq_transactions SET category = ?, payload_json = ?, content_hash = ?
+                        WHERE account_id = ? AND source = ? AND bunq_id = ?
+                        """,
+                        (category, json.dumps(tx, default=str), transaction_content_hash(tx),
+                         row['account_id'], row['source'], row['bunq_id']),
+                    )
+                    changed += 1
+        finally:
+            connection.close()
+        _app_state_set('categorization_version', CATEGORIZATION_VERSION)
+        logger.info("🏷️ Recategorised %d stored transaction(s) (rules v%s)", changed, CATEGORIZATION_VERSION)
+        return changed
+    except Exception as exc:
+        logger.warning(f"⚠️ Recategorising stored transactions failed: {exc}")
+        return 0
+
+
+migrate_stored_categories()
+
 
 @app.route('/api/statistics', methods=['GET'])
 @requires_auth

@@ -4,6 +4,20 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — categorisatielogica gecontroleerd en gecorrigeerd
+
+- Review van `categorize_transaction` + frontendgebruik; 8 bevindingen, allemaal opgelost:
+  1. Substring-matching: `bar` → Bart/Barbershop (Horeca), `ns`/`ov` → "lens"/"nov" (Vervoer), `gas` → Gastouder/Vegas, `interest` → Pinterest, `plus` → Disney Plus (Boodschappen), `dirk` → elke Dirk, `wage` → Wagenaar (Salaris), enz. → hele-woord-matching (`words`) + lange stammen voor samenstellingen (`stems`), accenten genegeerd, specifieke regels vóór generieke.
+  2. Opgeslagen categorieën werden nooit bijgewerkt na regelwijzigingen → `migrate_stored_categories()` per `CATEGORIZATION_VERSION` bij opstart; payload bewaart nu MCC + tegenrekeningnaam.
+  3. Ontbrekende MCC's (trein 4112, parkeren 7523, brandstof 5983, vliegen/hotels, bouwmarkt, kleding, opticien, ziekenhuis, …) toegevoegd.
+  4. Drogisterij inconsistent (MCC → Zorg, tekst → Shopping) → beide `Zorg`.
+  5. Geen regels voor sport, kinderopvang, reizen, bouwmarkten → nieuwe categorieën `Sport`, `Kinderopvang`, `Reizen`; bouwmarkt → Shopping.
+  6. Inkomend geld kreeg uitgavencategorieën (Tikkie "pizza" = inkomen Horeca) → `Refund`, behalve Belastingen/Verzekering/Wonen.
+  7. Engelse categorienamen in de UI → Nederlandse weergavenamen (`CATEGORY_DISPLAY_NAMES`).
+  8. Tests dekten geen fout-positieven → regressietests voor alle bovenstaande gevallen + migratie.
+- Verificatie: pytest 260 groen, pyflakes schoon; headless Chromium met gemockte API: alle categorieën Nederlands met eigen kleur, Kinderopvang/Energie & telecom als noodzakelijk en vaste last, geen JS-fouten.
+- Na deploy: eerste start hercategoriseert de opgeslagen transacties eenmalig (log `🏷️ Recategorised N stored transaction(s)`). De eerstvolgende maandcontrole werkt daarna de hash bij van rijen die Bunq nog aanlevert (nieuwe payloadvelden); dat telt eenmalig als "bijgewerkt".
+
 ### Opgeleverd — inzichtlogica gecontroleerd en gecorrigeerd
 
 - Review van alle 13 inzichtkaarten + actieplan; 10 bevindingen, allemaal opgelost:

@@ -497,3 +497,68 @@ def test_account_list_is_reused_then_refreshed_in_background(ap, monkeypatch):
     clock[0] += ap.ACCOUNTS_STALE_SECONDS + 1
     ap.get_monetary_accounts()                                          # too old: fetched while waiting
     assert len(calls) == 3
+
+
+# --- recategorising stored transactions --------------------------------------
+
+def _make_legacy(ap, pid, category, **payload_changes):
+    """Rewrite a stored row as an older version stored it: no MCC key, old category."""
+    connection = ap.get_data_db_connection()
+    try:
+        with connection:
+            row = connection.execute("SELECT payload_json FROM bunq_transactions WHERE bunq_id = ?", (str(pid),)).fetchone()
+            tx = ap.json.loads(row['payload_json'])
+            tx.pop('merchant_category_code', None)
+            tx.pop('counterparty_name', None)
+            tx['counterparty'] = 'Tegenpartij'   # the fake Bunq's 'Shop <id>' would match 'shop'
+            tx.update(payload_changes, category=category)
+            connection.execute(
+                "UPDATE bunq_transactions SET category = ?, payload_json = ? WHERE bunq_id = ?",
+                (category, ap.json.dumps(tx), str(pid)),
+            )
+    finally:
+        connection.close()
+
+
+def _stored_category(ap, pid):
+    row = _row(ap, pid)
+    return row['category'], ap.json.loads(row['payload_json'])['category']
+
+
+def test_migration_recategorises_history_once(ap, store):
+    store.add(10, 5, description='Bart de Vries')
+    store.add(11, 4, description='Albert Heijn 1234')
+    _sync(ap, days=30)
+    _make_legacy(ap, 10, 'Horeca')           # old substring rule: 'bar' in 'Bart'
+    _make_legacy(ap, 11, 'Boodschappen')     # already right
+    ap._app_state_set('categorization_version', '1')
+
+    assert ap.migrate_stored_categories() == 1
+    assert _stored_category(ap, 10) == ('Overig', 'Overig')
+    assert _stored_category(ap, 11) == ('Boodschappen', 'Boodschappen')
+    assert ap._app_state_get('categorization_version') == ap.CATEGORIZATION_VERSION
+    _make_legacy(ap, 10, 'Horeca')
+    assert ap.migrate_stored_categories() == 0   # same rules version: not run again
+    assert _stored_category(ap, 10) == ('Horeca', 'Horeca')
+
+
+def test_migration_keeps_code_based_category_of_legacy_card_payment(ap, store):
+    store.add(10, 5, description='De Beren Utrecht')      # restaurant only recognisable by its MCC
+    store.add(11, 4, description='De Beren Utrecht', amount=12.0)
+    _sync(ap, days=30)
+    _make_legacy(ap, 10, 'Horeca', type='MASTERCARD')
+    _make_legacy(ap, 11, 'Horeca', type='MASTERCARD')     # incoming card payment: a reversal
+    ap._app_state_set('categorization_version', '1')
+    ap.migrate_stored_categories()
+    assert _stored_category(ap, 10) == ('Horeca', 'Horeca')
+    assert _stored_category(ap, 11) == ('Refund', 'Refund')
+
+
+def test_new_rows_store_merchant_category_code(ap, store):
+    store.add(10, 5, description='De Beren Utrecht')
+    store.items[('1', 'payment')][10]['counterparty_alias']['merchant_category_code'] = '5812'
+    _sync(ap, days=30)
+    payload = ap.json.loads(_row(ap, 10)['payload_json'])
+    assert payload['merchant_category_code'] == '5812'
+    assert payload['category'] == 'Horeca'
+    assert payload['counterparty_name'] == 'Shop 10'
