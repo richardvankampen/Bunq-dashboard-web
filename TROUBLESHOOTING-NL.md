@@ -215,7 +215,7 @@ Als dit faalt: run eerst full maintenance en herhaal checker.
 
 ### 5b. Transactie-opslag en maandelijkse controle
 
-Transacties worden opgeslagen in SQLite (`config/dashboard_data.db`, tabel `bunq_transactions`). Bij het laden van het dashboard vraagt de app Bunq alleen om transacties die nieuwer zijn dan de nieuwste opgeslagen transactie (hooguit eens per `SYNC_MIN_INTERVAL_SECONDS`), plus eenmalig oudere pagina's als je een langere periode kiest dan er is opgeslagen.
+Transacties worden opgeslagen in SQLite (`config/dashboard_data.db`, tabel `bunq_transactions`). Als de opgeslagen data de gekozen periode dekt, antwoordt het dashboard direct uit de database en controleert het op de achtergrond bij Bunq op nieuwere transacties (hooguit eens per `SYNC_MIN_INTERVAL_SECONDS`); nieuwe transacties verschijnen bij de volgende keer laden. Alleen bij de eerste keer laden of een langere periode dan opgeslagen wacht het op Bunq. De rekeninglijst wordt `ACCOUNTS_CACHE_SECONDS` hergebruikt en daarna op de achtergrond ververst.
 
 Eens per maand (standaard: de 1e, 03:00–06:00 Europe/Amsterdam) haalt de app alles opnieuw op tot aan de oudste opgeslagen transactie en verwerkt de verschillen:
 - nieuwe transacties worden toegevoegd, gewijzigde bijgewerkt;

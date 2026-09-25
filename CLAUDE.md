@@ -68,7 +68,8 @@ Raw fallback only if SDK result lacks savings. Uses only official routes:
 ## Transaction store (SQLite)
 
 - Table `bunq_transactions`, key `(account_id, source, bunq_id)`; `payload_json` = dashboard transaction dict; `deleted_at` = soft delete.
-- `/api/transactions` + `/api/statistics`: `load_transactions()` → incremental `sync_transactions()` (only pages newer than stored newest id; one-time backfill for longer periods) → read from store.
+- `/api/transactions` + `/api/statistics`: `load_transactions()` → read from store; if the store covers the period the incremental sync runs in the background, otherwise (first load / longer period) `sync_transactions()` blocks. Sync fetches only pages newer than the stored newest id; one-time backfill for longer periods.
+- Request handlers use `get_monetary_accounts()` (per-process cache, background refresh), not `list_monetary_accounts()` (~6s at Bunq incl. raw savings fallback). Reconcile uses the live list.
 - Monthly nightly reconcile (`run_full_reconcile`, 1st 03:00 Europe/Amsterdam, file-locked to one worker): inserts new, updates changed, soft-deletes missing only within the range Bunq still serves; older rows are kept and visible.
 
 ## Internal transfer filtering
