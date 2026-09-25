@@ -239,6 +239,10 @@ tmp/
 # PROJECT SPECIFIC
 # ============================================
 
+# Runtime state written by the app (bind-mounted to /app/config in the container):
+# Bunq context, Vaultwarden device id, history database. Never commit.
+/config/
+
 # Exported data
 exports/
 *.csv
