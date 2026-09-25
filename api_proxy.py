@@ -6,7 +6,7 @@ READ-ONLY Bunq API access for maximum security
 SECURED with session cookies and rate limiting
 """
 
-from flask import Flask, jsonify, request, Response, session, make_response, send_from_directory, abort
+from flask import Flask, jsonify, request, session, make_response, send_from_directory, abort
 from flask_cors import CORS
 from flask_caching import Cache
 from functools import wraps
@@ -2380,7 +2380,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # Session expire
 
 # Log session configuration
 logger.info(f"🔐 Session cookie secure: {app.config['SESSION_COOKIE_SECURE']}")
-logger.info(f"⏱️  Session lifetime: 24 hours")
+logger.info("⏱️  Session lifetime: 24 hours")
 
 # CORS Configuration - WITH CREDENTIALS SUPPORT
 ALLOWED_ORIGINS = [
@@ -4243,7 +4243,7 @@ def init_bunq(force_recreate=False, refresh_key=False, run_auto_whitelist=True):
         BunqContext.load_api_context(api_context)
         logger.info("✅ Bunq API initialized successfully")
         logger.info(f"   Environment: {ENVIRONMENT_LABEL}")
-        logger.info(f"   Access Level: READ-ONLY")
+        logger.info("   Access Level: READ-ONLY")
         _BUNQ_CONTEXT_INITIALIZED = True
         _BUNQ_INIT_LAST_ERROR = None
 
@@ -4300,8 +4300,6 @@ def ensure_bunq_initialized(force=False, refresh_key=False, run_auto_whitelist=F
     Throttled Bunq init guard for WSGI workers.
     Avoids repeated expensive init attempts on every request when Bunq is unavailable.
     """
-    global _BUNQ_CONTEXT_INITIALIZED, _BUNQ_INIT_LAST_ATTEMPT_TS
-
     if not force and _BUNQ_CONTEXT_INITIALIZED:
         return True
 
@@ -5546,8 +5544,8 @@ if __name__ == '__main__':
     print(f"📡 Environment: {ENVIRONMENT_LABEL}")
     print(f"🔒 CORS Origins: {ALLOWED_ORIGINS}")
     print(f"🔐 Authentication: {'ENABLED ✅' if has_config('BASIC_AUTH_PASSWORD', 'basic_auth_password') else 'DISABLED ⚠️'}")
-    print(f"🍪 Session-based auth with secure cookies")
-    print(f"⏱️  Rate Limiting: 30 req/min (general), 5 req/min (login)")
+    print("🍪 Session-based auth with secure cookies")
+    print("⏱️  Rate Limiting: 30 req/min (general), 5 req/min (login)")
     print(f"🔑 Secret key: {'Set ✅' if has_config('FLASK_SECRET_KEY', 'flask_secret_key') else 'Auto-generated ⚠️'}")
     
     if init_bunq(force_recreate=False, refresh_key=True, run_auto_whitelist=True):

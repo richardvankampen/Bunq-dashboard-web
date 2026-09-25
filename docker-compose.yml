@@ -65,8 +65,10 @@ services:
       - /volume1/docker/bunq-dashboard/config:/app/config
       - /volume1/docker/bunq-dashboard/logs:/app/logs
 
+    # Optional static host mapping (e.g. to bypass stale Docker DNS for Vaultwarden).
+    # Set VAULTWARDEN_EXTRA_HOST=<hostname>:<lan-ip> in .env; the default is a harmless placeholder.
     extra_hosts:
-      - "vault.hadewych.synology.me:192.168.2.13"
+      - "${VAULTWARDEN_EXTRA_HOST:-vaultwarden-extra-host.invalid:127.0.0.1}"
 
     networks:
       - bunq-net

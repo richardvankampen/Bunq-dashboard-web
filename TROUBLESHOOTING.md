@@ -160,6 +160,10 @@ Validate app settings:
 - `VAULTWARDEN_URL=https://...`
 - required Vaultwarden secrets exist in Docker Swarm
 
+Vaultwarden hostname resolves to the wrong/old IP inside the container (e.g. after a LAN subnet change)?
+- set `VAULTWARDEN_EXTRA_HOST=<vault-hostname>:<nas-lan-ip>` in `.env`
+- then run a full stack deploy (not quick redeploy) so the host mapping is applied
+
 ## 🟡 UI/Data Issues
 
 ### 5. Charts load but numbers look incomplete

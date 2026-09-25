@@ -172,6 +172,10 @@ Controleren:
   - `bunq_vaultwarden_client_secret`
   - `bunq_vaultwarden_master_password`
 
+Resolvet de Vaultwarden-hostnaam in de container naar een verkeerd/oud IP (bijv. na een subnetwijziging)?
+- zet `VAULTWARDEN_EXTRA_HOST=<vault-hostnaam>:<nas-lan-ip>` in `.env`
+- voer daarna een volledige stack deploy uit (geen quick redeploy) zodat de host-mapping wordt toegepast
+
 ### 5. Spaarrekeningen ontbreken in `/api/accounts`
 
 Valideer met de checker:

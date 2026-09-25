@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-03-15 (betaal/spaarrekeningen detailmodal: transactielijst hersteld in showBalanceDetail)
+Laatste update: 2026-09-25 (repo-review fixes: `VAULTWARDEN_EXTRA_HOST`, whitelist-rapportage register_bunq_ip.sh, lint)
 
 ## Canonieke status
 
@@ -36,6 +36,12 @@ Dit bestand is de actuele bron voor overdracht.
   - default non-interactive flow is nu `NO_PROMPT=true sh scripts/register_bunq_ip.sh`;
   - target-IP wordt automatisch bepaald (host `curl -4` first, container egress fallback);
   - oude cleanup/deactivation flow via `DEACTIVATE_OTHERS/SAFE_TWO_STEP` is uit dit script verwijderd.
+  - stap 4 probeert eerst de whitelist-API met bestaande context; lukt dat niet (geen context of SDK-beperking `credential-password`), dan force-recreate van de context vanaf het container-egress-IP.
+  - fallback-output rapporteert `ip` (werkelijk geregistreerd egress-IP) en `requested_ip` (`TARGET_IP`), met `WARN` bij verschil.
+- Vaultwarden DNS-override:
+  - `docker-compose.yml` gebruikt `extra_hosts` via `VAULTWARDEN_EXTRA_HOST` (`<hostnaam>:<ip>`, optioneel, uit `.env`); default is een onschadelijke placeholder.
+  - productie-NAS moet deze variabele in `.env` hebben (Vaultwarden-host → huidig NAS LAN-IP) om verouderde Docker DNS na subnetwijziging te omzeilen.
+  - wijziging vereist full stack deploy (niet quick redeploy).
 - README EN/NL bevatten nu ook een compacte “IP change runbook” met 3 commando’s:
   - whitelist update;
   - restart/startup-check;

@@ -348,6 +348,9 @@ VAULTWARDEN_URL=https://vault.jouwdomein.nl
 VAULTWARDEN_ACCESS_METHOD=cli
 VAULTWARDEN_ITEM_NAME="Bunq API Key"
 USE_VAULTWARDEN=true
+# Optioneel: Vaultwarden-hostnaam in de container vastpinnen op een LAN-IP
+# (bij verouderde/foute Docker DNS). Formaat: <hostnaam>:<ip>
+# VAULTWARDEN_EXTRA_HOST=vault.jouwdomein.nl:192.168.1.100
 BUNQ_ENVIRONMENT=PRODUCTION
 AUTO_SET_BUNQ_WHITELIST_IP=true
 AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS=false
@@ -397,7 +400,7 @@ sudo docker swarm init
 ```bash
 sudo docker swarm init --advertise-addr 192.168.1.100
 ```
-Vervang dit met het IP van je NAS (bijv. `192.168.2.13`).
+Vervang `192.168.1.100` door het LAN-IP van je NAS.
 
 **Netwerk (voor Vaultwarden koppeling):**
 ```bash
