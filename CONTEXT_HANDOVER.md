@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (snelheid: achtergrond-sync, rekeninglijst-cache, card-backoff)
+Laatste update: 2026-09-25 (grafiekregels gecorrigeerd: tijdzone, Sparen, trends, budgetdiscipline, spreiding, interne overboekingen, NL-labels)
 
 ## Canonieke status
 
@@ -55,6 +55,17 @@ Dit bestand is de actuele bron voor overdracht.
   - structuur teruggebracht naar actuele diagnose + deploy/redeploy flows + kernincidenten;
   - taalconsistentie NL verbeterd en commando's geharmoniseerd op `sudo` + huidige scripts.
 
+## Grafiekregels (actueel)
+
+- Dagindeling in lokale (Nederlandse) tijd: `toDateKey()` / `dateFromKey()`; geen `toISOString().slice(0, 10)` voor dagen.
+- Interne overboekingen: één regel `isInternalOwnTransfer()` (backend-vlag, eigen account-id/IBAN, of tegenpartij met naam van eigen rekening) in `applyClientFilters`, voor alle tegels en grafieken als de instelling aan staat; bij uit voor geen enkele grafiek.
+- `Sparen`-tegel: `buildSavingsWidgetTransactions()` (spaarrekening-mutaties excl. spaar→spaar), respecteert rekeningselectie; trend/sparkline op dezelfde data.
+- Trends: tweede helft vs eerste helft van de periode (`calculateHalfPeriodChange`); `n.v.t.` als eerste helft ~0.
+- Budgetdiscipline: `summarizeMonthlyBudgetDiscipline` laat maanden weg die vóór het periodebegin starten, markeert lopende maand (`isCurrent`, label `(lopend)`), refunds verlagen vrij besteedbaar i.p.v. inkomen; grafiek toont maanden zonder inkomen als gat; inzichten/actieplan/detail gebruiken `latestCompleteBudgetMonth`.
+- Maandverdeling (spreiding): `buildSpendingSpread` met bedragklassen `SPREAD_BUCKETS`, top 4 categorieën op totaalbedrag, % van betalingen per categorie.
+- Labels in grafieken en detailvensters in het Nederlands (noodzakelijk / vrij besteedbaar / overgehouden).
+- Browsercheck (niet in repo): headless Chromium met gemockte `/api/*` en lokale Plotly/Chart.js; alle grafieken renderen zonder JS-fouten.
+
 ## Frontend detailweergave (actueel)
 
 - In de bestaande detailmodal staat nu een tweede sectie met individuele transacties.
@@ -65,10 +76,10 @@ Dit bestand is de actuele bron voor overdracht.
   - `Uitgaven`
   - `Spaarrekening mutaties`
   - `Cashflow (tijdslijn)`
-  - `Needs vs Wants`
-  - `Merchant concentration`
-  - `Expense momentum` (laatste 30 dagen)
-  - `Money Flow`
+  - `Noodzaak vs wens`
+  - `Aandeel top-tegenrekening`
+  - `Uitgavenmomentum` (laatste 30 dagen)
+  - `Geldstromen detail`
 - Kolommen in de transactieview:
   - `Datum`
   - `Tijd`
@@ -84,7 +95,7 @@ Dit bestand is de actuele bron voor overdracht.
   - modal rendert transacties in batches (`Toon meer`) i.p.v. alles in 1 keer om UI-lag bij grote periodes te beperken.
   - client-side zoekveld toegevoegd (eigen rekening, merchant/tegenrekening, omschrijving, datum, bedrag).
   - client-side sortering toegevoegd (datum, bedrag, naam).
-  - `Money Flow` detail ondersteunt klikbare categorie-rijen met gefilterde transactietabel en standaard ingeklapte sectie `Alle transacties in de periode`.
+  - `Geldstromen` detail ondersteunt klikbare categorie-rijen met gefilterde transactietabel en standaard ingeklapte sectie `Alle transacties in de periode`.
   - geldstromen-detail klikhandler is robuust gemaakt voor browservarianten waar `event.target` geen direct `Element` is.
   - tekst `Alle transacties in de periode` staat nu alleen in het bovenste categoriepaneel; de tabelsectie onderin gebruikt neutrale titel `Transacties (...)`.
 
@@ -139,7 +150,7 @@ Dit bestand is de actuele bron voor overdracht.
 
 ## Detailmodal styling (actueel)
 
-- `Action plan` detail gebruikt nu een gestapelde rijweergave voor tekstregels (`balance-detail-list-stacked`) zodat kopteksten/inhoud horizontaal leesbaar blijven (geen verticaal “ingedrukte” tekstblokken).
+- `Actieplan` detail gebruikt nu een gestapelde rijweergave voor tekstregels (`balance-detail-list-stacked`) zodat kopteksten/inhoud horizontaal leesbaar blijven (geen verticaal “ingedrukte” tekstblokken).
 
 ## Header UX (actueel)
 

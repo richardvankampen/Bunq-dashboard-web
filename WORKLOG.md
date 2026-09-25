@@ -4,6 +4,21 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — grafieklogica gecontroleerd en gecorrigeerd
+
+- Review van alle grafieken en tegels in `app.js`; 9 bevindingen, allemaal opgelost:
+  1. Dagen werden in UTC gegroepeerd (`toISOString`) → betalingen 00:00–02:00 NL-tijd op vorige dag; nu lokale datum (`toDateKey`/`dateFromKey`).
+  2. `Sparen`-trend/sparkline toonden inkomsten−uitgaven i.p.v. spaarmutaties; nu dezelfde data als het getal.
+  3. Trend gaf `0.0%` als eerste helft ≤ 0; nu `n.v.t.` (`calculateHalfPeriodChange`, `setTrendIndicator`), netto-reeksen t.o.v. |eerste helft|.
+  4. Budgetdiscipline: partiële eerste maand weggelaten, lopende maand gemarkeerd, refunds verlagen vrij besteedbaar, maanden zonder inkomen als gat; inzichten/actieplan/detail op laatste volledige maand.
+  5. Spreidingsgrafiek (Maandverdeling): vaste bedragklassen i.p.v. lineair tot grootste betaling; top 4 op bedrag; % per categorie.
+  6. Interne overboekingen: één regel (`isInternalOwnTransfer`) voor alle grafieken via `applyClientFilters`; Verdeling/Top tegenrekeningen filterden eerder ook bij uitgeschakelde instelling.
+  7. `Sparen` negeerde rekeningselectie; nu `buildSavingsWidgetTransactions` via `applyClientFilters`.
+  8. Engelse labels vertaald (Cashflow, Geldstromen, Verdeling, Budgetdiscipline, detailvensters, actieplan).
+  9. Hover met € en 2 decimalen in Top tegenrekeningen en Categorie-race.
+- `index.html`: kop `Budgetdiscipline (50/30/20)`. `RELEASE_NOTES(-NL).md`: sectie 2026-09-25 (alle wijzigingen van vandaag).
+- Verificatie: headless Chromium (Europe/Amsterdam) met gemockte API en lokale Plotly 2.27.0/Chart.js 4.4.0: functiechecks (dag-sleutel 00:30, trend n.v.t., budget-maanden/refund, spreiding, interne regel, Sparen-filter) kloppen; alle grafieken en gewijzigde detailvensters renderen zonder JS-fouten. `node --check` OK; pytest 208 groen.
+
 ### Opgeleverd — dashboard laden sneller (achtergrond-sync, rekeninglijst-cache, card-backoff)
 
 - Productielogs na de transactie-opslag: herladen even traag als eerste load. Oorzaak niet de transacties (pagina uit opslag: 0,05s) maar Bunq-calls vóór het lezen:

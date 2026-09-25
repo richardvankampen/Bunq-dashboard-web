@@ -1148,7 +1148,7 @@ function setupCardActionButtons() {
             try {
                 await window.Plotly.downloadImage(plot, {
                     format: 'png',
-                    filename: `${plot.id}-${new Date().toISOString().slice(0, 10)}`,
+                    filename: `${plot.id}-${toDateKey(new Date())}`,
                     width: 1600,
                     height: 900,
                     scale: 1.5
@@ -1438,8 +1438,17 @@ function classifyAccountType(account) {
     return 'checking';
 }
 
+// Day key in the browser's local time (Dutch time for this dashboard), not UTC:
+// a payment at 00:30 belongs to that day, not the previous one.
 function toDateKey(date) {
-    return date.toISOString().slice(0, 10);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function dateFromKey(key) {
+    return new Date(`${key}T00:00:00`);
 }
 
 function collectDateRangeKeys(transactions) {
@@ -1624,11 +1633,13 @@ function processAndRenderData(data) {
     
     const filtered = applyClientFilters(data);
     const normalized = normalizeTransactions(filtered);
-    const savingsWidgetNet = calculateSavingsWidgetNet(data);
+    const savingsTransactions = buildSavingsWidgetTransactions(data);
+    const savingsWidgetNet = savingsTransactions.reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
     balanceMetrics = calculateBalanceMetrics(normalized, accountsList, balanceHistoryData);
     latestDataQualitySummary = computeDataQualitySummary(normalized, accountsList, dataQualitySummary);
     const kpis = calculateKPIs(normalized);
     kpis.savingsWidgetNet = savingsWidgetNet;
+    kpis.savingsTransactions = savingsTransactions;
     kpis.savingsRate = kpis.income > 0 ? (savingsWidgetNet / kpis.income) * 100 : 0;
     renderKPIs(kpis, normalized);
     renderBalanceKPIs(balanceMetrics);
@@ -1659,34 +1670,9 @@ function applyClientFilters(data, options = {}) {
     let filtered = [...data];
     const excludeInternalTransfers = options.excludeInternalTransfers ?? CONFIG.excludeInternalTransfers;
     if (excludeInternalTransfers) {
-        const { ownIds: ownAccountIds, ownIbans } = getOwnBunqAccountIdentitySets();
-        filtered = filtered.filter((transaction) => {
-            if (transaction?.is_internal_transfer) return false;
-
-            if (ownAccountIds.size > 0) {
-                const counterpartyAccountId = transaction?.counterparty_account_id != null
-                    ? String(transaction.counterparty_account_id).trim()
-                    : '';
-                const sourceAccountId = transaction?.account_id != null
-                    ? String(transaction.account_id).trim()
-                    : '';
-                if (
-                    counterpartyAccountId
-                    && ownAccountIds.has(counterpartyAccountId)
-                    && (!sourceAccountId || counterpartyAccountId !== sourceAccountId)
-                ) {
-                    return false;
-                }
-            }
-
-            if (ownIbans.size > 0) {
-                const counterpartyIban = normalizeIbanForMatch(transaction?.counterparty_iban);
-                if (counterpartyIban && ownIbans.has(counterpartyIban)) {
-                    return false;
-                }
-            }
-            return true;
-        });
+        // One rule for every tile and chart (see isInternalOwnTransfer).
+        const ownIdentity = getOwnBunqAccountIdentitySets();
+        filtered = filtered.filter((transaction) => !isInternalOwnTransfer(transaction, ownIdentity));
     }
     if (accountsList.length && selectedAccountIds.size > 0 && selectedAccountIds.size < accountsList.length) {
         const allowed = new Set(Array.from(selectedAccountIds).map(String));
@@ -1773,15 +1759,18 @@ function calculateKPIs(data) {
     return { income, expenses, netSavings, savingsRate };
 }
 
-function calculateSavingsWidgetNet(rawTransactions) {
-    const normalizedAll = normalizeTransactions(Array.isArray(rawTransactions) ? rawTransactions : []);
+// Transactions behind the `Sparen` tile: savings-account mutations (deposits minus
+// withdrawals, incl. transfers from own accounts), excluding savings-to-savings moves.
+// Respects the account selection, like the other tiles and the `Spaarrekening mutaties` detail.
+function buildSavingsWidgetTransactions(rawTransactions) {
     const { savingsIds, savingsNames } = getSavingsAccountSets();
-    if (!savingsIds.size) return 0;
-
-    return normalizedAll
+    if (!savingsIds.size) return [];
+    const scoped = applyClientFilters(Array.isArray(rawTransactions) ? rawTransactions : [], {
+        excludeInternalTransfers: false
+    });
+    return normalizeTransactions(scoped)
         .filter((transaction) => savingsIds.has(String(transaction?.account_id)))
-        .filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsIds, savingsNames))
-        .reduce((sum, transaction) => sum + (Number(transaction?.amount) || 0), 0);
+        .filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsIds, savingsNames));
 }
 
 function safeRatio(numerator, denominator, fallback = null) {
@@ -1983,36 +1972,20 @@ function renderKPIs(kpis, data) {
         circle.style.strokeDashoffset = `${offset}`;
     }
     
-    // Sparklines
+    // Sparklines + trend: second half of the period vs the first half (same number of days).
     const daily = buildDailyTotals(data);
     const incomeSeries = daily.map(d => d.income);
     const expenseSeries = daily.map(d => d.expenses);
-    const savingsSeries = daily.map(d => d.net);
-    const mid = Math.floor(daily.length / 2);
-    const calcChange = (series) => {
-        const prior = series.slice(0, mid).reduce((sum, v) => sum + v, 0);
-        const recent = series.slice(mid).reduce((sum, v) => sum + v, 0);
-        return prior > 0 ? ((recent - prior) / prior) * 100 : 0;
-    };
-    const incomeChange = calcChange(incomeSeries);
-    const expenseChange = calcChange(expenseSeries);
-    const savingsChange = calcChange(savingsSeries);
-    
-    if (incomeTrend) {
-        incomeTrend.textContent = `${incomeChange.toFixed(1)}%`;
-        incomeTrend.parentElement?.classList.toggle('positive', incomeChange >= 0);
-        incomeTrend.parentElement?.classList.toggle('negative', incomeChange < 0);
-    }
-    if (expensesTrend) {
-        expensesTrend.textContent = `${expenseChange.toFixed(1)}%`;
-        expensesTrend.parentElement?.classList.toggle('positive', expenseChange <= 0);
-        expensesTrend.parentElement?.classList.toggle('negative', expenseChange > 0);
-    }
-    if (savingsTrend) {
-        savingsTrend.textContent = `${savingsChange.toFixed(1)}%`;
-        savingsTrend.parentElement?.classList.toggle('positive', savingsChange >= 0);
-        savingsTrend.parentElement?.classList.toggle('negative', savingsChange < 0);
-    }
+    // `Sparen` shows savings-account mutations, so its trend/sparkline use that same data.
+    const savingsDaily = alignDailySeries(buildDailyTotals(kpis.savingsTransactions || []), daily);
+    const savingsSeries = savingsDaily.map(d => d.net);
+    const incomeChange = calculateHalfPeriodChange(incomeSeries);
+    const expenseChange = calculateHalfPeriodChange(expenseSeries);
+    const savingsChange = calculateHalfPeriodChange(savingsSeries);
+
+    setTrendIndicator(incomeTrend, incomeChange, { higherIsBetter: true });
+    setTrendIndicator(expensesTrend, expenseChange, { higherIsBetter: false });
+    setTrendIndicator(savingsTrend, savingsChange, { higherIsBetter: true });
     
     renderMetricMiniChart(
         'incomeSparkline',
@@ -2026,9 +1999,45 @@ function renderKPIs(kpis, data) {
     );
     renderMetricMiniChart(
         'savingsSparkline',
-        daily.map((point) => ({ date: point.date, total: point.net })),
+        savingsDaily.map((point) => ({ date: point.date, total: point.net })),
         '#8b5cf6'
     );
+}
+
+// Change of the second half vs the first half, in % of the first half.
+// null when the first half is ~0 (a percentage would be meaningless).
+function calculateHalfPeriodChange(series) {
+    if (!Array.isArray(series) || series.length < 2) return null;
+    const mid = Math.floor(series.length / 2);
+    const prior = series.slice(0, mid).reduce((sum, v) => sum + v, 0);
+    const recent = series.slice(mid).reduce((sum, v) => sum + v, 0);
+    if (Math.abs(prior) < 0.01) return null;
+    return ((recent - prior) / Math.abs(prior)) * 100;
+}
+
+function setTrendIndicator(element, change, { higherIsBetter = true } = {}) {
+    if (!element) return;
+    const parent = element.parentElement;
+    if (change === null || !Number.isFinite(change)) {
+        element.textContent = 'n.v.t.';
+        element.title = 'Niet te berekenen: de eerste helft van de periode heeft (bijna) geen waarde.';
+        parent?.classList.remove('positive', 'negative');
+        return;
+    }
+    element.textContent = `${change.toFixed(1)}%`;
+    element.title = 'Tweede helft van de periode t.o.v. de eerste helft.';
+    const good = higherIsBetter ? change >= 0 : change <= 0;
+    parent?.classList.toggle('positive', good);
+    parent?.classList.toggle('negative', !good);
+}
+
+// Map a (possibly shorter) daily series onto the date range of `reference`, filling gaps with 0.
+function alignDailySeries(series, reference) {
+    const byKey = new Map((series || []).map((point) => [toDateKey(point.date), point]));
+    return (reference || []).map((point) => {
+        const key = toDateKey(point.date);
+        return byKey.get(key) || { date: point.date, income: 0, expenses: 0, net: 0 };
+    });
 }
 
 function calculateSeriesChange(series) {
@@ -2592,12 +2601,12 @@ function buildTransactionTableRows(transactions, options = {}) {
 function buildDailySeries(transactions, pickValue) {
     const perDay = new Map();
     transactions.forEach((transaction) => {
-        const key = transaction.date.toISOString().slice(0, 10);
+        const key = toDateKey(transaction.date);
         perDay.set(key, (perDay.get(key) || 0) + pickValue(transaction));
     });
     return Array.from(perDay.entries())
         .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([date, value]) => ({ date: new Date(`${date}T00:00:00`), value }));
+        .map(([date, value]) => ({ date: dateFromKey(date), value }));
 }
 
 function normalizePartyNameForMatch(value) {
@@ -2620,7 +2629,10 @@ function isOwnAccountNameMatch(value, ownNames) {
     return ownNames.has(normalized);
 }
 
-function isLikelyInternalOwnTransferForWidget(transaction, ownIdentity) {
+// Transfer between own Bunq accounts: backend flag, own account id/IBAN as counterparty,
+// or a counterparty named like one of the own accounts. Applied to all tiles and charts
+// when "exclude internal transfers" is on (applyClientFilters), and to none when it is off.
+function isInternalOwnTransfer(transaction, ownIdentity) {
     const { ownIds, ownIbans, ownNames } = ownIdentity || {};
     if (transaction?.is_internal_transfer) return true;
 
@@ -2780,7 +2792,7 @@ function showTransactionDetail(detailType) {
         const total = summary.essentialTotal + summary.discretionaryTotal;
         if (total <= 0.01) {
             openDetailModal({
-                title: '<i class="fas fa-scale-balanced"></i> Needs vs Wants',
+                title: '<i class="fas fa-scale-balanced"></i> Noodzaak vs wens',
                 summary: 'Geen uitgaven gevonden in de geselecteerde periode.',
                 rows: [{ label: 'Geen uitgaven om te analyseren.', value: '' }],
                 chart: null
@@ -2799,26 +2811,26 @@ function showTransactionDetail(detailType) {
 
         const rows = [
             {
-                label: 'Essentials totaal',
+                label: 'Noodzakelijk totaal',
                 value: `${formatCurrency(summary.essentialTotal)} (${((summary.essentialTotal / total) * 100).toFixed(1)}%)`
             },
             ...topEssential.map(([category, amount]) => ({
-                label: `Essentials · ${category}`,
+                label: `Noodzakelijk · ${category}`,
                 value: formatCurrency(amount)
             })),
             {
-                label: 'Discretionary totaal',
+                label: 'Vrij besteedbaar totaal',
                 value: `${formatCurrency(summary.discretionaryTotal)} (${((summary.discretionaryTotal / total) * 100).toFixed(1)}%)`
             },
             ...topDiscretionary.map(([category, amount]) => ({
-                label: `Discretionary · ${category}`,
+                label: `Vrij besteedbaar · ${category}`,
                 value: formatCurrency(amount)
             }))
         ];
 
         const trace = {
             type: 'pie',
-            labels: ['Essentials', 'Discretionary'],
+            labels: ['Noodzakelijk', 'Vrij besteedbaar'],
             values: [summary.essentialTotal, summary.discretionaryTotal],
             marker: { colors: ['#3b82f6', '#f59e0b'] },
             textinfo: 'label+percent',
@@ -2833,7 +2845,7 @@ function showTransactionDetail(detailType) {
         };
 
         openDetailModal({
-            title: '<i class="fas fa-scale-balanced"></i> Needs vs Wants',
+            title: '<i class="fas fa-scale-balanced"></i> Noodzaak vs wens',
             summary: `Totaal uitgaven: ${formatCurrency(total)}`,
             rows,
             chart: { trace, layout },
@@ -2858,7 +2870,7 @@ function showTransactionDetail(detailType) {
 
         if (!rows.length) {
             openDetailModal({
-                title: '<i class="fas fa-store"></i> Merchant concentration',
+                title: '<i class="fas fa-store"></i> Aandeel top-tegenrekening',
                 summary: 'Geen uitgaven gevonden in de geselecteerde periode.',
                 rows: [{ label: 'Geen merchant data.', value: '' }],
                 chart: null
@@ -2891,7 +2903,7 @@ function showTransactionDetail(detailType) {
         };
 
         openDetailModal({
-            title: '<i class="fas fa-store"></i> Merchant concentration',
+            title: '<i class="fas fa-store"></i> Aandeel top-tegenrekening',
             summary: `Top merchant: ${top.merchant} (${topShare.toFixed(1)}% van uitgaven)`,
             rows: rows.slice(0, 20).map((row) => ({
                 label: row.merchant,
@@ -2924,7 +2936,7 @@ function showTransactionDetail(detailType) {
 
         if (!rows.length) {
             openDetailModal({
-                title: '<i class="fas fa-chart-line"></i> Expense momentum',
+                title: '<i class="fas fa-chart-line"></i> Uitgavenmomentum',
                 summary: 'Onvoldoende uitgaven voor momentum-analyse.',
                 rows: [{ label: 'Geen categorie data.', value: '' }],
                 chart: null
@@ -2967,7 +2979,7 @@ function showTransactionDetail(detailType) {
         };
 
         openDetailModal({
-            title: '<i class="fas fa-chart-line"></i> Expense momentum (30d vs vorige 30d)',
+            title: '<i class="fas fa-chart-line"></i> Uitgavenmomentum (30d vs vorige 30d)',
             summary: `Totaal: ${formatCurrency(recentTotal)} vs ${formatCurrency(priorTotal)} (${totalChangePct.toFixed(1)}%)`,
             rows: rows.slice(0, 20).map((row) => ({
                 label: row.category,
@@ -3104,7 +3116,7 @@ function showTransactionDetail(detailType) {
             x: rows.map((row) => row.category),
             y: rows.map((row) => row.net),
             marker: { color: rows.map((row) => row.net >= 0 ? '#22c55e' : '#ef4444') },
-            hovertemplate: '%{x}<br>Net: %{y:.2f} EUR<extra></extra>'
+            hovertemplate: '%{x}<br>Netto: %{y:.2f} EUR<extra></extra>'
         };
         const layout = {
             margin: { t: 10, r: 20, l: 40, b: 70 },
@@ -3126,7 +3138,7 @@ function showTransactionDetail(detailType) {
                 },
                 ...rows.map((row) => ({
                     label: `${row.category} · In ${formatCurrency(row.income)} · Uit ${formatCurrency(row.expense)}`,
-                    value: `Net ${formatCurrency(row.net)}`,
+                    value: `Netto ${formatCurrency(row.net)}`,
                     actionKey: `cat:${row.category}`
                 }))
             ],
@@ -3143,7 +3155,7 @@ function showTransactionDetail(detailType) {
         const monthly = summarizeMonthlyBudgetDiscipline(transactions, 12);
         if (!monthly.length) {
             openDetailModal({
-                title: '<i class="fas fa-scale-balanced"></i> Budget discipline detail',
+                title: '<i class="fas fa-scale-balanced"></i> Budgetdiscipline (50/30/20)',
                 summary: 'Onvoldoende data voor maandelijkse budgetanalyse.',
                 rows: [{ label: 'Geen complete maandinkomsten gevonden.', value: '' }],
                 chart: null
@@ -3152,47 +3164,50 @@ function showTransactionDetail(detailType) {
         }
 
         const labels = monthly.map((row) => row.monthLabel);
-        const avgEssentials = monthly.reduce((sum, row) => sum + row.essentialsPct, 0) / monthly.length;
-        const avgDiscretionary = monthly.reduce((sum, row) => sum + row.discretionaryPct, 0) / monthly.length;
-        const avgSavings = monthly.reduce((sum, row) => sum + row.savingsPct, 0) / monthly.length;
-        const latest = monthly[monthly.length - 1];
+        // Averages over complete months; the running month only counts when it's all there is.
+        const completeMonths = monthly.filter((row) => !row.isCurrent);
+        const avgBase = completeMonths.length ? completeMonths : monthly;
+        const avgEssentials = avgBase.reduce((sum, row) => sum + row.essentialsPct, 0) / avgBase.length;
+        const avgDiscretionary = avgBase.reduce((sum, row) => sum + row.discretionaryPct, 0) / avgBase.length;
+        const avgSavings = avgBase.reduce((sum, row) => sum + row.savingsPct, 0) / avgBase.length;
+        const latest = latestCompleteBudgetMonth(monthly);
 
         const traces = [
             {
                 type: 'bar',
-                name: 'Essentials',
+                name: 'Noodzakelijk',
                 x: labels,
                 y: monthly.map((row) => row.essentials),
                 marker: { color: 'rgba(59,130,246,0.82)' },
-                hovertemplate: '%{x}<br>Essentials: %{y:.2f} EUR<extra></extra>'
+                hovertemplate: '%{x}<br>Noodzakelijk: %{y:.2f} EUR<extra></extra>'
             },
             {
                 type: 'bar',
-                name: 'Discretionary',
+                name: 'Vrij besteedbaar',
                 x: labels,
                 y: monthly.map((row) => row.discretionary),
                 marker: { color: 'rgba(245,158,11,0.82)' },
-                hovertemplate: '%{x}<br>Discretionary: %{y:.2f} EUR<extra></extra>'
+                hovertemplate: '%{x}<br>Vrij besteedbaar: %{y:.2f} EUR<extra></extra>'
             },
             {
                 type: 'scatter',
                 mode: 'lines+markers',
-                name: 'Income',
+                name: 'Inkomen',
                 x: labels,
                 y: monthly.map((row) => row.income),
                 line: { color: '#22c55e', width: 2.5 },
                 marker: { size: 6 },
-                hovertemplate: '%{x}<br>Income: %{y:.2f} EUR<extra></extra>'
+                hovertemplate: '%{x}<br>Inkomen: %{y:.2f} EUR<extra></extra>'
             },
             {
                 type: 'scatter',
                 mode: 'lines+markers',
-                name: 'Net savings',
+                name: 'Overgehouden',
                 x: labels,
                 y: monthly.map((row) => row.netSavings),
                 line: { color: '#38bdf8', width: 2.5, dash: 'dot' },
                 marker: { size: 6 },
-                hovertemplate: '%{x}<br>Net savings: %{y:.2f} EUR<extra></extra>'
+                hovertemplate: '%{x}<br>Overgehouden: %{y:.2f} EUR<extra></extra>'
             }
         ];
         const layout = {
@@ -3207,11 +3222,11 @@ function showTransactionDetail(detailType) {
         };
 
         openDetailModal({
-            title: '<i class="fas fa-scale-balanced"></i> Budget discipline detail',
-            summary: `Gemiddeld: essentials ${avgEssentials.toFixed(1)}% (target 50%), discretionary ${avgDiscretionary.toFixed(1)}% (target 30%), savings ${avgSavings.toFixed(1)}% (target 20%). Laatste maand savings: ${latest.savingsPct.toFixed(1)}%.`,
+            title: '<i class="fas fa-scale-balanced"></i> Budgetdiscipline (50/30/20)',
+            summary: `Gemiddeld${completeMonths.length ? ' (volledige maanden)' : ''}: noodzakelijk ${avgEssentials.toFixed(1)}% (doel 50%), vrij besteedbaar ${avgDiscretionary.toFixed(1)}% (doel 30%), sparen ${avgSavings.toFixed(1)}% (doel 20%). ${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`} sparen: ${latest.savingsPct.toFixed(1)}%. Terugbetalingen tellen als lagere uitgaven, niet als inkomen.`,
             rows: monthly.slice().reverse().map((row) => ({
-                label: `${row.monthLabel} · In ${formatCurrency(row.income)} · Need ${formatCurrency(row.essentials)} (${row.essentialsPct.toFixed(1)}%) · Want ${formatCurrency(row.discretionary)} (${row.discretionaryPct.toFixed(1)}%)`,
-                value: `Net ${formatCurrency(row.netSavings)} (${row.savingsPct.toFixed(1)}%)`
+                label: `${row.monthLabel} · In ${formatCurrency(row.income)} · Noodzakelijk ${formatCurrency(row.essentials)} (${row.essentialsPct.toFixed(1)}%) · Vrij ${formatCurrency(row.discretionary)} (${row.discretionaryPct.toFixed(1)}%)`,
+                value: `Netto ${formatCurrency(row.netSavings)} (${row.savingsPct.toFixed(1)}%)`
             })),
             chart: { trace: traces, layout }
         });
@@ -3263,7 +3278,7 @@ function showTransactionDetail(detailType) {
         } : null;
 
         openDetailModal({
-            title: '<i class="fas fa-list-check"></i> Action plan (prioriteit)',
+            title: '<i class="fas fa-list-check"></i> Actieplan (prioriteit)',
             summary: actions.length
                 ? `Topprioriteiten op basis van huidige periode (${actions.length} acties, hoogste confidence ${Math.round((Number(actions[0].confidence) || 0.75) * 100)}%).`
                 : 'Geen acties beschikbaar.',
@@ -3281,7 +3296,7 @@ function showTransactionDetail(detailType) {
         const recurring = summarizeRecurringCosts(transactions, 20);
         if (!recurring.rows.length) {
             openDetailModal({
-                title: '<i class="fas fa-repeat"></i> Recurring costs',
+                title: '<i class="fas fa-repeat"></i> Terugkerende kosten',
                 summary: 'Onvoldoende terugkerende uitgaven gevonden in de geselecteerde periode.',
                 rows: [{ label: 'Geen terugkerende merchant-patronen gevonden.', value: '' }],
                 chart: null
@@ -3311,7 +3326,7 @@ function showTransactionDetail(detailType) {
 
         const monthlyTotal = recurring.rows.reduce((sum, row) => sum + row.avgMonthly, 0);
         openDetailModal({
-            title: '<i class="fas fa-repeat"></i> Recurring costs',
+            title: '<i class="fas fa-repeat"></i> Terugkerende kosten',
             summary: `${recurring.rows.length} terugkerende merchants · geschatte maandlast ${formatCurrency(monthlyTotal)}.`,
             rows: recurring.rows.map((row) => ({
                 label: `${row.merchant} · ${row.monthsPresent}/${recurring.months} maanden`,
@@ -3326,7 +3341,7 @@ function showTransactionDetail(detailType) {
         const quality = latestDataQualitySummary;
         if (!quality || !quality.metrics) {
             openDetailModal({
-                title: '<i class="fas fa-shield-halved"></i> Data quality',
+                title: '<i class="fas fa-shield-halved"></i> Datakwaliteit',
                 summary: 'Nog geen kwaliteitsmeting beschikbaar.',
                 rows: [{ label: 'Laad eerst real data om kwaliteitsmetingen te berekenen.', value: '' }],
                 chart: null
@@ -3400,7 +3415,7 @@ function showTransactionDetail(detailType) {
         }
 
         openDetailModal({
-            title: '<i class="fas fa-shield-halved"></i> Data quality',
+            title: '<i class="fas fa-shield-halved"></i> Datakwaliteit',
             summary: 'Kwaliteitsscore voor analyses op basis van live transacties en lokale historie.',
             rows,
             chart
@@ -3421,9 +3436,9 @@ function buildDailyTotals(data) {
     
     const dayMap = new Map();
     data.forEach(t => {
-        const key = t.date.toISOString().slice(0, 10);
+        const key = toDateKey(t.date);
         if (!dayMap.has(key)) {
-            dayMap.set(key, { date: new Date(key), income: 0, expenses: 0, net: 0 });
+            dayMap.set(key, { date: dateFromKey(key), income: 0, expenses: 0, net: 0 });
         }
         const entry = dayMap.get(key);
         if (t.amount >= 0) entry.income += t.amount;
@@ -3436,8 +3451,8 @@ function buildDailyTotals(data) {
     const maxDate = new Date(Math.max(...dates));
     const series = [];
     for (let d = new Date(minDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
-        const key = d.toISOString().slice(0, 10);
-        series.push(dayMap.get(key) || { date: new Date(d), income: 0, expenses: 0, net: 0 });
+        const key = toDateKey(d);
+        series.push(dayMap.get(key) || { date: dateFromKey(key), income: 0, expenses: 0, net: 0 });
     }
     
     return series;
@@ -3459,26 +3474,29 @@ function renderCashflowChart(data) {
             y: net,
             type: 'scatter',
             mode: 'lines',
-            name: 'Net',
+            name: 'Netto',
             line: { color: '#8b5cf6', width: 3 },
             fill: 'tozeroy',
-            fillcolor: 'rgba(139, 92, 246, 0.15)'
+            fillcolor: 'rgba(139, 92, 246, 0.15)',
+            hovertemplate: '%{x|%d-%m-%Y}<br>Netto: %{y:.2f} EUR<extra></extra>'
         },
         {
             x,
             y: income,
             type: 'scatter',
             mode: 'lines',
-            name: 'Income',
-            line: { color: '#22c55e', width: 2 }
+            name: 'Inkomsten',
+            line: { color: '#22c55e', width: 2 },
+            hovertemplate: '%{x|%d-%m-%Y}<br>Inkomsten: %{y:.2f} EUR<extra></extra>'
         },
         {
             x,
             y: expenses.map(v => -v),
             type: 'scatter',
             mode: 'lines',
-            name: 'Expenses',
-            line: { color: '#ef4444', width: 2 }
+            name: 'Uitgaven',
+            line: { color: '#ef4444', width: 2 },
+            hovertemplate: '%{x|%d-%m-%Y}<br>Uitgaven: %{y:.2f} EUR<extra></extra>'
         }
     ];
     
@@ -3546,16 +3564,21 @@ function renderSankeyChart(data) {
     }
 
     const topIncome = selectTopWithRemainder(Object.entries(incomeByCategory), 6, 'Overig inkomen', 0.08);
-    const topEssential = selectTopWithRemainder(Object.entries(essentialByCategory), 7, 'Overig essentials', 0.06);
-    const topDiscretionary = selectTopWithRemainder(Object.entries(discretionaryByCategory), 7, 'Overig discretionary', 0.06);
+    const topEssential = selectTopWithRemainder(Object.entries(essentialByCategory), 7, 'Overig noodzakelijk', 0.06);
+    const topDiscretionary = selectTopWithRemainder(Object.entries(discretionaryByCategory), 7, 'Overig vrij besteedbaar', 0.06);
 
+    const SANKEY_TOTAL_IN = 'Totaal in';
+    const SANKEY_ESSENTIALS = 'Noodzakelijk';
+    const SANKEY_DISCRETIONARY = 'Vrij besteedbaar';
+    const SANKEY_SAVED = 'Overgehouden';
+    const SANKEY_BUFFER = 'Uit buffer';
     const labels = [
         ...topIncome.map(([name]) => `In: ${name}`),
-        'Cash In',
-        'Essentials',
-        'Discretionary',
-        ...topEssential.map(([name]) => `Need: ${name}`),
-        ...topDiscretionary.map(([name]) => `Want: ${name}`)
+        SANKEY_TOTAL_IN,
+        SANKEY_ESSENTIALS,
+        SANKEY_DISCRETIONARY,
+        ...topEssential.map(([name]) => `Nodig: ${name}`),
+        ...topDiscretionary.map(([name]) => `Vrij: ${name}`)
     ];
     const source = [];
     const target = [];
@@ -3614,14 +3637,14 @@ function renderSankeyChart(data) {
 
     const net = totalIncome - totalExpenses;
     if (net > 0) {
-        labels.push('Net Saved');
+        labels.push(SANKEY_SAVED);
         source.push(cashInIndex);
         target.push(labels.length - 1);
         value.push(net);
         colors.push('rgba(56,189,248,0.45)');
         linkSharePct.push(totalIncome > 0 ? (net / totalIncome) * 100 : 0);
     } else if (net < 0) {
-        labels.push('Buffer / Debt');
+        labels.push(SANKEY_BUFFER);
         source.push(labels.length - 1);
         target.push(cashInIndex);
         value.push(Math.abs(net));
@@ -3642,13 +3665,13 @@ function renderSankeyChart(data) {
             pad: 15,
             thickness: 18,
             color: labels.map((label) => {
-                if (label === 'Cash In') return '#22c55e';
-                if (label === 'Net Saved') return '#38bdf8';
-                if (label === 'Buffer / Debt') return '#f59e0b';
-                if (label === 'Essentials') return '#3b82f6';
-                if (label === 'Discretionary') return '#f59e0b';
-                if (label.startsWith('Need:')) return '#60a5fa';
-                if (label.startsWith('Want:')) return '#fbbf24';
+                if (label === SANKEY_TOTAL_IN) return '#22c55e';
+                if (label === SANKEY_SAVED) return '#38bdf8';
+                if (label === SANKEY_BUFFER) return '#f59e0b';
+                if (label === SANKEY_ESSENTIALS) return '#3b82f6';
+                if (label === SANKEY_DISCRETIONARY) return '#f59e0b';
+                if (label.startsWith('Nodig:')) return '#60a5fa';
+                if (label.startsWith('Vrij:')) return '#fbbf24';
                 if (label.startsWith('In:')) return '#22c55e';
                 return getCategoryColor(label);
             }),
@@ -3694,8 +3717,7 @@ function renderSunburstChart(data) {
     const container = document.getElementById('sunburstChart');
     if (!container) return;
 
-    const ownIdentity = getOwnBunqAccountIdentitySets();
-    const widgetData = (data || []).filter((transaction) => !isLikelyInternalOwnTransferForWidget(transaction, ownIdentity));
+    const widgetData = data || [];
 
     const incomeByCategory = new Map();
     const expenseByCategory = new Map();
@@ -3752,9 +3774,9 @@ function renderSunburstChart(data) {
         return;
     }
 
-    pushNode('root', 'All', '', totalIncome + totalExpenses, '#334155');
-    pushNode('income', 'Income', 'root', totalIncome, '#22c55e');
-    pushNode('expenses', 'Expenses', 'root', totalExpenses, '#ef4444');
+    pushNode('root', 'Alles', '', totalIncome + totalExpenses, '#334155');
+    pushNode('income', 'Inkomsten', 'root', totalIncome, '#22c55e');
+    pushNode('expenses', 'Uitgaven', 'root', totalExpenses, '#ef4444');
 
     const incomeEntries = selectTopWithRemainder(
         Array.from(incomeByCategory.entries()),
@@ -3817,7 +3839,7 @@ function renderSunburstChart(data) {
                 width: 2.2
             }
         },
-        hovertemplate: '%{label}<br>%{value:.2f} EUR<br>%{percentParent:.1%} van parent<extra></extra>'
+        hovertemplate: '%{label}<br>%{value:.2f} EUR<br>%{percentParent:.1%} van bovenliggend<extra></extra>'
     };
     
     const layout = {
@@ -3834,8 +3856,8 @@ function renderTimeTravelChart(data) {
     const container = document.getElementById('timeTravelChart');
     if (!container) return;
 
-    const monthly = summarizeMonthlyBudgetDiscipline(data, 12);
-    if (!monthly.length) {
+    const monthly = summarizeMonthlyBudgetDiscipline(data, 12, { includeNoIncomeMonths: true });
+    if (!monthly.some((row) => row.essentialsPct !== null)) {
         Plotly.react(container, [], {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
@@ -3857,45 +3879,49 @@ function renderTimeTravelChart(data) {
     const essentials = monthly.map((row) => row.essentialsPct);
     const discretionary = monthly.map((row) => row.discretionaryPct);
     const savings = monthly.map((row) => row.savingsPct);
-    const minPct = Math.min(-20, ...savings.map((value) => Number(value) || 0));
-    const latest = monthly[monthly.length - 1];
-    const statusText = `Laatste maand: essentials ${latest.essentialsPct.toFixed(1)}% (target 50%), discretionary ${latest.discretionaryPct.toFixed(1)}% (target 30%), savings ${latest.savingsPct.toFixed(1)}% (target 20%).`;
+    const minPct = Math.min(-20, ...savings.filter((value) => value !== null).map((value) => Number(value) || 0));
+    const latest = latestCompleteBudgetMonth(monthly);
+    const noIncomeMonths = monthly.filter((row) => row.essentialsPct === null).map((row) => row.monthLabel);
+    const statusText = `${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`}: `
+        + `noodzakelijk ${latest.essentialsPct.toFixed(1)}% (doel 50%), vrij besteedbaar ${latest.discretionaryPct.toFixed(1)}% (doel 30%), `
+        + `sparen ${latest.savingsPct.toFixed(1)}% (doel 20%).`
+        + (noIncomeMonths.length ? ` Geen inkomen in: ${noIncomeMonths.join(', ')}.` : '');
 
     const traces = [
         {
             type: 'scatter',
             mode: 'lines+markers',
-            name: 'Essentials %',
+            name: 'Noodzakelijk %',
             x: labels,
             y: essentials,
             line: { color: '#3b82f6', width: 3 },
             marker: { size: 7 },
-            hovertemplate: '%{x}<br>Essentials: %{y:.1f}%<extra></extra>'
+            hovertemplate: '%{x}<br>Noodzakelijk: %{y:.1f}%<extra></extra>'
         },
         {
             type: 'scatter',
             mode: 'lines+markers',
-            name: 'Discretionary %',
+            name: 'Vrij besteedbaar %',
             x: labels,
             y: discretionary,
             line: { color: '#f59e0b', width: 3 },
             marker: { size: 7 },
-            hovertemplate: '%{x}<br>Discretionary: %{y:.1f}%<extra></extra>'
+            hovertemplate: '%{x}<br>Vrij besteedbaar: %{y:.1f}%<extra></extra>'
         },
         {
             type: 'scatter',
             mode: 'lines+markers',
-            name: 'Savings %',
+            name: 'Sparen %',
             x: labels,
             y: savings,
             line: { color: '#22c55e', width: 3 },
             marker: { size: 7 },
-            hovertemplate: '%{x}<br>Savings: %{y:.1f}%<extra></extra>'
+            hovertemplate: '%{x}<br>Sparen: %{y:.1f}%<extra></extra>'
         },
         {
             type: 'scatter',
             mode: 'lines',
-            name: 'Target essentials (50%)',
+            name: 'Doel noodzakelijk (50%)',
             x: labels,
             y: labels.map(() => 50),
             line: { color: 'rgba(59,130,246,0.65)', width: 1.8, dash: 'dot' },
@@ -3904,7 +3930,7 @@ function renderTimeTravelChart(data) {
         {
             type: 'scatter',
             mode: 'lines',
-            name: 'Target discretionary (30%)',
+            name: 'Doel vrij besteedbaar (30%)',
             x: labels,
             y: labels.map(() => 30),
             line: { color: 'rgba(245,158,11,0.65)', width: 1.8, dash: 'dot' },
@@ -3913,7 +3939,7 @@ function renderTimeTravelChart(data) {
         {
             type: 'scatter',
             mode: 'lines',
-            name: 'Target savings (20%)',
+            name: 'Doel sparen (20%)',
             x: labels,
             y: labels.map(() => 20),
             line: { color: 'rgba(34,197,94,0.65)', width: 1.8, dash: 'dot' },
@@ -3996,8 +4022,7 @@ function renderMerchantsChart(data) {
     const container = document.getElementById('merchantsChart');
     if (!container) return;
 
-    const ownIdentity = getOwnBunqAccountIdentitySets();
-    const widgetData = (data || []).filter((transaction) => !isLikelyInternalOwnTransferForWidget(transaction, ownIdentity));
+    const widgetData = data || [];
 
     const totals = {};
     widgetData.forEach(t => {
@@ -4020,7 +4045,8 @@ function renderMerchantsChart(data) {
         orientation: 'h',
         marker: {
             color: '#8b5cf6'
-        }
+        },
+        hovertemplate: '%{y}<br>%{x:.2f} EUR<extra></extra>'
     };
     
     const layout = {
@@ -4028,68 +4054,110 @@ function renderMerchantsChart(data) {
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#cbd5f5' },
-        xaxis: { gridcolor: 'rgba(255,255,255,0.05)' },
-        yaxis: { gridcolor: 'rgba(255,255,255,0.05)' }
+        xaxis: { gridcolor: 'rgba(255,255,255,0.05)', tickprefix: '€' },
+        yaxis: { gridcolor: 'rgba(255,255,255,0.05)', automargin: true }
     };
     
     Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
 }
 
+// Amount buckets for the spending-spread chart; widths grow with the amount so one large
+// payment (e.g. rent) doesn't squeeze all other payments into the first bucket.
+const SPREAD_BUCKETS = [
+    { min: 0, max: 5, label: '€0–5' },
+    { min: 5, max: 10, label: '€5–10' },
+    { min: 10, max: 25, label: '€10–25' },
+    { min: 25, max: 50, label: '€25–50' },
+    { min: 50, max: 100, label: '€50–100' },
+    { min: 100, max: 250, label: '€100–250' },
+    { min: 250, max: 500, label: '€250–500' },
+    { min: 500, max: 1000, label: '€500–1000' },
+    { min: 1000, max: Infinity, label: '€1000+' }
+];
+
+// Per category: share of its payments in each amount bucket (sums to 100% per category).
+function buildSpendingSpread(data, maxCategories = 4) {
+    const amountsByCategory = {};
+    (data || []).forEach((transaction) => {
+        if ((transaction.amount || 0) >= 0) return;
+        const category = transaction.category || 'Overig';
+        if (!amountsByCategory[category]) amountsByCategory[category] = [];
+        amountsByCategory[category].push(Math.abs(transaction.amount));
+    });
+
+    // Categories with the most money spent (not the most payments).
+    return Object.entries(amountsByCategory)
+        .map(([category, amounts]) => ({
+            category,
+            amounts,
+            total: amounts.reduce((sum, value) => sum + value, 0)
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, maxCategories)
+        .map(({ category, amounts, total }) => {
+            const counts = SPREAD_BUCKETS.map(() => 0);
+            amounts.forEach((amount) => {
+                const index = SPREAD_BUCKETS.findIndex((bucket) => amount >= bucket.min && amount < bucket.max);
+                counts[index >= 0 ? index : SPREAD_BUCKETS.length - 1] += 1;
+            });
+            return {
+                category,
+                total,
+                count: amounts.length,
+                counts,
+                shares: counts.map((count) => (amounts.length ? (count / amounts.length) * 100 : 0))
+            };
+        });
+}
+
 function renderRidgePlot(data) {
     const canvas = document.getElementById('ridgePlotCanvas');
     if (!canvas) return;
-    
-    const categories = {};
-    data.forEach(t => {
-        if (t.amount >= 0) return;
-        const cat = t.category;
-        if (!categories[cat]) categories[cat] = [];
-        categories[cat].push(Math.abs(t.amount));
-    });
-    
-    const topCategories = Object.entries(categories)
-        .sort((a, b) => b[1].length - a[1].length)
-        .slice(0, 4);
-    
-    const maxValue = Math.max(
-        100,
-        ...topCategories.flatMap(([, values]) => values)
-    );
-    const bins = 12;
-    const binSize = maxValue / bins;
-    const labels = Array.from({ length: bins }, (_, i) => Math.round((i + 1) * binSize));
-    
-    const datasets = topCategories.map(([cat, values], idx) => {
-        const counts = Array(bins).fill(0);
-        values.forEach(v => {
-            const bin = Math.min(bins - 1, Math.floor(v / binSize));
-            counts[bin] += 1;
-        });
-        return {
-            label: cat,
-            data: counts,
-            borderColor: getCategoryColor(cat),
-            backgroundColor: 'rgba(0,0,0,0)',
-            tension: 0.4,
-            borderWidth: 2,
-            pointRadius: 0
-        };
-    });
-    
+
+    const spread = buildSpendingSpread(data, 4);
+    const datasets = spread.map((row) => ({
+        label: `${row.category} (${row.count})`,
+        data: row.shares,
+        counts: row.counts,
+        borderColor: getCategoryColor(row.category),
+        backgroundColor: 'rgba(0,0,0,0)',
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: 2
+    }));
+
     if (chartRegistry.chartjs.ridgePlot) {
         chartRegistry.chartjs.ridgePlot.destroy();
     }
-    
+
     chartRegistry.chartjs.ridgePlot = new Chart(canvas, {
         type: 'line',
-        data: { labels, datasets },
+        data: { labels: SPREAD_BUCKETS.map((bucket) => bucket.label), datasets },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { position: 'bottom' } },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => {
+                            const count = context.dataset.counts?.[context.dataIndex] ?? 0;
+                            return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}% (${count} betalingen)`;
+                        }
+                    }
+                }
+            },
             scales: {
-                x: { grid: { color: 'rgba(255,255,255,0.05)' } },
-                y: { grid: { color: 'rgba(255,255,255,0.05)' } }
+                x: {
+                    title: { display: true, text: 'Bedrag per betaling' },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                },
+                y: {
+                    title: { display: true, text: '% van betalingen in categorie' },
+                    beginAtZero: true,
+                    ticks: { callback: (value) => `${value}%` },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                }
             }
         }
     });
@@ -4157,7 +4225,8 @@ function updateRacingChart(frameIndex) {
         orientation: 'h',
         marker: {
             color: labels.map(getCategoryColor)
-        }
+        },
+        hovertemplate: '%{y}<br>%{x:.2f} EUR<extra></extra>'
     };
     
     const layout = {
@@ -4165,8 +4234,8 @@ function updateRacingChart(frameIndex) {
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#cbd5f5' },
-        xaxis: { gridcolor: 'rgba(255,255,255,0.05)' },
-        yaxis: { gridcolor: 'rgba(255,255,255,0.05)' }
+        xaxis: { gridcolor: 'rgba(255,255,255,0.05)', tickprefix: '€' },
+        yaxis: { gridcolor: 'rgba(255,255,255,0.05)', automargin: true }
     };
     
     Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
@@ -4236,8 +4305,27 @@ function selectTopWithRemainder(entries, limit, otherLabel, minShare = 0) {
     return top;
 }
 
-function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12) {
+function getSelectedPeriodStart() {
+    const days = Number(CONFIG.timeRange) || 90;
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - days);
+    return start;
+}
+
+/**
+ * Monthly 50/30/20 figures (percentages of that month's income).
+ * - Months that only partly fall inside the selected period are left out (a 90-day
+ *   window starts mid-month, so its first month would miss income or spending).
+ * - The running month is kept but flagged `isCurrent` (incomplete).
+ * - Refunds are not income: they lower that month's discretionary spending.
+ * - Months without income: left out by default; with includeNoIncomeMonths they are kept
+ *   with null percentages (shown as gaps).
+ */
+function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12, options = {}) {
+    const { includeNoIncomeMonths = false, periodStart = getSelectedPeriodStart() } = options;
     const byMonth = new Map();
+    const refundsByMonth = new Map();
     (transactions || []).forEach((transaction) => {
         if (!(transaction.date instanceof Date) || Number.isNaN(transaction.date.getTime())) return;
         const monthKey = `${transaction.date.getFullYear()}-${String(transaction.date.getMonth() + 1).padStart(2, '0')}`;
@@ -4252,6 +4340,10 @@ function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12) {
         const bucket = byMonth.get(monthKey);
         const amount = Number(transaction.amount) || 0;
         if (amount >= 0) {
+            if (transaction.category === 'Refund') {
+                refundsByMonth.set(monthKey, (refundsByMonth.get(monthKey) || 0) + amount);
+                return;
+            }
             bucket.income += amount;
             return;
         }
@@ -4262,25 +4354,47 @@ function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12) {
         }
     });
 
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
     return Array.from(byMonth.values())
+        .filter((row) => {
+            // Keep only months that start inside the selected period.
+            const monthStart = new Date(`${row.monthKey}-01T00:00:00`);
+            return !(periodStart instanceof Date) || monthStart >= periodStart;
+        })
+        .map((row) => {
+            const refunds = refundsByMonth.get(row.monthKey) || 0;
+            return { ...row, discretionary: Math.max(0, row.discretionary - refunds), refunds };
+        })
         .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+        .filter((row) => includeNoIncomeMonths || row.income > 0.01)
         .slice(-maxMonths)
         .map((row) => {
             const netSavings = row.income - row.essentials - row.discretionary;
             const denominator = row.income > 0.01 ? row.income : null;
+            const isCurrent = row.monthKey === currentMonthKey;
+            const baseLabel = new Date(`${row.monthKey}-01T00:00:00`).toLocaleDateString('nl-NL', {
+                month: 'short',
+                year: '2-digit'
+            });
             return {
                 ...row,
-                monthLabel: new Date(`${row.monthKey}-01T00:00:00`).toLocaleDateString('nl-NL', {
-                    month: 'short',
-                    year: '2-digit'
-                }),
+                isCurrent,
+                monthLabel: isCurrent ? `${baseLabel} (lopend)` : baseLabel,
                 netSavings,
-                essentialsPct: denominator ? (row.essentials / denominator) * 100 : 0,
-                discretionaryPct: denominator ? (row.discretionary / denominator) * 100 : 0,
-                savingsPct: denominator ? (netSavings / denominator) * 100 : 0
+                essentialsPct: denominator ? (row.essentials / denominator) * 100 : null,
+                discretionaryPct: denominator ? (row.discretionary / denominator) * 100 : null,
+                savingsPct: denominator ? (netSavings / denominator) * 100 : null
             };
-        })
-        .filter((row) => row.income > 0.01);
+        });
+}
+
+// Latest complete month with income; falls back to the running month when that's all there is.
+function latestCompleteBudgetMonth(monthly) {
+    const withIncome = (monthly || []).filter((row) => row.essentialsPct !== null);
+    const complete = withIncome.filter((row) => !row.isCurrent);
+    return complete[complete.length - 1] || withIncome[withIncome.length - 1] || null;
 }
 
 function buildExpenseByCategory(transactions) {
@@ -4496,8 +4610,11 @@ function summarizeRecurringCosts(transactions, maxItems = 12) {
 
 function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0) {
     const actions = [];
-    const monthly = summarizeMonthlyBudgetDiscipline(transactions, 6);
-    const latest = monthly[monthly.length - 1] || null;
+    const monthlyAll = summarizeMonthlyBudgetDiscipline(transactions, 6);
+    // Use complete months when available; the running month is only partly done.
+    const completeMonths = monthlyAll.filter((row) => !row.isCurrent);
+    const monthly = completeMonths.length ? completeMonths : monthlyAll;
+    const latest = latestCompleteBudgetMonth(monthlyAll);
     const baselineMonths = monthly.slice(-3);
     const baseline = baselineMonths.length
         ? baselineMonths.reduce((agg, row) => ({
@@ -4579,7 +4696,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         if (discretionaryGap > baseImpactFloor) {
             pushAction({
                 priority: 1,
-                title: 'Verlaag discretionary uitgaven',
+                title: 'Verlaag vrij besteedbare uitgaven',
                 summary: `Gemiddeld discretionary ${formatCurrency(avgDiscretionary)} vs target ${formatCurrency(discretionaryTarget)}.`,
                 impact: discretionaryGap,
                 confidence: 0.88 * baselineConfidence,
@@ -4592,7 +4709,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         if (essentialGap > Math.max(baseImpactFloor, 35)) {
             pushAction({
                 priority: 2,
-                title: 'Herzie vaste lasten / essentials',
+                title: 'Herzie vaste lasten',
                 summary: `Gemiddeld essentials ${formatCurrency(avgEssentials)} vs target ${formatCurrency(essentialTarget)}.`,
                 impact: essentialGap,
                 confidence: 0.84 * baselineConfidence,
@@ -4604,7 +4721,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Vergroot inkomensruimte naast besparen',
-                summary: `Essentials nemen ${latest.essentialsPct.toFixed(1)}% in van inkomen; extra inkomsten hebben nu meer effect dan extra kleine cuts.`,
+                summary: `Noodzakelijke uitgaven nemen ${latest.essentialsPct.toFixed(1)}% in van inkomen; extra inkomsten hebben nu meer effect dan extra kleine cuts.`,
                 impact: Math.max((latest.essentialsPct - 50) * (latest.income / 100), baseImpactFloor * 0.7),
                 confidence: 0.76 * baselineConfidence,
                 reason: 'income-side'
@@ -4670,7 +4787,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         if (share > 25) {
             pushAction({
                 priority: 3,
-                title: 'Verlaag merchant-concentratie',
+                title: 'Verlaag afhankelijkheid van één tegenrekening',
                 summary: `${topMerchant[0]} is ${share.toFixed(1)}% van alle uitgaven (${formatCurrency(topMerchant[1])}).`,
                 impact: topMerchant[1] * 0.08,
                 confidence: 0.72,
@@ -4904,17 +5021,18 @@ function renderInsights(data, kpis, qualitySummary = null) {
             needsVsWants.textContent = 'N/A';
         } else {
             const essentialShare = (needsSummary.essentialTotal / totalNeedsWants) * 100;
-            needsVsWants.textContent = `${essentialShare.toFixed(1)}% essentials`;
+            needsVsWants.textContent = `${essentialShare.toFixed(1)}% noodzakelijk`;
         }
     }
 
     const monthlyBudget = summarizeMonthlyBudgetDiscipline(data, 6);
-    const latestBudget = monthlyBudget[monthlyBudget.length - 1] || null;
+    const latestBudget = latestCompleteBudgetMonth(monthlyBudget);
     if (budgetRuleFit) {
         if (!latestBudget) {
             budgetRuleFit.textContent = 'N/A';
         } else {
-            budgetRuleFit.textContent = `N ${latestBudget.essentialsPct.toFixed(0)} / W ${latestBudget.discretionaryPct.toFixed(0)} / S ${latestBudget.savingsPct.toFixed(0)}`;
+            budgetRuleFit.textContent = `N ${latestBudget.essentialsPct.toFixed(0)} / V ${latestBudget.discretionaryPct.toFixed(0)} / S ${latestBudget.savingsPct.toFixed(0)}`;
+            budgetRuleFit.title = `Noodzakelijk / vrij besteedbaar / sparen in % van het inkomen, ${latestBudget.monthLabel}.`;
         }
     }
 
