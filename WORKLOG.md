@@ -4,6 +4,15 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — API key nog maar 1x ophalen bij opstarten
+
+- Voorheen per start 4+ Vaultwarden-fetches (~35s elk): preboot-import, preboot `init_bunq(refresh_key=True)`, import per Gunicorn-worker, en opnieuw bij elke worker-recycle (`max_requests`).
+- `scripts/run_server.sh`: los Python-preboot-blok verwijderd; Gunicorn draait met `--preload` (app + key 1x geladen in de master).
+- `scripts/gunicorn_conf.py`: `on_starting` → `run_preboot_init()` (init met `refresh_key=False` + auto-whitelist, 1x in master); `post_fork` → `reset_bunq_state_after_fork()` (geërfde Bunq-state wissen, key behouden); `post_worker_init` blijft de warm-up per worker starten.
+- `api_proxy.py`: `run_preboot_init()` en `reset_bunq_state_after_fork()` toegevoegd.
+- Gevolg: na key-rotatie in Vaultwarden de service herstarten (gedocumenteerd in TROUBLESHOOTING EN/NL).
+- Tests: 5 nieuwe (hooks, preboot, fork-reset); 174 groen. Smoke-test met echte Gunicorn (`--preload`, 2 workers, `--max-requests 2`): 1 key-fetch over master + 6 (gerecyclede) workers; preboot 1x in master mét whitelist, workers zonder; `/api/health` direct `initialized`.
+
 ### Opgeleverd — Bunq warm-up per Gunicorn-worker
 
 - Nieuw `scripts/gunicorn_conf.py` (`post_worker_init`) → `api_proxy.start_background_bunq_init()`: elke worker initialiseert zijn eigen BunqContext direct bij start in een achtergrondthread.
