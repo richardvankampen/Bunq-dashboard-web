@@ -4915,11 +4915,11 @@ def build_data_quality_summary(days=90):
         ))
         summary['score'] = score
         if score >= 85:
-            summary['quality_label'] = 'Good'
+            summary['quality_label'] = 'Goed'
         elif score >= 70:
-            summary['quality_label'] = 'Fair'
+            summary['quality_label'] = 'Redelijk'
         else:
-            summary['quality_label'] = 'Needs attention'
+            summary['quality_label'] = 'Aandacht nodig'
 
         warnings = []
         recommendations = []
@@ -4936,19 +4936,19 @@ def build_data_quality_summary(days=90):
             recommendations.append('Controleer of historische transacties volledig worden opgehaald (paginatie/range).')
         if category_coverage is not None and category_coverage < 0.78:
             warnings.append('Categorie-dekking op uitgaven is laag.')
-            recommendations.append('Verfijn categorisatieregels voor veel voorkomende merchants/descriptions.')
+            recommendations.append('Verfijn categorisatieregels voor veelvoorkomende tegenrekeningen/omschrijvingen.')
         if category_amount_coverage is not None and category_amount_coverage < 0.84:
             warnings.append('Groot deel van uitgavenvolume valt in categorie Overig/onbekend.')
-            recommendations.append('Prioriteer categorisatie op merchants met hoogste uitgavenimpact.')
+            recommendations.append('Prioriteer categorisatie op tegenrekeningen met de hoogste uitgaven.')
         if merchant_coverage is not None and merchant_coverage < 0.85:
-            warnings.append('Merchant-dekking op uitgaven is laag.')
-            recommendations.append('Controleer merchant parsing en tegenpartijvelden in Bunq responses.')
+            warnings.append('Tegenrekening-dekking op uitgaven is laag.')
+            recommendations.append('Controleer de herkenning van tegenrekeningen in de Bunq-gegevens.')
         if merchant_amount_coverage is not None and merchant_amount_coverage < 0.88:
-            warnings.append('Merchant-attributie mist op uitgaven met relatief hoge bedragen.')
-            recommendations.append('Voeg fallback regels toe op description/counterparty voor merchant extractie.')
+            warnings.append('Tegenrekening ontbreekt bij uitgaven met relatief hoge bedragen.')
+            recommendations.append('Voeg extra tegenrekening-herkenning toe op omschrijving/tegenpartij.')
         if amount_eur_coverage is not None and amount_eur_coverage < 0.95:
             warnings.append('Niet alle transacties hebben EUR-waarde in lokale store.')
-            recommendations.append('Controleer FX lookup en amount-eur opslag in transaction cache.')
+            recommendations.append('Controleer het ophalen van wisselkoersen en de EUR-bedragen in de opslag.')
         if fx_coverage is not None and fx_coverage < 0.95:
             warnings.append('Niet alle non-EUR rekeningen zijn omgerekend naar EUR.')
             recommendations.append('Controleer FX-rates en balance conversion voor non-EUR accounts.')

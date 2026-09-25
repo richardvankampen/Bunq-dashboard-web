@@ -22,6 +22,15 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Inzichten
+- Waar het ertoe doet op maandbasis (salaris en huur zijn maandelijks): trend, inkomens-/uitgavenalerts en het venster `Uitgavenmomentum` vergelijken de laatste volledige maand met de maand(en) daarvoor.
+- `Liquiditeitsrunway`: gemiddeld maandnetto van volledige maanden per kalenderdag (was: netto van de laatste 30 dagen gedeeld door dagen *met* transacties).
+- `Verwacht netto per maand`: maand tot nu toe plus wat er na deze datum meestal nog binnenkomt en uitgaat (was: lineair doortrekken, waardoor een vroeg salaris werd vermenigvuldigd).
+- `Terugkerende kosten`: alleen vaste maandposten (±1 betaling per maand, stabiel bedrag); supermarkt en horeca tellen niet meer mee.
+- `Uitgavenvolatiliteit`: variabele uitgaven per week zonder vaste lasten (was: per dag, altijd "Hoog" door de huurdag).
+- Actieplan: geen "bezuinig hierop"-advies voor wonen en belastingen; besparingshefbomen gebruiken echte maandgemiddelden.
+- `Gemiddelde daguitgaven` per kalenderdag van de gekozen periode; Nederlandse labels en `n.v.t.` in kaarten en datakwaliteit; waarschuwing over aantal transacties schaalt mee met de periode.
+
 ### Tooling
 - Testsuite (`tests/`, pytest) en GitHub Actions CI; dev-tools verplaatst naar `requirements_dev.txt`.
 
