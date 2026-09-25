@@ -1377,9 +1377,17 @@ function hexToRgba(hex, alpha = 1) {
     return `rgba(${r},${g},${b},${alpha})`;
 }
 
+// Whole words for short hints ('Shared household' and 'Stockholm' are no investments),
+// stems for words that appear inside compounds. Same rule as the backend.
+function looksLikeInvestmentAccount(text) {
+    return /(^|[^a-z0-9])(stocks?|shares?|etfs?|equity)(?![a-z0-9])/.test(text)
+        || ['investment', 'belegging', 'crypto', 'aandelen'].some((stem) => text.includes(stem));
+}
+
 function classifyAccountType(account) {
+    // The backend classification is authoritative; the rest is a fallback for accounts without it.
     const declaredType = String(account?.account_type || '').toLowerCase();
-    if (declaredType === 'savings' || declaredType === 'investment') {
+    if (declaredType === 'savings' || declaredType === 'investment' || declaredType === 'checking') {
         return declaredType;
     }
 
@@ -1399,13 +1407,7 @@ function classifyAccountType(account) {
         || explicitTypeText.includes('savings')
         || explicitTypeText.includes('spaar')
     ) return 'savings';
-    if (
-        explicitTypeText.includes('investment')
-        || explicitTypeText.includes('stock')
-        || explicitTypeText.includes('share')
-        || explicitTypeText.includes('crypto')
-        || explicitTypeText.includes('belegging')
-    ) return 'investment';
+    if (looksLikeInvestmentAccount(explicitTypeText)) return 'investment';
     if (
         explicitTypeText.includes('checking')
         || explicitTypeText.includes('payment')
@@ -1423,14 +1425,7 @@ function classifyAccountType(account) {
         || fingerprint.includes('spaargeld')
         || fingerprint.includes('sparen')
     ) return 'savings';
-    if (
-        fingerprint.includes('investment')
-        || fingerprint.includes('crypto')
-        || fingerprint.includes('belegging')
-        || fingerprint.includes('stock')
-        || fingerprint.includes('share')
-        || fingerprint.includes('etf')
-    ) return 'investment';
+    if (looksLikeInvestmentAccount(fingerprint)) return 'investment';
 
     // Guardrail: plain MonetaryAccountBank is checking unless strong savings/
     // investment hints were detected first.
@@ -1638,7 +1633,8 @@ function processAndRenderData(data) {
     const normalized = normalizeTransactions(filtered);
     const savingsTransactions = buildSavingsWidgetTransactions(data);
     const savingsWidgetNet = savingsTransactions.reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
-    balanceMetrics = calculateBalanceMetrics(normalized, accountsList, balanceHistoryData);
+    // Balance history needs every mutation, internal transfers and all accounts included.
+    balanceMetrics = calculateBalanceMetrics(normalizeTransactions(data), accountsList, balanceHistoryData);
     latestDataQualitySummary = computeDataQualitySummary(normalized, accountsList, dataQualitySummary, data);
     const kpis = calculateKPIs(normalized);
     kpis.savingsWidgetNet = savingsWidgetNet;
@@ -1677,11 +1673,19 @@ function applyClientFilters(data, options = {}) {
         const ownIdentity = getOwnBunqAccountIdentitySets();
         filtered = filtered.filter((transaction) => !isInternalOwnTransfer(transaction, ownIdentity));
     }
-    if (accountsList.length && selectedAccountIds.size > 0 && selectedAccountIds.size < accountsList.length) {
-        const allowed = new Set(Array.from(selectedAccountIds).map(String));
+    const allowed = getAccountSelection();
+    if (allowed) {
         filtered = filtered.filter(t => allowed.has(String(t.account_id)));
     }
     return filtered;
+}
+
+// Selected account ids, or null when all accounts are selected.
+function getAccountSelection() {
+    if (accountsList.length && selectedAccountIds.size > 0 && selectedAccountIds.size < accountsList.length) {
+        return new Set(Array.from(selectedAccountIds).map(String));
+    }
+    return null;
 }
 
 function resolveMerchantLabel(transaction) {
@@ -1772,18 +1776,31 @@ function calculateKPIs(data) {
     return { income, expenses, netSavings, savingsRate };
 }
 
-// Transactions behind the `Sparen` tile: savings-account mutations (deposits minus
-// withdrawals, incl. transfers from own accounts), excluding savings-to-savings moves.
-// Respects the account selection, like the other tiles and the `Spaarrekening mutaties` detail.
+// Transactions behind the `Sparen` tile and `Spaarrekening mutaties`: savings-account
+// mutations (deposits minus withdrawals, incl. transfers from own accounts), excluding
+// savings-to-savings moves. Respects the account selection: for a savings account that is
+// not selected, transfers between it and the selected accounts count instead (sign flipped:
+// -€500 from checking = +€500 saved).
 function buildSavingsWidgetTransactions(rawTransactions) {
-    const { savingsIds, savingsNames } = getSavingsAccountSets();
-    if (!savingsIds.size) return [];
-    const scoped = applyClientFilters(Array.isArray(rawTransactions) ? rawTransactions : [], {
+    const savingsSets = getSavingsAccountSets();
+    if (!savingsSets.savingsIds.size) return [];
+    const selection = getAccountSelection();
+    const scoped = normalizeTransactions(applyClientFilters(Array.isArray(rawTransactions) ? rawTransactions : [], {
         excludeInternalTransfers: false
-    });
-    return normalizeTransactions(scoped)
-        .filter((transaction) => savingsIds.has(String(transaction?.account_id)))
-        .filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsIds, savingsNames));
+    }));
+    const direct = scoped
+        .filter((transaction) => savingsSets.savingsIds.has(String(transaction?.account_id)))
+        .filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsSets));
+    const viaTransfers = selection
+        ? scoped
+            .filter((transaction) => !savingsSets.savingsIds.has(String(transaction?.account_id)))
+            .filter((transaction) => {
+                const target = resolveSavingsCounterparty(transaction, savingsSets);
+                return target !== null && !selection.has(target);
+            })
+            .map((transaction) => ({ ...transaction, amount: -transaction.amount, savings_via_transfer: true }))
+        : [];
+    return [...direct, ...viaTransfers];
 }
 
 function safeRatio(numerator, denominator, fallback = null) {
@@ -2059,12 +2076,30 @@ function alignDailySeries(series, reference) {
     });
 }
 
+// Change from the first to the last balance of the period; null when there is no start value.
 function calculateSeriesChange(series) {
-    if (!series || series.length < 2) return 0;
+    if (!series || series.length < 2) return null;
     const first = Number(series[0]) || 0;
     const last = Number(series[series.length - 1]) || 0;
-    if (Math.abs(first) < 0.0001) return 0;
+    if (Math.abs(first) < 0.01) return null;
     return ((last - first) / Math.abs(first)) * 100;
+}
+
+function setBalanceTrend(element, change) {
+    if (!element) return;
+    const parent = element.parentElement;
+    if (change === null || !Number.isFinite(change)) {
+        element.textContent = 'n.v.t.';
+        element.title = 'Niet te berekenen: geen saldo aan het begin van de periode.';
+        parent?.classList.remove('positive', 'negative');
+        parent?.classList.add('neutral');
+        return;
+    }
+    element.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
+    element.title = 'Saldo nu t.o.v. het begin van de gekozen periode.';
+    parent?.classList.toggle('positive', change >= 0);
+    parent?.classList.toggle('negative', change < 0);
+    parent?.classList.remove('neutral');
 }
 
 function formatShortDate(date) {
@@ -2155,10 +2190,10 @@ function renderBalanceKPIs(metrics) {
     const savingsTrendEl = document.getElementById('savingsBalanceTrend');
 
     if (!metrics) {
-        if (checkingEl) checkingEl.textContent = 'N/A';
-        if (savingsEl) savingsEl.textContent = 'N/A';
-        if (checkingTrendEl) checkingTrendEl.textContent = 'N/A';
-        if (savingsTrendEl) savingsTrendEl.textContent = 'N/A';
+        if (checkingEl) checkingEl.textContent = 'n.v.t.';
+        if (savingsEl) savingsEl.textContent = 'n.v.t.';
+        setBalanceTrend(checkingTrendEl, null);
+        setBalanceTrend(savingsTrendEl, null);
         ['checkingSparkline', 'savingsBalanceSparkline'].forEach((chartId) => {
             if (chartRegistry.chartjs[chartId]) {
                 chartRegistry.chartjs[chartId].destroy();
@@ -2183,8 +2218,8 @@ function renderBalanceKPIs(metrics) {
     const checkingChange = calculateSeriesChange(checkingSeries);
     const savingsChange = calculateSeriesChange(savingsSeries);
 
-    if (checkingTrendEl) checkingTrendEl.textContent = `${checkingChange.toFixed(1)}%`;
-    if (savingsTrendEl) savingsTrendEl.textContent = `${savingsChange.toFixed(1)}%`;
+    setBalanceTrend(checkingTrendEl, checkingChange);
+    setBalanceTrend(savingsTrendEl, savingsChange);
 
     renderMetricMiniChart('checkingSparkline', checkingPoints, '#38bdf8');
     renderMetricMiniChart('savingsBalanceSparkline', savingsPoints, '#22c55e');
@@ -2691,38 +2726,47 @@ function isInternalOwnTransfer(transaction, ownIdentity) {
 function getSavingsAccountSets() {
     const savingsAccounts = (accountsList || []).filter((account) => classifyAccountType(account) === 'savings');
     const savingsIds = new Set(savingsAccounts.map((account) => String(account.id)));
-    const savingsNames = new Set(
-        savingsAccounts
-            .map((account) => normalizePartyNameForMatch(account?.description || account?.display_name || ''))
-            .filter(Boolean)
-    );
-    return { savingsIds, savingsNames };
+    const idByIban = new Map();
+    const idByName = new Map();
+    savingsAccounts.forEach((account) => {
+        const id = String(account.id);
+        (Array.isArray(account?.ibans) ? account.ibans : []).forEach((iban) => {
+            const normalized = normalizeIbanForMatch(iban);
+            if (normalized) idByIban.set(normalized, id);
+        });
+        const name = normalizePartyNameForMatch(account?.description || account?.display_name || '');
+        if (name.length >= 4) idByName.set(name, id);
+    });
+    return { savingsIds, idByIban, idByName };
 }
 
-function isInternalSavingsToSavingsTransfer(transaction, savingsIds, savingsNames) {
-    if (!transaction?.is_internal_transfer) return false;
+// The savings account on the other side of a transfer (id, IBAN or account name), or null.
+function resolveSavingsCounterparty(transaction, savingsSets) {
+    const { savingsIds, idByIban, idByName } = savingsSets;
+    const counterpartyId = transaction?.counterparty_account_id != null ? String(transaction.counterparty_account_id).trim() : '';
+    if (counterpartyId && savingsIds.has(counterpartyId)) return counterpartyId;
+    const iban = normalizeIbanForMatch(transaction?.counterparty_iban);
+    if (iban && idByIban.has(iban)) return idByIban.get(iban);
+    for (const value of [transaction?.counterparty_account_name, transaction?.counterparty, transaction?.merchant]) {
+        const name = normalizePartyNameForMatch(value);
+        if (name && idByName.has(name)) return idByName.get(name);
+    }
+    return null;
+}
 
-    const sourceSavings = savingsIds.has(String(transaction?.account_id || ''));
-    const counterpartyAccountId = transaction?.counterparty_account_id != null
-        ? String(transaction.counterparty_account_id)
-        : '';
-    const targetSavingsById = counterpartyAccountId && savingsIds.has(counterpartyAccountId);
-
-    const counterpartyCandidates = [
-        normalizePartyNameForMatch(transaction?.counterparty),
-        normalizePartyNameForMatch(transaction?.merchant)
-    ].filter(Boolean);
-    const targetSavingsByName = counterpartyCandidates.some((candidate) => savingsNames.has(candidate));
-
-    return sourceSavings && (targetSavingsById || targetSavingsByName);
+// Move between two savings accounts: no money saved or spent. Recognised like other own
+// transfers (id, IBAN, name), not only by the backend's internal flag.
+function isInternalSavingsToSavingsTransfer(transaction, savingsSets) {
+    if (!savingsSets.savingsIds.has(String(transaction?.account_id || ''))) return false;
+    const target = resolveSavingsCounterparty(transaction, savingsSets);
+    return target !== null && target !== String(transaction.account_id);
 }
 
 function showTransactionDetail(detailType) {
     let transactions = getCurrentNormalizedTransactions();
     if (detailType === 'savings-transfers') {
-        transactions = getCurrentNormalizedTransactions({ excludeInternalTransfers: false });
-        const { savingsIds, savingsNames } = getSavingsAccountSets();
-        transactions = transactions.filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsIds, savingsNames));
+        // Same transactions as the `Sparen` tile.
+        transactions = buildSavingsWidgetTransactions(transactionsData || []);
     }
 
     if (!transactions.length) {
@@ -2772,8 +2816,7 @@ function showTransactionDetail(detailType) {
     }
 
     if (detailType === 'savings-transfers') {
-        const { savingsIds } = getSavingsAccountSets();
-        const subset = transactions.filter((transaction) => savingsIds.has(String(transaction.account_id)));
+        const subset = transactions;
         const deposits = subset.filter((transaction) => transaction.amount > 0).reduce((sum, transaction) => sum + transaction.amount, 0);
         const withdrawals = Math.abs(subset.filter((transaction) => transaction.amount < 0).reduce((sum, transaction) => sum + transaction.amount, 0));
         const daily = buildDailySeries(subset, (transaction) => transaction.amount);
@@ -3262,7 +3305,7 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-scale-balanced"></i> Budgetdiscipline (50/30/20)',
-            summary: `Gemiddeld${completeMonths.length ? ' (volledige maanden)' : ''}: noodzakelijk ${avgEssentials.toFixed(1)}% (doel 50%), vrij besteedbaar ${avgDiscretionary.toFixed(1)}% (doel 30%), sparen ${avgSavings.toFixed(1)}% (doel 20%). ${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`} sparen: ${latest.savingsPct.toFixed(1)}%. Terugbetalingen tellen als lagere uitgaven, niet als inkomen.`,
+            summary: `Gemiddeld${completeMonths.length ? ' (volledige maanden)' : ''}: noodzakelijk ${avgEssentials.toFixed(1)}% (doel 50%), vrij besteedbaar ${avgDiscretionary.toFixed(1)}% (doel 30%), overgehouden ${avgSavings.toFixed(1)}% (doel 20%). ${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`} overgehouden: ${latest.savingsPct.toFixed(1)}%. Overgehouden = inkomen min uitgaven, ook wat op de betaalrekening blijft staan (de tegel Sparen telt alleen stortingen op spaarrekeningen). Terugbetalingen tellen als lagere uitgaven, niet als inkomen.`,
             rows: monthly.slice().reverse().map((row) => ({
                 label: `${row.monthLabel} · In ${formatCurrency(row.income)} · Noodzakelijk ${formatCurrency(row.essentials)} (${row.essentialsPct.toFixed(1)}%) · Vrij ${formatCurrency(row.discretionary)} (${row.discretionaryPct.toFixed(1)}%)`,
                 value: `Netto ${formatCurrency(row.netSavings)} (${row.savingsPct.toFixed(1)}%)`
@@ -3915,7 +3958,7 @@ function renderTimeTravelChart(data) {
     const noIncomeMonths = monthly.filter((row) => row.essentialsPct === null).map((row) => row.monthLabel);
     const statusText = `${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`}: `
         + `noodzakelijk ${latest.essentialsPct.toFixed(1)}% (doel 50%), vrij besteedbaar ${latest.discretionaryPct.toFixed(1)}% (doel 30%), `
-        + `sparen ${latest.savingsPct.toFixed(1)}% (doel 20%).`
+        + `overgehouden ${latest.savingsPct.toFixed(1)}% (doel 20%).`
         + (noIncomeMonths.length ? ` Geen inkomen in: ${noIncomeMonths.join(', ')}.` : '');
 
     const traces = [
@@ -3942,12 +3985,12 @@ function renderTimeTravelChart(data) {
         {
             type: 'scatter',
             mode: 'lines+markers',
-            name: 'Sparen %',
+            name: 'Overgehouden %',
             x: labels,
             y: savings,
             line: { color: '#22c55e', width: 3 },
             marker: { size: 7 },
-            hovertemplate: '%{x}<br>Sparen: %{y:.1f}%<extra></extra>'
+            hovertemplate: '%{x}<br>Overgehouden: %{y:.1f}%<extra></extra>'
         },
         {
             type: 'scatter',
@@ -3970,7 +4013,7 @@ function renderTimeTravelChart(data) {
         {
             type: 'scatter',
             mode: 'lines',
-            name: 'Doel sparen (20%)',
+            name: 'Doel overhouden (20%)',
             x: labels,
             y: labels.map(() => 20),
             line: { color: 'rgba(34,197,94,0.65)', width: 1.8, dash: 'dot' },
@@ -4819,7 +4862,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         if (savingsGap > baseImpactFloor) {
             pushAction({
                 priority: 1,
-                title: 'Verhoog netto sparen richting 20%',
+                title: 'Houd netto 20% van je inkomen over',
                 summary: `Gemiddeld tekort t.o.v. 20%-target: ${formatCurrency(savingsGap)} per maand.`,
                 impact: savingsGap,
                 confidence: 0.9 * baselineConfidence,
@@ -5177,8 +5220,8 @@ function renderInsights(data, kpis, qualitySummary = null) {
         if (!latestBudget) {
             budgetRuleFit.textContent = NA;
         } else {
-            budgetRuleFit.textContent = `N ${latestBudget.essentialsPct.toFixed(0)} / V ${latestBudget.discretionaryPct.toFixed(0)} / S ${latestBudget.savingsPct.toFixed(0)}`;
-            budgetRuleFit.title = `Noodzakelijk / vrij besteedbaar / sparen in % van het inkomen, ${latestBudget.monthLabel}.`;
+            budgetRuleFit.textContent = `N ${latestBudget.essentialsPct.toFixed(0)} / V ${latestBudget.discretionaryPct.toFixed(0)} / O ${latestBudget.savingsPct.toFixed(0)}`;
+            budgetRuleFit.title = `Noodzakelijk / vrij besteedbaar / overgehouden in % van het inkomen, ${latestBudget.monthLabel}.`;
         }
     }
 

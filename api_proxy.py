@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import threading
 from collections import defaultdict
+from types import SimpleNamespace
 
 # ============================================
 # LOGGING CONFIGURATION
@@ -3118,7 +3119,7 @@ def classify_account_type(account):
         return 'investment'
 
     # Hard signals based on official type-like fields
-    if any(token in explicit_type_text for token in ('investment', 'stock', 'share', 'crypto', 'belegging')):
+    if _looks_like_investment(explicit_type_text):
         return 'investment'
     if any(token in explicit_type_text for token in ('saving', 'savings', 'spaar', 'reserve', 'goal', 'stash')):
         return 'savings'
@@ -3129,7 +3130,8 @@ def classify_account_type(account):
         'savings', 'saving', 'savingsaccount', 'spaar', 'spaarrekening', 'spaargeld', 'sparen'
     )):
         return 'savings'
-    if any(token in fingerprint for token in ('investment', 'stock', 'share', 'crypto', 'belegging', 'etf', 'equity')):
+    # Whole words only: an account named 'Shared household' or 'Stockholm reis' is no investment.
+    if _looks_like_investment(fingerprint):
         return 'investment'
 
     # Guardrail: plain MonetaryAccountBank objects are checking unless strong
@@ -5581,6 +5583,77 @@ def run_admin_maintenance():
         }
     })
 
+def build_account_summaries(accounts):
+    """Dashboard account dicts (type, balance, EUR balance) for the given Bunq accounts."""
+    # Derive type hints from the accounts we just fetched — no extra API calls needed.
+    account_type_hints = derive_account_type_hints_from_accounts(accounts)
+    
+    accounts_data = []
+    for account in accounts:
+        account_id = get_obj_field(account, 'id_', 'id')
+        balance_value, balance_currency = parse_monetary_value(
+            get_obj_field(account, 'balance'),
+            context=f"account {account_id} balance"
+        )
+        account_type = account_type_hints.get(str(account_id)) or classify_account_type(account)
+        monetary_account_type = (
+            get_obj_field(
+                account,
+                'sub_type',
+                'subtype',
+                'type_',
+                'type',
+                'monetary_account_type',
+                'account_type',
+                default=''
+            ) or ''
+        )
+        sub_status = get_obj_field(account, 'sub_status', 'substatus', default='') or ''
+        balance_eur_value = None
+        fx_rate_to_eur = None
+        fx_converted = False
+
+        # Prefer Bunq-provided converted balance when available.
+        converted_obj = get_obj_field(account, 'balance_converted')
+        if converted_obj is not None:
+            converted_value, converted_currency = parse_monetary_value(
+                converted_obj,
+                context=f"account {account_id} balance_converted"
+            )
+            if converted_currency.upper() == 'EUR':
+                balance_eur_value = converted_value
+                fx_converted = balance_currency.upper() != 'EUR'
+                if abs(balance_value) > 1e-9:
+                    fx_rate_to_eur = balance_eur_value / balance_value
+
+        if balance_eur_value is None:
+            balance_eur_value, fx_rate_to_eur, fx_converted = convert_amount_to_eur(
+                balance_value,
+                balance_currency,
+            )
+        accounts_data.append({
+            'id': account_id,
+            'description': get_obj_field(account, 'description', 'display_name') or f"Account {account_id}",
+            'ibans': sorted(extract_account_ibans(account)),
+            'balance': {
+                'value': balance_value,
+                'currency': balance_currency
+            },
+            'balance_eur': {
+                'value': balance_eur_value,
+                'currency': 'EUR'
+            },
+            'fx_rate_to_eur': fx_rate_to_eur,
+            'fx_converted': fx_converted,
+            'status': get_obj_field(account, 'status', 'status_') or 'UNKNOWN',
+            'sub_status': sub_status,
+            'monetary_account_type': monetary_account_type,
+            'account_type': account_type,
+            'account_class': get_obj_field(account, '_raw_type', default=account.__class__.__name__)
+        })
+    return accounts_data
+
+
 @app.route('/api/accounts', methods=['GET'])
 @requires_auth
 @rate_limit('general')
@@ -5608,72 +5681,7 @@ def get_accounts():
         
         logger.info(f"📊 Fetching accounts for {session.get('username')}")
         accounts = get_monetary_accounts()
-        # Derive type hints from the accounts we just fetched — no extra API calls needed.
-        account_type_hints = derive_account_type_hints_from_accounts(accounts)
-        
-        accounts_data = []
-        for account in accounts:
-            account_id = get_obj_field(account, 'id_', 'id')
-            balance_value, balance_currency = parse_monetary_value(
-                get_obj_field(account, 'balance'),
-                context=f"account {account_id} balance"
-            )
-            account_type = account_type_hints.get(str(account_id)) or classify_account_type(account)
-            monetary_account_type = (
-                get_obj_field(
-                    account,
-                    'sub_type',
-                    'subtype',
-                    'type_',
-                    'type',
-                    'monetary_account_type',
-                    'account_type',
-                    default=''
-                ) or ''
-            )
-            sub_status = get_obj_field(account, 'sub_status', 'substatus', default='') or ''
-            balance_eur_value = None
-            fx_rate_to_eur = None
-            fx_converted = False
-
-            # Prefer Bunq-provided converted balance when available.
-            converted_obj = get_obj_field(account, 'balance_converted')
-            if converted_obj is not None:
-                converted_value, converted_currency = parse_monetary_value(
-                    converted_obj,
-                    context=f"account {account_id} balance_converted"
-                )
-                if converted_currency.upper() == 'EUR':
-                    balance_eur_value = converted_value
-                    fx_converted = balance_currency.upper() != 'EUR'
-                    if abs(balance_value) > 1e-9:
-                        fx_rate_to_eur = balance_eur_value / balance_value
-
-            if balance_eur_value is None:
-                balance_eur_value, fx_rate_to_eur, fx_converted = convert_amount_to_eur(
-                    balance_value,
-                    balance_currency,
-                )
-            accounts_data.append({
-                'id': account_id,
-                'description': get_obj_field(account, 'description', 'display_name') or f"Account {account_id}",
-                'ibans': sorted(extract_account_ibans(account)),
-                'balance': {
-                    'value': balance_value,
-                    'currency': balance_currency
-                },
-                'balance_eur': {
-                    'value': balance_eur_value,
-                    'currency': 'EUR'
-                },
-                'fx_rate_to_eur': fx_rate_to_eur,
-                'fx_converted': fx_converted,
-                'status': get_obj_field(account, 'status', 'status_') or 'UNKNOWN',
-                'sub_status': sub_status,
-                'monetary_account_type': monetary_account_type,
-                'account_type': account_type,
-                'account_class': get_obj_field(account, '_raw_type', default=account.__class__.__name__)
-            })
+        accounts_data = build_account_summaries(accounts)
         
         logger.info(f"✅ Retrieved {len(accounts_data)} accounts")
         persist_account_snapshots(accounts_data)
@@ -6148,6 +6156,15 @@ _COMPILED_TEXT_RULES = tuple(
     )
     for category, rule in _TEXT_RULES
 )
+_INVESTMENT_ACCOUNT_WORDS = _word_pattern(('stock', 'stocks', 'share', 'shares', 'etf', 'etfs', 'equity'))
+_INVESTMENT_ACCOUNT_STEMS = ('investment', 'belegging', 'crypto', 'aandelen')
+
+
+def _looks_like_investment(text):
+    """Investment hint in an account type or name (used by classify_account_type)."""
+    return bool(_INVESTMENT_ACCOUNT_WORDS.search(text)) or any(stem in text for stem in _INVESTMENT_ACCOUNT_STEMS)
+
+
 _REFUND_PATTERN = _word_pattern(_REFUND_WORDS)
 _SALARY_PATTERN = _word_pattern(_SALARY_WORDS)
 _INTEREST_PATTERN = _word_pattern(_INTEREST_WORDS)
@@ -6370,6 +6387,138 @@ def get_statistics():
             'error': str(e)
         }), 500
 
+def _local_day(value):
+    """Calendar day in the dashboard's time zone (Dutch time), not UTC."""
+    from zoneinfo import ZoneInfo
+    return value.astimezone(ZoneInfo(RECONCILE_TIMEZONE)).date()
+
+
+def reconstruct_balance_series(summaries, payments_by_account, coverage_by_account, start_day, today):
+    """
+    End-of-day balance per account type, walking back from each account's current
+    balance through its stored payments: balance(day) = balance now - payments after that day.
+
+    summaries: dashboard account dicts (build_account_summaries), own accounts only.
+    payments_by_account: {account_id: [(aware datetime, native amount), ...]}.
+    coverage_by_account: {account_id: first local day whose end-of-day balance is exact,
+        or None when the history is complete}.
+    Returns (series, missing_fx_count); series is None when no day can be computed.
+    """
+    first_day = start_day
+    for covered_day in coverage_by_account.values():
+        if covered_day is not None and covered_day > first_day:
+            first_day = covered_day
+    if first_day > today:
+        return None, 0
+
+    days = [first_day + timedelta(days=offset) for offset in range((today - first_day).days + 1)]
+    totals = {day: {'checking': 0.0, 'savings': 0.0, 'investment': 0.0} for day in days}
+    missing_fx_count = 0
+    for summary in summaries:
+        account_id = str(summary.get('id'))
+        account_type = summary.get('account_type') if summary.get('account_type') in ('savings', 'investment') else 'checking'
+        balance = safe_float((summary.get('balance') or {}).get('value'), default=0.0, context='history balance')
+        currency = str((summary.get('balance') or {}).get('currency') or 'EUR').upper()
+        balance_eur = (summary.get('balance_eur') or {}).get('value')
+        if currency == 'EUR':
+            rate = 1.0
+        elif balance_eur is not None and abs(balance) > 1e-9:
+            rate = float(balance_eur) / balance
+        else:
+            converted, _, _ = convert_amount_to_eur(1.0, currency)
+            rate = converted
+        if rate is None:
+            missing_fx_count += 1
+            continue
+
+        delta_by_day = defaultdict(float)
+        for moment, amount in payments_by_account.get(account_id, []):
+            delta_by_day[_local_day(moment)] += amount
+        # Payments after `day` (walking back from today).
+        later = sum(amount for day, amount in delta_by_day.items() if day > today)
+        for day in reversed(days):
+            totals[day][account_type] += (balance - later) * rate
+            later += delta_by_day.get(day, 0.0)
+
+    series = {
+        account_type: [{'date': day.isoformat(), 'total': round(totals[day][account_type], 2)} for day in days]
+        for account_type in ('checking', 'savings', 'investment')
+    }
+    return series, missing_fx_count
+
+
+def build_balance_history_from_store(days, now=None):
+    """
+    Balance history rebuilt from the transaction store (exact for every day the
+    store covers), instead of snapshots that only exist for days the dashboard was
+    opened. Returns None when it can't be built (no Bunq context, account never synced).
+    """
+    if not DATA_DB_ENABLED or not _BUNQ_CONTEXT_INITIALIZED:
+        return None
+    now = now or _utc_now()
+    today = _local_day(now)
+    start_day = today - timedelta(days=days)
+    summaries = [
+        summary for summary in build_account_summaries(get_monetary_accounts())
+        if is_own_bunq_account(SimpleNamespace(_raw_type=summary.get('account_class') or ''))
+    ]
+    if not summaries:
+        return None
+
+    connection = get_data_db_connection()
+    try:
+        coverage = {}
+        for summary in summaries:
+            account_id = str(summary.get('id'))
+            state = _get_sync_state(connection, account_id, 'payment')
+            if state['last_sync_at'] is None:
+                return None
+            if state['history_complete']:
+                coverage[account_id] = None
+                continue
+            covered = parse_bunq_datetime(state['covered_from']) if state['covered_from'] else None
+            if covered is None:
+                return None
+            coverage[account_id] = _local_day(covered)
+
+        margin_iso = datetime.combine(start_day - timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).isoformat()
+        payments = defaultdict(list)
+        # Payments only: card payments are also booked as payments, adding them would count twice.
+        rows = connection.execute(
+            f"""
+            SELECT account_id, tx_date, amount FROM bunq_transactions
+            WHERE deleted_at IS NULL AND source = 'payment' AND tx_date >= ?
+              AND account_id IN ({','.join('?' for _ in summaries)})
+            """,
+            [margin_iso] + [str(summary.get('id')) for summary in summaries],
+        ).fetchall()
+    finally:
+        connection.close()
+    for row in rows:
+        moment = parse_bunq_datetime(row['tx_date'])
+        if moment is not None:
+            payments[str(row['account_id'])].append((moment, float(row['amount'] or 0.0)))
+
+    series, missing_fx_count = reconstruct_balance_series(summaries, payments, coverage, start_day, today)
+    if series is None:
+        return None
+
+    breakdown = {'checking': [], 'savings': [], 'investment': []}
+    for summary in summaries:
+        breakdown.setdefault(summary.get('account_type') or 'checking', []).append(summary)
+    latest_totals = {account_type: points[-1]['total'] for account_type, points in series.items()}
+    return {
+        'days': days,
+        'start_date': series['checking'][0]['date'],
+        'latest_snapshot_date': today.isoformat(),
+        'series': series,
+        'latest_totals': latest_totals,
+        'account_breakdown': breakdown,
+        'missing_fx_count': missing_fx_count,
+        'source': 'transactions',
+    }
+
+
 @app.route('/api/history/balances', methods=['GET'])
 @requires_auth
 @rate_limit('general')
@@ -6382,6 +6531,15 @@ def get_balance_history():
         }), 503
 
     days = clamp_days(request.args.get('days', 90))
+    try:
+        reconstructed = build_balance_history_from_store(days)
+    except Exception as exc:
+        logger.warning(f"⚠️ Balance history from transactions failed, using snapshots: {exc}")
+        reconstructed = None
+    if reconstructed is not None:
+        return jsonify({'success': True, 'data': reconstructed})
+
+    # Fallback: daily snapshots (only days on which the dashboard was opened).
     start_date = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
     connection = get_data_db_connection()
     if connection is None:
@@ -6494,6 +6652,7 @@ def get_balance_history():
                 'latest_totals': latest_totals,
                 'account_breakdown': breakdown,
                 'missing_fx_count': missing_fx_count,
+                'source': 'snapshots',
             }
         })
 

@@ -59,7 +59,9 @@ Dit bestand is de actuele bron voor overdracht.
 
 - Dagindeling in lokale (Nederlandse) tijd: `toDateKey()` / `dateFromKey()`; geen `toISOString().slice(0, 10)` voor dagen.
 - Interne overboekingen: één regel `isInternalOwnTransfer()` (backend-vlag, eigen account-id/IBAN, of tegenpartij met naam van eigen rekening) in `applyClientFilters`, voor alle tegels en grafieken als de instelling aan staat; bij uit voor geen enkele grafiek.
-- `Sparen`-tegel: `buildSavingsWidgetTransactions()` (spaarrekening-mutaties excl. spaar→spaar), respecteert rekeningselectie; trend/sparkline op dezelfde data.
+- `Sparen`-tegel en detail `Spaarrekening mutaties`: `buildSavingsWidgetTransactions()` = mutaties op geselecteerde spaarrekeningen (excl. spaar→spaar via `isInternalSavingsToSavingsTransfer`: tegenpartij is andere spaarrekening op id/IBAN/naam, niet alleen backend-vlag) + voor niet-geselecteerde spaarrekeningen de overboekingen vanaf geselecteerde rekeningen (teken omgedraaid, `savings_via_transfer`). Beleggingsrekeningen tellen niet mee. Trend/sparkline op dezelfde data. `Spaarquote` = Sparen / inkomsten.
+- "Overgehouden" (50/30/20, `Netto` in budgetdetail, actieplan-20%-doel, `50/30/20-fit` als `N / V / O`) = inkomen − uitgaven, ook wat op de betaalrekening blijft; bewust andere naam dan `Sparen`.
+- Saldo-tegels (`Betaalrekeningen`/`Spaarrekeningen (totaal)`): trend = saldo nu t.o.v. begin periode (`calculateSeriesChange`, `null` → `n.v.t.` via `setBalanceTrend`, met +/− kleur). Reeks uit `/api/history/balances` (zie Transactie-opslag); zonder history reconstrueert de frontend uit **ongefilterde** transacties (incl. interne overboekingen).
 - Trends: tweede helft vs eerste helft van de periode (`calculateHalfPeriodChange`); `n.v.t.` als eerste helft ~0.
 - Budgetdiscipline: `summarizeMonthlyBudgetDiscipline` laat maanden weg die vóór het periodebegin starten, markeert lopende maand (`isCurrent`, label `(lopend)`), refunds verlagen vrij besteedbaar i.p.v. inkomen; grafiek toont maanden zonder inkomen als gat; inzichten/actieplan/detail gebruiken `latestCompleteBudgetMonth`.
 - Maandverdeling (spreiding): `buildSpendingSpread` met bedragklassen `SPREAD_BUCKETS`, top 4 categorieën op totaalbedrag, % van betalingen per categorie.
@@ -100,7 +102,7 @@ Dit bestand is de actuele bron voor overdracht.
   - `Bedrag`
 - KPI-afstemming:
   - `Sparen` gebruikt nu dezelfde datasetlogica als de secondary view `Spaarrekening mutaties` (stortingen minus opnames), inclusief negatieve bedragen.
-  - `Savings Rate` wordt nu ook afgeleid van diezelfde gecorrigeerde `Sparen`-netto (i.p.v. oude netto-spaarbenadering).
+  - `Spaarquote` (was `Savings Rate`) wordt afgeleid van diezelfde `Sparen`-netto.
 - Performance/UX:
   - dubbele oude individuele opsomming verwijderd bij detailviews met second-view transactietabel (geen dubbeling meer).
   - modal rendert transacties in batches (`Toon meer`) i.p.v. alles in 1 keer om UI-lag bij grote periodes te beperken.
@@ -135,6 +137,7 @@ Dit bestand is de actuele bron voor overdracht.
   - `Inkomsten`
   - `Uitgaven`
   - `Sparen`
+  - `Spaarquote`
 - Visualisatie labels:
   - `Cashflow (tijdslijn)`
   - `Geldstromen`
@@ -224,6 +227,8 @@ Dit bestand is de actuele bron voor overdracht.
 - Sync-bookmark per rekening/bron in `bunq_sync_state` (`newest_bunq_id`, `oldest_bunq_id`, `covered_from`, `history_complete`).
 - Maandelijkse nachtelijke controle (`run_full_reconcile`): 1e van de maand, 03:00–06:00 Europe/Amsterdam (instelbaar via `RECONCILE_*`), 1 worker via file-lock `config/reconcile.lock`, gemiste nacht wordt de volgende nacht ingehaald, retry na 1 uur bij fout. Haalt alles op tot de oudste opgeslagen transactie en: voegt nieuwe toe, werkt gewijzigde bij, herstelt teruggekeerde, markeert ontbrekende als verwijderd **alleen binnen het bereik dat Bunq nog aanlevert** (bij `cutoff_reached` de hele opgeslagen periode, anders vanaf de oudste teruggegeven transactie). Oudere rijen blijven bewaard en zichtbaar. Bij een fout per rekening: geen verwijderingen voor die rekening.
 - Runs worden gelogd in `bunq_reconcile_runs`; status via `GET /api/admin/reconcile`, handmatig starten via `POST /api/admin/reconcile` of `run_reconcile_exclusive('manual')` (TROUBLESHOOTING 5b).
+- Saldohistorie (`/api/history/balances`): `build_balance_history_from_store()` reconstrueert per rekening het eindsaldo per Nederlandse kalenderdag = huidig saldo − latere `payment`-rijen (card_payment niet, die staan ook als payment geboekt), met de huidige classificatie; start op de eerste dag die voor alle eigen rekeningen gedekt is (`covered_from`/`history_complete`). Vreemde valuta tegen de huidige koers. Lukt dat niet (geen Bunq-context, rekening nooit gesynct) → fallback op `account_snapshots` (alleen dagen waarop het dashboard open was). Response-veld `source` = `transactions` | `snapshots`.
+- Rekeningclassificatie op naam/typevelden: korte beleggingshints (`stock`, `share`, `etf`, `equity`) alleen als heel woord (`_looks_like_investment`, frontend `looksLikeInvestmentAccount`); frontend volgt de backend-`account_type` als die gezet is.
 - Zonder `DATA_DB_ENABLED` blijft het oude gedrag (live ophalen per request).
 
 ## Opstartflow (actueel)

@@ -72,6 +72,10 @@ Raw fallback only if SDK result lacks savings. Uses only official routes:
 - Request handlers use `get_monetary_accounts()` (per-process cache, background refresh), not `list_monetary_accounts()` (~6s at Bunq incl. raw savings fallback). Reconcile uses the live list.
 - Monthly nightly reconcile (`run_full_reconcile`, 1st 03:00 Europe/Amsterdam, file-locked to one worker): inserts new, updates changed, soft-deletes missing only within the range Bunq still serves; older rows are kept and visible.
 
+## Balance history
+
+- `/api/history/balances`: `build_balance_history_from_store()` rebuilds end-of-day balances (Dutch days) from the current balance minus later stored `payment` rows; falls back to `account_snapshots` only when that isn't possible (`source` field says which).
+
 ## Categorisation
 
 - `categorize_transaction` (backend): internal → MCC (`_MCC_CATEGORIES`) → text rules (`_TEXT_RULES`, first match wins; `words` whole-word only, `stems` may sit inside Dutch compounds). Incoming money in a spending category becomes `Refund`.
