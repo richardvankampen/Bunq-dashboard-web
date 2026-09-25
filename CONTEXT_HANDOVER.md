@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (`config/` in `.gitignore`)
+Laatste update: 2026-09-25 (healthcheck start_period 300s)
 
 ## Canonieke status
 
@@ -187,6 +187,11 @@ Dit bestand is de actuele bron voor overdracht.
 
 - `categorize_transaction`: `Wonen` matcht `huur`, `hypotheek`, `mortgage`, `vve` als substring, maar `rent` alleen als heel woord (`\brent\b`).
 - Uitgaande `rente`/`interest` (bijv. debetrente) valt onder `Rente`; hypotheekrente blijft `Wonen` via `hypotheek`.
+
+## Healthcheck (actueel)
+
+- Healthcheck op `/api/live` met `start_period: 300s` (compose + Dockerfile): opstarten haalt de API key meerdere keren uit Vaultwarden (~35s per keer) voordat Gunicorn antwoordt.
+- `VAULTWARDEN_ITEM_NAME` is hoofdlettergevoelig (exacte match op item-naam); productie-item heet `Bunq API Key`.
 
 ## Repo-hygiëne (actueel)
 

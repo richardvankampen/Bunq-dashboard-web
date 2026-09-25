@@ -550,7 +550,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 300s
 
 networks:
   bunq-net:

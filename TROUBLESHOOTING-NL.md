@@ -176,6 +176,16 @@ Resolvet de Vaultwarden-hostnaam in de container naar een verkeerd/oud IP (bijv.
 - zet `VAULTWARDEN_EXTRA_HOST=<vault-hostnaam>:<nas-lan-ip>` in `.env`
 - voer daarna een volledige stack deploy uit (geen quick redeploy) zodat de host-mapping wordt toegepast
 
+### 4b. Container herstart met `non-zero exit (137): unhealthy container`
+
+Bij het opstarten wordt de API key uit Vaultwarden gehaald (meerdere keren ~35s) voordat Gunicorn `/api/live` beantwoordt. De healthcheck `start_period` (300s) dekt dit. Gebruikt een oudere deployment nog een korte start-periode, pas die dan toe op de draaiende service zonder redeploy:
+
+```bash
+sudo docker service update --health-start-period 300s bunq_bunq-dashboard
+```
+
+Controleer ook de logs op `Vault item '...' not found`: `VAULTWARDEN_ITEM_NAME` in `.env` moet exact overeenkomen met de naam van het vault-item (hoofdlettergevoelig).
+
 ### 5. Spaarrekeningen ontbreken in `/api/accounts`
 
 Valideer met de checker:

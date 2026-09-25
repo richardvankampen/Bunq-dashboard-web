@@ -90,7 +90,7 @@ VOLUME ["/app/config", "/app/logs"]
 EXPOSE 5000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=3 \
     CMD curl -f http://localhost:5000/api/live || exit 1
 
 # Display version info on startup
