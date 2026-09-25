@@ -1,6 +1,6 @@
 # Context Handover
 
-Laatste update: 2026-09-25 (grafiekregels gecorrigeerd: tijdzone, Sparen, trends, budgetdiscipline, spreiding, interne overboekingen, NL-labels)
+Laatste update: 2026-09-25 (inzichtregels gecorrigeerd: maandbasis, runway, prognose, terugkerende kosten, volatiliteit, actieplan)
 
 ## Canonieke status
 
@@ -65,6 +65,17 @@ Dit bestand is de actuele bron voor overdracht.
 - Maandverdeling (spreiding): `buildSpendingSpread` met bedragklassen `SPREAD_BUCKETS`, top 4 categorieën op totaalbedrag, % van betalingen per categorie.
 - Labels in grafieken en detailvensters in het Nederlands (noodzakelijk / vrij besteedbaar / overgehouden).
 - Browsercheck (niet in repo): headless Chromium met gemockte `/api/*` en lokale Plotly/Chart.js; alle grafieken renderen zonder JS-fouten.
+
+## Inzichtregels (actueel)
+
+- Maandvergelijkingen via volledige kalendermaanden (`summarizeCompleteMonths`, `compareLatestCompleteMonth`): trend-kaart, inkomens-/uitgavenalerts in actieplan en venster `Uitgavenmomentum`. Geen rollende 30-dagenvensters meer (`splitRollingWindows` verwijderd).
+- `Liquiditeitsrunway`/buffer-acties: `computeDailyBurn` = max(−gem. maandnetto, 0) / 30,44 (`estimateMonthlyNet`: volledige maanden, anders periode tot nu toe).
+- `Verwacht netto per maand`: `projectCurrentMonthNet` = maand tot nu toe + gemiddeld netto na de huidige dag-van-de-maand in recente volledige maanden.
+- `Terugkerende kosten`: `summarizeRecurringCosts` telt alleen tegenrekeningen in ≥2–3 maanden met ≤2 betalingen/maand en stabiel maandbedrag (cv ≤ 0,35).
+- `Uitgavenvolatiliteit`: `computeWeeklySpendingVolatility` over volledige weken, zonder `FIXED_COST_CATEGORIES`; Hoog ≥ 60%, Middel ≥ 30%.
+- Actieplan: `NON_ACTIONABLE_CATEGORIES` (Wonen, Belastingen) uitgesloten van concentratie-, tegenrekening-, terugkerende-kosten- en hefboomadvies; hefbomen op maandgemiddelde van volledige maanden.
+- `Gemiddelde daguitgaven`: totaal / `periodDaysCovered` (kalenderdagen van de periode).
+- Datakwaliteit: labels Goed/Redelijk/Aandacht nodig; aandeel interne overboekingen op ongefilterde data; minimum aantal transacties ≈ 1,33 × periodedagen (20–400).
 
 ## Frontend detailweergave (actueel)
 

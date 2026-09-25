@@ -1636,7 +1636,7 @@ function processAndRenderData(data) {
     const savingsTransactions = buildSavingsWidgetTransactions(data);
     const savingsWidgetNet = savingsTransactions.reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
     balanceMetrics = calculateBalanceMetrics(normalized, accountsList, balanceHistoryData);
-    latestDataQualitySummary = computeDataQualitySummary(normalized, accountsList, dataQualitySummary);
+    latestDataQualitySummary = computeDataQualitySummary(normalized, accountsList, dataQualitySummary, data);
     const kpis = calculateKPIs(normalized);
     kpis.savingsWidgetNet = savingsWidgetNet;
     kpis.savingsTransactions = savingsTransactions;
@@ -1792,11 +1792,15 @@ function isUnknownMerchantLabel(value) {
     return false;
 }
 
-function computeDataQualitySummary(transactions, accounts, serverSummary = null) {
+function computeDataQualitySummary(transactions, accounts, serverSummary = null, rawTransactions = null) {
     const tx = Array.isArray(transactions) ? transactions : [];
     const expenseTransactions = tx.filter((transaction) => (transaction.amount || 0) < 0);
     const totalTransactions = tx.length;
-    const internalTransactions = tx.filter((transaction) => Boolean(transaction.is_internal_transfer)).length;
+    // Internal-transfer share is measured on the unfiltered data: when the setting removes
+    // internal transfers, the filtered list would always show 0%.
+    const allTransactions = Array.isArray(rawTransactions) ? rawTransactions : tx;
+    const ownIdentity = getOwnBunqAccountIdentitySets();
+    const internalTransactions = allTransactions.filter((transaction) => isInternalOwnTransfer(transaction, ownIdentity)).length;
 
     const categorizedExpenses = expenseTransactions.filter((transaction) => {
         const category = String(transaction.category || '').trim().toLowerCase();
@@ -1819,7 +1823,7 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null)
 
     const categoryCoverage = safeRatio(categorizedExpenses, expenseTransactions.length, null);
     const merchantCoverage = safeRatio(merchantNamedExpenses, expenseTransactions.length, null);
-    const internalShare = safeRatio(internalTransactions, totalTransactions, 0);
+    const internalShare = safeRatio(internalTransactions, allTransactions.length, 0);
     const fxCoverage = nonEurAccounts.length
         ? safeRatio(nonEurConvertedAccounts.length, nonEurAccounts.length, null)
         : 1;
@@ -1854,7 +1858,9 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null)
     );
 
     const warnings = [];
-    if (totalTransactions < 120) warnings.push('Relatief weinig transacties in deze periode.');
+    // ~1.3 transactions per day of the selected period (120 for 90 days), capped for long periods.
+    const expectedMinTransactions = Math.min(400, Math.max(20, Math.round((Number(CONFIG.timeRange) || 90) * 1.33)));
+    if (totalTransactions < expectedMinTransactions) warnings.push('Relatief weinig transacties in deze periode.');
     if ((serverSummary?.metrics?.active_transaction_days ?? 0) > 0) {
         const activeDays = Number(serverSummary.metrics.active_transaction_days) || 0;
         const expectedDays = Math.max(10, Math.floor((Number(serverSummary.days) || 90) * 0.35));
@@ -1862,11 +1868,11 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null)
     }
     if ((mergedCoverage.category_coverage ?? 1) < 0.78) warnings.push('Categorie-dekking op uitgaven is laag.');
     if ((mergedCoverage.category_amount_coverage ?? 1) < 0.84) warnings.push('Hoge uitgaven staan nog in categorie Overig/onbekend.');
-    if ((mergedCoverage.merchant_coverage ?? 1) < 0.85) warnings.push('Merchant-dekking op uitgaven is laag.');
-    if ((mergedCoverage.merchant_amount_coverage ?? 1) < 0.88) warnings.push('Merchant-attributie mist op hoge uitgavenbedragen.');
+    if ((mergedCoverage.merchant_coverage ?? 1) < 0.85) warnings.push('Tegenrekening-dekking op uitgaven is laag.');
+    if ((mergedCoverage.merchant_amount_coverage ?? 1) < 0.88) warnings.push('Tegenrekening ontbreekt bij hoge uitgaven.');
     if ((mergedCoverage.amount_eur_coverage ?? 1) < 0.95) warnings.push('Niet alle transacties hebben EUR-waarde in lokale store.');
     if ((mergedCoverage.fx_coverage ?? 1) < 0.95) warnings.push('Niet alle non-EUR rekeningen zijn omgerekend.');
-    if ((mergedCoverage.internal_share ?? 0) > 0.5) warnings.push('Meer dan 50% lijkt internal transfer.');
+    if ((mergedCoverage.internal_share ?? 0) > 0.5) warnings.push('Meer dan 50% van de transacties lijkt een interne overboeking.');
     if (serverSummary?.metrics?.capture_freshness_hours > 24) warnings.push('Lokale cache is ouder dan 24 uur.');
 
     const mergedWarnings = Array.from(new Set([
@@ -1876,16 +1882,16 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null)
     const mergedRecommendations = Array.from(new Set([
         ...(Array.isArray(serverSummary?.recommendations) ? serverSummary.recommendations : []),
         ...((mergedCoverage.category_amount_coverage ?? 1) < 0.84
-            ? ['Prioriteer categorisatie op merchants met hoogste uitgavenimpact.']
+            ? ['Prioriteer categorisatie op tegenrekeningen met de hoogste uitgaven.']
             : []),
         ...((mergedCoverage.merchant_amount_coverage ?? 1) < 0.88
-            ? ['Voeg extra merchant-fallbacks toe op description/counterparty.']
+            ? ['Voeg extra tegenrekening-herkenning toe op omschrijving/tegenpartij.']
             : [])
     ]));
 
-    let qualityLabel = 'Needs attention';
-    if (score >= 85) qualityLabel = 'Good';
-    else if (score >= 70) qualityLabel = 'Fair';
+    let qualityLabel = 'Aandacht nodig';
+    if (score >= 85) qualityLabel = 'Goed';
+    else if (score >= 70) qualityLabel = 'Redelijk';
 
     return {
         score: Math.max(0, Math.min(100, score)),
@@ -2917,11 +2923,30 @@ function showTransactionDetail(detailType) {
     }
 
     if (detailType === 'expense-momentum') {
-        const windows = splitRollingWindows(transactions, 30);
-        const recentExpenseTransactions = windows.recent.filter((transaction) => (transaction.amount || 0) < 0);
+        // Latest complete month vs the average of the complete month(s) before it.
+        const months = summarizeCompleteMonths(transactions, 3);
+        if (months.length < 2) {
+            openDetailModal({
+                title: '<i class="fas fa-chart-line"></i> Uitgavenmomentum',
+                summary: 'Minder dan 2 volledige maanden in de geselecteerde periode.',
+                rows: [{ label: 'Kies een langere periode om maanden te vergelijken.', value: '' }],
+                chart: null
+            });
+            return;
+        }
+        const latestMonth = months[months.length - 1];
+        const previousMonths = months.slice(0, -1);
+        const latestTransactions = transactionsInMonths(transactions, [latestMonth.monthKey]);
+        const recentExpenseTransactions = latestTransactions.filter((transaction) => (transaction.amount || 0) < 0);
         const transactionRows = buildTransactionTableRows(recentExpenseTransactions);
-        const recentByCategory = buildExpenseByCategory(windows.recent);
-        const priorByCategory = buildExpenseByCategory(windows.prior);
+        const recentByCategory = buildExpenseByCategory(latestTransactions);
+        const priorByCategory = Object.fromEntries(
+            Object.entries(buildExpenseByCategory(transactionsInMonths(transactions, previousMonths.map((row) => row.monthKey))))
+                .map(([category, total]) => [category, total / previousMonths.length])
+        );
+        const previousLabel = previousMonths.length === 1
+            ? previousMonths[0].monthLabel
+            : `gem. ${previousMonths.map((row) => row.monthLabel).join(' + ')}`;
         const categories = new Set([...Object.keys(recentByCategory), ...Object.keys(priorByCategory)]);
 
         const rows = Array.from(categories)
@@ -2929,7 +2954,7 @@ function showTransactionDetail(detailType) {
                 const recent = recentByCategory[category] || 0;
                 const prior = priorByCategory[category] || 0;
                 const delta = recent - prior;
-                const deltaPct = prior > 0 ? (delta / prior) * 100 : 0;
+                const deltaPct = prior > 0 ? (delta / prior) * 100 : null;
                 return { category, recent, prior, delta, deltaPct };
             })
             .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
@@ -2946,7 +2971,8 @@ function showTransactionDetail(detailType) {
 
         const recentTotal = rows.reduce((sum, row) => sum + row.recent, 0);
         const priorTotal = rows.reduce((sum, row) => sum + row.prior, 0);
-        const totalChangePct = priorTotal > 0 ? ((recentTotal - priorTotal) / priorTotal) * 100 : 0;
+        const totalChangePct = priorTotal > 0 ? ((recentTotal - priorTotal) / priorTotal) * 100 : null;
+        const formatPct = (value) => (value === null ? 'n.v.t.' : `${value.toFixed(1)}%`);
 
         const chartRows = [...rows]
             .sort((a, b) => (b.recent + b.prior) - (a.recent + a.prior))
@@ -2955,14 +2981,14 @@ function showTransactionDetail(detailType) {
         const traces = [
             {
                 type: 'bar',
-                name: 'Vorige 30d',
+                name: previousLabel,
                 x: chartRows.map((row) => row.category),
                 y: chartRows.map((row) => row.prior),
                 marker: { color: 'rgba(148,163,184,0.8)' }
             },
             {
                 type: 'bar',
-                name: 'Laatste 30d',
+                name: latestMonth.monthLabel,
                 x: chartRows.map((row) => row.category),
                 y: chartRows.map((row) => row.recent),
                 marker: { color: 'rgba(59,130,246,0.85)' }
@@ -2979,15 +3005,15 @@ function showTransactionDetail(detailType) {
         };
 
         openDetailModal({
-            title: '<i class="fas fa-chart-line"></i> Uitgavenmomentum (30d vs vorige 30d)',
-            summary: `Totaal: ${formatCurrency(recentTotal)} vs ${formatCurrency(priorTotal)} (${totalChangePct.toFixed(1)}%)`,
+            title: `<i class="fas fa-chart-line"></i> Uitgavenmomentum (${latestMonth.monthLabel} vs ${previousLabel})`,
+            summary: `Totaal: ${formatCurrency(recentTotal)} vs ${formatCurrency(priorTotal)} (${formatPct(totalChangePct)}). Alleen volledige maanden; terugbetalingen niet meegeteld.`,
             rows: rows.slice(0, 20).map((row) => ({
                 label: row.category,
-                value: `${formatCurrency(row.recent)} vs ${formatCurrency(row.prior)} (Δ ${formatCurrency(row.delta)}, ${row.deltaPct.toFixed(1)}%)`
+                value: `${formatCurrency(row.recent)} vs ${formatCurrency(row.prior)} (Δ ${formatCurrency(row.delta)}, ${formatPct(row.deltaPct)})`
             })),
             chart: { trace: traces, layout },
             transactionRows,
-            transactionsTitle: `Individuele uitgaven laatste 30 dagen (${transactionRows.length})`
+            transactionsTitle: `Individuele uitgaven ${latestMonth.monthLabel} (${transactionRows.length})`
         });
         return;
     }
@@ -3235,15 +3261,7 @@ function showTransactionDetail(detailType) {
 
     if (detailType === 'action-plan') {
         const localKpis = calculateKPIs(transactions);
-        const windows = splitRollingWindows(transactions, 30);
-        const recentExpenses = windows.recent
-            .filter((transaction) => transaction.amount < 0)
-            .reduce((sum, transaction) => sum + Math.abs(transaction.amount || 0), 0);
-        const recentIncome = windows.recent
-            .filter((transaction) => transaction.amount > 0)
-            .reduce((sum, transaction) => sum + (transaction.amount || 0), 0);
-        const observedRecentDays = Math.max(new Set(windows.recent.map((transaction) => toDateKey(transaction.date))).size, 1);
-        const dailyBurn = Math.max((recentExpenses - recentIncome) / observedRecentDays, 0);
+        const dailyBurn = computeDailyBurn(transactions);
         const liquidBalance = balanceMetrics
             ? (Number(balanceMetrics.totals.checking) || 0) + (Number(balanceMetrics.totals.savings) || 0)
             : null;
@@ -3298,7 +3316,7 @@ function showTransactionDetail(detailType) {
             openDetailModal({
                 title: '<i class="fas fa-repeat"></i> Terugkerende kosten',
                 summary: 'Onvoldoende terugkerende uitgaven gevonden in de geselecteerde periode.',
-                rows: [{ label: 'Geen terugkerende merchant-patronen gevonden.', value: '' }],
+                rows: [{ label: 'Geen vaste maandelijkse posten gevonden (±1 betaling per maand, stabiel bedrag).', value: '' }],
                 chart: null
             });
             return;
@@ -3327,9 +3345,9 @@ function showTransactionDetail(detailType) {
         const monthlyTotal = recurring.rows.reduce((sum, row) => sum + row.avgMonthly, 0);
         openDetailModal({
             title: '<i class="fas fa-repeat"></i> Terugkerende kosten',
-            summary: `${recurring.rows.length} terugkerende merchants · geschatte maandlast ${formatCurrency(monthlyTotal)}.`,
+            summary: `${recurring.rows.length} vaste maandelijkse posten · geschatte maandlast ${formatCurrency(monthlyTotal)}. Alleen tegenrekeningen met ±1 betaling per maand en een stabiel bedrag.`,
             rows: recurring.rows.map((row) => ({
-                label: `${row.merchant} · ${row.monthsPresent}/${recurring.months} maanden`,
+                label: `${row.merchant} (${row.category}) · ${row.monthsPresent}/${recurring.months} maanden`,
                 value: `${formatCurrency(row.avgMonthly)}/mnd (stabiliteit ${(Math.max(0, 1 - row.stability) * 100).toFixed(0)}%)`
             })),
             chart: { trace, layout }
@@ -3353,9 +3371,9 @@ function showTransactionDetail(detailType) {
         const metrics = quality.metrics || {};
         const componentRows = [
             { label: 'Categorie-dekking', value: Number(coverage.category_coverage) || 0 },
-            { label: 'Merchant-dekking', value: Number(coverage.merchant_coverage) || 0 },
+            { label: 'Tegenrekening-dekking', value: Number(coverage.merchant_coverage) || 0 },
             { label: 'Categorie-dekking (bedrag)', value: Number(coverage.category_amount_coverage) || 0 },
-            { label: 'Merchant-dekking (bedrag)', value: Number(coverage.merchant_amount_coverage) || 0 },
+            { label: 'Tegenrekening-dekking (bedrag)', value: Number(coverage.merchant_amount_coverage) || 0 },
             { label: 'EUR-dekking', value: Number(coverage.amount_eur_coverage) || 0 },
             { label: 'FX-dekking', value: Number(coverage.fx_coverage) || 0 }
         ];
@@ -3389,18 +3407,18 @@ function showTransactionDetail(detailType) {
         };
 
         const rows = [
-            { label: 'Quality score', value: `${quality.score}/100 (${quality.qualityLabel})` },
+            { label: 'Kwaliteitsscore', value: `${quality.score}/100 (${quality.qualityLabel})` },
             { label: 'Transacties (periode)', value: String(metrics.total_transactions ?? 0) },
             { label: 'Actieve transactiedagen', value: String(metrics.active_transaction_days ?? 0) },
             { label: 'Dataspan (dagen)', value: String(metrics.dataset_span_days ?? 0) },
             { label: 'Uitgaven met categorie', value: `${metrics.categorized_expenses ?? 0}/${metrics.expense_transactions ?? 0} (${formatRatioPercent(coverage.category_coverage)})` },
             { label: 'Uitgavenvolume met categorie', value: `${formatCurrency(metrics.categorized_expense_amount ?? 0)} / ${formatCurrency(metrics.expense_amount_total ?? 0)} (${formatRatioPercent(coverage.category_amount_coverage)})` },
-            { label: 'Uitgaven met merchant', value: `${metrics.merchant_named_expenses ?? 0}/${metrics.expense_transactions ?? 0} (${formatRatioPercent(coverage.merchant_coverage)})` },
-            { label: 'Uitgavenvolume met merchant', value: `${formatCurrency(metrics.merchant_named_expense_amount ?? 0)} / ${formatCurrency(metrics.expense_amount_total ?? 0)} (${formatRatioPercent(coverage.merchant_amount_coverage)})` },
+            { label: 'Uitgaven met tegenrekening', value: `${metrics.merchant_named_expenses ?? 0}/${metrics.expense_transactions ?? 0} (${formatRatioPercent(coverage.merchant_coverage)})` },
+            { label: 'Uitgavenvolume met tegenrekening', value: `${formatCurrency(metrics.merchant_named_expense_amount ?? 0)} / ${formatCurrency(metrics.expense_amount_total ?? 0)} (${formatRatioPercent(coverage.merchant_amount_coverage)})` },
             { label: 'EUR-dekking', value: formatRatioPercent(coverage.amount_eur_coverage) },
             { label: 'FX-dekking (non-EUR)', value: formatRatioPercent(coverage.fx_coverage) },
-            { label: 'Internal share', value: formatRatioPercent(coverage.internal_share) },
-            { label: 'Laatste cache-capture', value: metrics.latest_capture_at ? String(metrics.latest_capture_at) : 'N/A' }
+            { label: 'Aandeel interne overboekingen', value: formatRatioPercent(coverage.internal_share) },
+            { label: 'Laatst bijgewerkt', value: metrics.latest_capture_at ? new Date(metrics.latest_capture_at).toLocaleString('nl-NL') : 'n.v.t.' }
         ];
 
         if (Array.isArray(quality.warnings) && quality.warnings.length) {
@@ -4397,6 +4415,123 @@ function latestCompleteBudgetMonth(monthly) {
     return complete[complete.length - 1] || withIncome[withIncome.length - 1] || null;
 }
 
+// ---- Insight helpers --------------------------------------------------------
+// Insights work on complete calendar months where they compare periods or estimate
+// monthly amounts: salary and rent are monthly, so rolling 30-day windows can hold 0 or 2
+// of them and give false jumps.
+
+const AVG_DAYS_PER_MONTH = 30.44;
+// Never suggested as "cut this" in the action plan (not changeable short-term).
+// They still count in totals and in the 50/30/20 figures.
+const NON_ACTIONABLE_CATEGORIES = new Set(['Wonen', 'Belastingen']);
+// Fixed costs: left out of the spending-volatility measure.
+const FIXED_COST_CATEGORIES = new Set(['Wonen', 'Verzekering', 'Belastingen', 'Utilities', 'Abonnementen']);
+
+function monthKeyOf(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isValidTransactionDate(transaction) {
+    return transaction?.date instanceof Date && !Number.isNaN(transaction.date.getTime());
+}
+
+// Complete calendar months inside the selected period (no partial first month, no running
+// month), including months without income. expenses = spending after refunds.
+function summarizeCompleteMonths(transactions, maxMonths = 6) {
+    return summarizeMonthlyBudgetDiscipline(transactions, 24, { includeNoIncomeMonths: true })
+        .filter((row) => !row.isCurrent)
+        .slice(-maxMonths)
+        .map((row) => {
+            const expenses = row.essentials + row.discretionary;
+            return { ...row, expenses, net: row.income - expenses };
+        });
+}
+
+function transactionsInMonths(transactions, monthKeys) {
+    const keys = new Set(monthKeys);
+    return (transactions || []).filter((transaction) => (
+        isValidTransactionDate(transaction) && keys.has(monthKeyOf(transaction.date))
+    ));
+}
+
+// Latest complete month vs the average of up to `compareMonths` complete months before it.
+function compareLatestCompleteMonth(transactions, pick, compareMonths = 2) {
+    const months = summarizeCompleteMonths(transactions, compareMonths + 1);
+    if (months.length < 2) return null;
+    const latest = months[months.length - 1];
+    const previous = months.slice(0, -1);
+    const baseline = previous.reduce((sum, row) => sum + pick(row), 0) / previous.length;
+    const current = pick(latest);
+    return {
+        latest,
+        previous,
+        current,
+        baseline,
+        delta: current - baseline,
+        changePct: Math.abs(baseline) > 0.01 ? ((current - baseline) / Math.abs(baseline)) * 100 : null,
+        previousLabel: previous.length === 1
+            ? previous[0].monthLabel
+            : `gem. ${previous.map((row) => row.monthLabel).join(' + ')}`
+    };
+}
+
+// Days of data in the selected period: from the later of period start and first
+// transaction, up to now.
+function periodDaysCovered(transactions) {
+    const dates = (transactions || []).filter(isValidTransactionDate).map((transaction) => transaction.date.getTime());
+    const periodStart = getSelectedPeriodStart().getTime();
+    const start = dates.length ? Math.max(periodStart, Math.min(...dates)) : periodStart;
+    return Math.max(1, (Date.now() - start) / (24 * 60 * 60 * 1000));
+}
+
+// Average monthly net (income - spending): complete months when available, else the period so far.
+function estimateMonthlyNet(transactions) {
+    const months = summarizeCompleteMonths(transactions, 3);
+    if (months.length) {
+        return {
+            monthlyNet: months.reduce((sum, row) => sum + row.net, 0) / months.length,
+            months: months.length,
+            basis: `${months.length} volledige ${months.length === 1 ? 'maand' : 'maanden'}`
+        };
+    }
+    const net = (transactions || []).reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
+    return {
+        monthlyNet: (net / periodDaysCovered(transactions)) * AVG_DAYS_PER_MONTH,
+        months: 0,
+        basis: 'periode tot nu toe'
+    };
+}
+
+// Average net outflow per calendar day (0 when money comes in on balance).
+function computeDailyBurn(transactions) {
+    return Math.max(-estimateMonthlyNet(transactions).monthlyNet, 0) / AVG_DAYS_PER_MONTH;
+}
+
+// Result for the running month: what happened so far plus what, in recent complete months,
+// still came in and went out after today's day of the month (salary, rent, ...).
+function projectCurrentMonthNet(transactions, now = new Date()) {
+    const currentKey = monthKeyOf(now);
+    const monthToDate = (transactions || [])
+        .filter((transaction) => isValidTransactionDate(transaction) && monthKeyOf(transaction.date) === currentKey)
+        .reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
+    const day = now.getDate();
+    const months = summarizeCompleteMonths(transactions, 3);
+    if (months.length) {
+        const restByMonth = months.map((row) => transactionsInMonths(transactions, [row.monthKey])
+            .filter((transaction) => transaction.date.getDate() > day)
+            .reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0));
+        const rest = restByMonth.reduce((sum, value) => sum + value, 0) / restByMonth.length;
+        return { projected: monthToDate + rest, monthToDate, rest, basis: `${months.length} volledige ${months.length === 1 ? 'maand' : 'maanden'}` };
+    }
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const hasMonthData = (transactions || []).some((transaction) => (
+        isValidTransactionDate(transaction) && monthKeyOf(transaction.date) === currentKey
+    ));
+    if (!hasMonthData) return null;
+    const rest = (monthToDate / day) * (daysInMonth - day);
+    return { projected: monthToDate + rest, monthToDate, rest, basis: 'lineair (nog geen volledige maand)' };
+}
+
 function buildExpenseByCategory(transactions) {
     const totals = {};
     (transactions || []).forEach((transaction) => {
@@ -4407,52 +4542,44 @@ function buildExpenseByCategory(transactions) {
     return totals;
 }
 
+// Concrete savings levers: actionable categories/counterparties with their average monthly
+// spending over the last complete months (or the period so far).
 function buildConcreteCostLevers(transactions, options = {}) {
-    const windowDays = Number(options.windowDays) || 30;
     const maxCategories = Number(options.maxCategories) || 2;
     const maxMerchants = Number(options.maxMerchants) || 2;
     const minMonthly = Number(options.minMonthly) || 40;
 
-    const windows = splitRollingWindows(transactions || [], windowDays);
-    const source = (windows.recent && windows.recent.length) ? windows.recent : (transactions || []);
+    const months = summarizeCompleteMonths(transactions, 3);
+    const source = months.length
+        ? transactionsInMonths(transactions, months.map((row) => row.monthKey))
+        : (transactions || []);
+    const monthCount = months.length || (periodDaysCovered(transactions) / AVG_DAYS_PER_MONTH);
     const expenses = source.filter((transaction) => (transaction.amount || 0) < 0);
-    if (!expenses.length) return [];
-
-    const activeDays = Math.max(
-        new Set(expenses.map((transaction) => toDateKey(transaction.date))).size,
-        1
-    );
-    const monthlyScale = 30 / activeDays;
+    if (!expenses.length || monthCount <= 0) return [];
 
     const categoryTotals = new Map();
     const merchantTotals = new Map();
-    let totalWindowExpenses = 0;
+    let totalExpenses = 0;
 
     expenses.forEach((transaction) => {
         const amountAbs = Math.abs(Number(transaction.amount) || 0);
         if (!Number.isFinite(amountAbs) || amountAbs <= 0) return;
-        totalWindowExpenses += amountAbs;
+        totalExpenses += amountAbs;
         const category = transaction.category || 'Overig';
+        if (NON_ACTIONABLE_CATEGORIES.has(category)) return;
         const merchant = resolveMerchantLabel(transaction);
         categoryTotals.set(category, (categoryTotals.get(category) || 0) + amountAbs);
         merchantTotals.set(merchant, (merchantTotals.get(merchant) || 0) + amountAbs);
     });
 
-    if (totalWindowExpenses <= 0.01) return [];
+    if (totalExpenses <= 0.01) return [];
 
-    const buildLever = (type, label, windowValue) => {
-        const share = windowValue / totalWindowExpenses;
-        const baselineMonthly = windowValue * monthlyScale;
+    const buildLever = (type, label, value) => {
+        const share = value / totalExpenses;
+        const baselineMonthly = value / monthCount;
         const targetCutPct = Math.min(0.22, Math.max(0.08, 0.08 + (share * 0.14)));
         const expectedMonthly = baselineMonthly * targetCutPct;
-        return {
-            type,
-            label,
-            share,
-            baselineMonthly,
-            targetCutPct,
-            expectedMonthly
-        };
+        return { type, label, share, baselineMonthly, targetCutPct, expectedMonthly };
     };
 
     const categoryLevers = Array.from(categoryTotals.entries())
@@ -4469,47 +4596,6 @@ function buildConcreteCostLevers(transactions, options = {}) {
 
     return [...categoryLevers, ...merchantLevers]
         .sort((a, b) => b.expectedMonthly - a.expectedMonthly);
-}
-
-function splitRollingWindows(transactions, windowDays = 30) {
-    const normalized = (transactions || [])
-        .filter((transaction) => transaction.date instanceof Date && !Number.isNaN(transaction.date.getTime()))
-        .sort((a, b) => a.date - b.date);
-
-    if (!normalized.length) {
-        return {
-            recent: [],
-            prior: [],
-            endDate: null,
-            recentStart: null,
-            priorStart: null
-        };
-    }
-
-    const endDate = new Date(normalized[normalized.length - 1].date);
-    endDate.setHours(23, 59, 59, 999);
-
-    const recentStart = new Date(endDate);
-    recentStart.setDate(recentStart.getDate() - (windowDays - 1));
-    recentStart.setHours(0, 0, 0, 0);
-
-    const priorStart = new Date(recentStart);
-    priorStart.setDate(priorStart.getDate() - windowDays);
-
-    const recent = [];
-    const prior = [];
-
-    normalized.forEach((transaction) => {
-        if (transaction.date >= recentStart && transaction.date <= endDate) {
-            recent.push(transaction);
-            return;
-        }
-        if (transaction.date >= priorStart && transaction.date < recentStart) {
-            prior.push(transaction);
-        }
-    });
-
-    return { recent, prior, endDate, recentStart, priorStart };
 }
 
 function summarizeNeedsVsWants(transactions) {
@@ -4536,28 +4622,52 @@ function summarizeNeedsVsWants(transactions) {
     return summary;
 }
 
-function computeDailyExpenseVolatility(transactions) {
-    const daily = buildDailyTotals(transactions || []);
-    const values = daily.map((day) => Number(day.expenses) || 0);
-    if (!values.length) {
-        return { mean: 0, std: 0, cv: 0, label: 'N/A' };
+// How much weekly *variable* spending (excl. fixed costs) varies: coefficient of variation
+// over complete weeks (Mon–Sun) in the selected period. Daily figures would always look
+// volatile because of rent day.
+function computeWeeklySpendingVolatility(transactions) {
+    const valid = (transactions || []).filter(isValidTransactionDate);
+    if (!valid.length) return { mean: 0, std: 0, cv: 0, weeks: 0, label: 'n.v.t.' };
+
+    const firstDate = new Date(Math.min(...valid.map((transaction) => transaction.date.getTime())));
+    const start = new Date(Math.max(getSelectedPeriodStart().getTime(), firstDate.getTime()));
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() + ((8 - start.getDay()) % 7));   // first Monday on/after start
+    const end = new Date();
+    end.setHours(0, 0, 0, 0);
+    end.setDate(end.getDate() - ((end.getDay() + 6) % 7));        // Monday of the running week
+
+    const weekTotals = [];
+    for (let weekStart = new Date(start); weekStart < end; weekStart.setDate(weekStart.getDate() + 7)) {
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        if (weekEnd > end) break;
+        weekTotals.push(valid
+            .filter((transaction) => (
+                (transaction.amount || 0) < 0
+                && !FIXED_COST_CATEGORIES.has(transaction.category)
+                && transaction.date >= weekStart
+                && transaction.date < weekEnd
+            ))
+            .reduce((sum, transaction) => sum + Math.abs(transaction.amount || 0), 0));
     }
-    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-    if (mean <= 0.01) {
-        return { mean, std: 0, cv: 0, label: 'Laag' };
-    }
-    const variance = values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
+
+    if (weekTotals.length < 3) return { mean: 0, std: 0, cv: 0, weeks: weekTotals.length, label: 'n.v.t.' };
+    const mean = weekTotals.reduce((sum, value) => sum + value, 0) / weekTotals.length;
+    if (mean <= 0.01) return { mean, std: 0, cv: 0, weeks: weekTotals.length, label: 'Laag' };
+    const variance = weekTotals.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / weekTotals.length;
     const std = Math.sqrt(Math.max(variance, 0));
     const cv = std / mean;
-    const label = cv >= 0.9 ? 'Hoog' : (cv >= 0.55 ? 'Middel' : 'Laag');
-    return { mean, std, cv, label };
+    const label = cv >= 0.6 ? 'Hoog' : (cv >= 0.3 ? 'Middel' : 'Laag');
+    return { mean, std, cv, weeks: weekTotals.length, label };
 }
 
+// Fixed monthly items: a counterparty paid in most months, about once a month (at most 2
+// payments), with a stable monthly amount. Excludes supermarkets and restaurants, which
+// recur but aren't fixed costs.
 function summarizeRecurringCosts(transactions, maxItems = 12) {
     const expenseTransactions = (transactions || []).filter((transaction) => (
-        (transaction.amount || 0) < 0
-        && transaction.date instanceof Date
-        && !Number.isNaN(transaction.date.getTime())
+        (transaction.amount || 0) < 0 && isValidTransactionDate(transaction)
     ));
     if (!expenseTransactions.length) {
         return { months: 0, rows: [] };
@@ -4565,16 +4675,24 @@ function summarizeRecurringCosts(transactions, maxItems = 12) {
 
     const monthKeys = new Set();
     const merchantByMonth = new Map();
+    const merchantCategories = new Map();
     expenseTransactions.forEach((transaction) => {
-        const monthKey = `${transaction.date.getFullYear()}-${String(transaction.date.getMonth() + 1).padStart(2, '0')}`;
+        const monthKey = monthKeyOf(transaction.date);
         const merchant = resolveMerchantLabel(transaction);
         const amount = Math.abs(Number(transaction.amount) || 0);
         monthKeys.add(monthKey);
         if (!merchantByMonth.has(merchant)) {
             merchantByMonth.set(merchant, new Map());
+            merchantCategories.set(merchant, new Map());
         }
         const monthMap = merchantByMonth.get(merchant);
-        monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + amount);
+        const entry = monthMap.get(monthKey) || { total: 0, count: 0 };
+        entry.total += amount;
+        entry.count += 1;
+        monthMap.set(monthKey, entry);
+        const categories = merchantCategories.get(merchant);
+        const category = transaction.category || 'Overig';
+        categories.set(category, (categories.get(category) || 0) + amount);
     });
 
     const totalMonths = monthKeys.size;
@@ -4585,16 +4703,26 @@ function summarizeRecurringCosts(transactions, maxItems = 12) {
         const monthsPresent = monthMap.size;
         if (monthsPresent < minMonths) return;
 
-        const monthlyValues = Array.from(monthMap.values());
+        const entries = Array.from(monthMap.values());
+        const paymentsPerMonth = entries.reduce((sum, entry) => sum + entry.count, 0) / monthsPresent;
+        if (paymentsPerMonth > 2) return;
+
+        const monthlyValues = entries.map((entry) => entry.total);
         const avgMonthly = monthlyValues.reduce((sum, value) => sum + value, 0) / monthlyValues.length;
         if (avgMonthly < 7.5) return;
 
         const variance = monthlyValues.reduce((sum, value) => sum + ((value - avgMonthly) ** 2), 0) / monthlyValues.length;
         const std = Math.sqrt(Math.max(variance, 0));
         const cv = avgMonthly > 0.01 ? std / avgMonthly : 0;
+        if (cv > 0.35) return;
+
+        const category = Array.from(merchantCategories.get(merchant).entries())
+            .sort((a, b) => b[1] - a[1])[0]?.[0] || 'Overig';
         rows.push({
             merchant,
+            category,
             monthsPresent,
+            paymentsPerMonth,
             avgMonthly,
             totalObserved: monthlyValues.reduce((sum, value) => sum + value, 0),
             stability: cv
@@ -4653,23 +4781,17 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         });
     };
 
-    const windows = splitRollingWindows(transactions, 30);
-    const recentExpenses = windows.recent
-        .filter((transaction) => transaction.amount < 0)
-        .reduce((sum, transaction) => sum + Math.abs(transaction.amount || 0), 0);
-    const priorExpenses = windows.prior
-        .filter((transaction) => transaction.amount < 0)
-        .reduce((sum, transaction) => sum + Math.abs(transaction.amount || 0), 0);
-    const recentIncome = windows.recent
-        .filter((transaction) => transaction.amount > 0)
-        .reduce((sum, transaction) => sum + (transaction.amount || 0), 0);
-    const priorIncome = windows.prior
-        .filter((transaction) => transaction.amount > 0)
-        .reduce((sum, transaction) => sum + (transaction.amount || 0), 0);
+    // Month-based comparisons (see summarizeCompleteMonths): latest complete month vs before.
+    const expenseCompare = compareLatestCompleteMonth(transactions, (row) => row.expenses);
+    const incomeCompare = compareLatestCompleteMonth(transactions, (row) => row.income);
+    const monthlyBase = summarizeCompleteMonths(transactions, 3);
+    const avgMonthlyExpenses = monthlyBase.length
+        ? monthlyBase.reduce((sum, row) => sum + row.expenses, 0) / monthlyBase.length
+        : ((kpis.expenses || 0) / periodDaysCovered(transactions)) * AVG_DAYS_PER_MONTH;
 
-    const baseImpactFloor = Math.max(25, recentExpenses * 0.015, (kpis.expenses || 0) * 0.012);
-    const trendImpactFloor = Math.max(baseImpactFloor, priorExpenses * 0.05);
-    const incomeImpactFloor = Math.max(60, priorIncome * 0.05);
+    const baseImpactFloor = Math.max(25, avgMonthlyExpenses * 0.015, (kpis.expenses || 0) * 0.012);
+    const trendImpactFloor = Math.max(baseImpactFloor, (expenseCompare?.baseline || 0) * 0.05);
+    const incomeImpactFloor = Math.max(60, (incomeCompare?.baseline || 0) * 0.05);
 
     if (baseline && baseline.income > 0.01) {
         const scale = 1 / baselineMonths.length;
@@ -4729,14 +4851,14 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         }
     }
 
-    if (priorExpenses > 0.01) {
-        const increasePct = ((recentExpenses - priorExpenses) / priorExpenses) * 100;
-        const expenseDelta = recentExpenses - priorExpenses;
+    if (expenseCompare && expenseCompare.changePct !== null) {
+        const increasePct = expenseCompare.changePct;
+        const expenseDelta = expenseCompare.delta;
         if (increasePct > 10 && expenseDelta > trendImpactFloor) {
             pushAction({
                 priority: 2,
                 title: 'Stop uitgavengroei',
-                summary: `Uitgaven stegen ${increasePct.toFixed(1)}% in laatste 30 dagen (${formatCurrency(expenseDelta)}).`,
+                summary: `Uitgaven in ${expenseCompare.latest.monthLabel} ${increasePct.toFixed(1)}% hoger dan ${expenseCompare.previousLabel} (${formatCurrency(expenseDelta)}).`,
                 impact: Math.max(expenseDelta, 0),
                 confidence: 0.79,
                 reason: 'expense-trend'
@@ -4744,14 +4866,14 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         }
     }
 
-    if (priorIncome > 0.01) {
-        const incomeDeltaPct = ((recentIncome - priorIncome) / priorIncome) * 100;
-        const incomeDelta = priorIncome - recentIncome;
+    if (incomeCompare && incomeCompare.changePct !== null) {
+        const incomeDeltaPct = incomeCompare.changePct;
+        const incomeDelta = -incomeCompare.delta;
         if (incomeDeltaPct < -12 && incomeDelta > incomeImpactFloor) {
             pushAction({
                 priority: 1,
                 title: 'Anticipeer op lagere inkomensstroom',
-                summary: `Inkomen daalde ${Math.abs(incomeDeltaPct).toFixed(1)}% in laatste 30 dagen (${formatCurrency(incomeDelta)}).`,
+                summary: `Inkomen in ${incomeCompare.latest.monthLabel} ${Math.abs(incomeDeltaPct).toFixed(1)}% lager dan ${incomeCompare.previousLabel} (${formatCurrency(incomeDelta)}).`,
                 impact: Math.max(incomeDelta * 0.2, 0),
                 confidence: 0.83,
                 reason: 'income-trend'
@@ -4759,7 +4881,11 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         }
     }
 
-    const categoryExpenses = buildExpenseByCategory(transactions);
+    // Concentration / cut suggestions skip housing and taxes (not actionable short-term).
+    const actionableTransactions = (transactions || []).filter((transaction) => (
+        !NON_ACTIONABLE_CATEGORIES.has(transaction.category)
+    ));
+    const categoryExpenses = buildExpenseByCategory(actionableTransactions);
     const topCategory = Object.entries(categoryExpenses).sort((a, b) => b[1] - a[1])[0];
     if (topCategory && kpis.expenses > 0.01) {
         const topCategoryShare = (topCategory[1] / kpis.expenses) * 100;
@@ -4776,7 +4902,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
     }
 
     const merchantExpenses = {};
-    (transactions || []).forEach((transaction) => {
+    actionableTransactions.forEach((transaction) => {
         if ((transaction.amount || 0) >= 0) return;
         const merchant = resolveMerchantLabel(transaction);
         merchantExpenses[merchant] = (merchantExpenses[merchant] || 0) + Math.abs(transaction.amount || 0);
@@ -4797,7 +4923,8 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
     }
 
     const recurring = summarizeRecurringCosts(transactions);
-    const recurringTop = recurring.rows[0];
+    const actionableRecurring = recurring.rows.filter((row) => !NON_ACTIONABLE_CATEGORIES.has(row.category));
+    const recurringTop = actionableRecurring[0];
     if (recurringTop && recurringTop.avgMonthly > Math.max(40, baseImpactFloor)) {
         pushAction({
             priority: 2,
@@ -4808,14 +4935,14 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             reason: 'recurring'
         });
     }
-    const recurringMonthlyTotal = recurring.rows.reduce((sum, row) => sum + (row.avgMonthly || 0), 0);
-    if (recentExpenses > 0.01) {
-        const recurringShare = recurringMonthlyTotal / recentExpenses;
+    const recurringMonthlyTotal = actionableRecurring.reduce((sum, row) => sum + (row.avgMonthly || 0), 0);
+    if (avgMonthlyExpenses > 0.01) {
+        const recurringShare = recurringMonthlyTotal / avgMonthlyExpenses;
         if (recurringShare > 0.45 && recurringMonthlyTotal > baseImpactFloor * 2) {
             pushAction({
                 priority: 1,
                 title: 'Verlaag structurele vaste lasten',
-                summary: `Terugkerende kosten zijn circa ${(recurringShare * 100).toFixed(1)}% van recente maanduitgaven (${formatCurrency(recurringMonthlyTotal)}).`,
+                summary: `Terugkerende kosten (excl. wonen/belastingen) zijn circa ${(recurringShare * 100).toFixed(1)}% van de gemiddelde maanduitgaven (${formatCurrency(recurringMonthlyTotal)}).`,
                 impact: recurringMonthlyTotal * 0.1,
                 confidence: 0.86,
                 reason: 'recurring-structure'
@@ -4824,7 +4951,6 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
     }
 
     const concreteLevers = buildConcreteCostLevers(transactions, {
-        windowDays: 30,
         maxCategories: 2,
         maxMerchants: 2,
         minMonthly: Math.max(35, baseImpactFloor * 0.9)
@@ -4835,7 +4961,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: lever.share > 0.22 ? 2 : 3,
                 title: `Verlaag ${lever.label} uitgaven`,
-                summary: `${lever.label} is ${((lever.share || 0) * 100).toFixed(1)}% van recente uitgaven. Richt op ~${(lever.targetCutPct * 100).toFixed(0)}% reductie.`,
+                summary: `${lever.label} is ${((lever.share || 0) * 100).toFixed(1)}% van de uitgaven (gem. ${formatCurrency(lever.baselineMonthly)}/mnd). Richt op ~${(lever.targetCutPct * 100).toFixed(0)}% reductie.`,
                 impact: lever.expectedMonthly,
                 confidence: 0.82,
                 reason: 'lever-category',
@@ -4846,7 +4972,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         pushAction({
             priority: lever.share > 0.12 ? 2 : 3,
             title: `Optimaliseer uitgaven bij ${lever.label}`,
-            summary: `${lever.label} vertegenwoordigt ${(lever.share * 100).toFixed(1)}% van recente uitgaven. Doel: ~${(lever.targetCutPct * 100).toFixed(0)}% lager.`,
+            summary: `${lever.label} vertegenwoordigt ${(lever.share * 100).toFixed(1)}% van de uitgaven (gem. ${formatCurrency(lever.baselineMonthly)}/mnd). Doel: ~${(lever.targetCutPct * 100).toFixed(0)}% lager.`,
             impact: lever.expectedMonthly,
             confidence: 0.76,
             reason: 'lever-merchant',
@@ -4854,13 +4980,13 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         });
     });
 
-    const volatility = computeDailyExpenseVolatility(transactions);
-    if (volatility.cv > 0.9 && volatility.mean > 20) {
+    const volatility = computeWeeklySpendingVolatility(transactions);
+    if (volatility.label === 'Hoog' && volatility.mean > 50) {
         pushAction({
             priority: 3,
             title: 'Verminder uitgavenvolatiliteit',
-            summary: `Dagelijkse uitgavenvolatiliteit is hoog (${(volatility.cv * 100).toFixed(0)}% van het gemiddelde).`,
-            impact: volatility.mean * 0.08,
+            summary: `Variabele uitgaven per week schommelen sterk (${(volatility.cv * 100).toFixed(0)}% van het gemiddelde van ${formatCurrency(volatility.mean)}/week).`,
+            impact: volatility.std * 0.25 * (AVG_DAYS_PER_MONTH / 7),
             confidence: 0.68,
             reason: 'volatility'
         });
@@ -4959,52 +5085,58 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const projectedMonthNet = document.getElementById('projectedMonthNet');
     const dataQualityScore = document.getElementById('dataQualityScore');
 
+    const NA = 'n.v.t.';
     const expenseByCategory = buildExpenseByCategory(data);
     const biggest = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1])[0];
     if (biggestCategory) {
-        biggestCategory.textContent = biggest ? `${biggest[0]} (${formatCurrency(biggest[1])})` : 'N/A';
+        biggestCategory.textContent = biggest ? `${biggest[0]} (${formatCurrency(biggest[1])})` : NA;
     }
 
-    const daily = buildDailyTotals(data);
-    const avg = daily.length ? daily.reduce((sum, day) => sum + day.expenses, 0) / daily.length : 0;
-    if (avgDaily) avgDaily.textContent = formatCurrency(avg);
-    const volatility = computeDailyExpenseVolatility(data);
+    // Per calendar day over the selected period (from the first transaction if later).
+    const totalExpenses = data.reduce((sum, transaction) => sum + ((transaction.amount || 0) < 0 ? Math.abs(transaction.amount) : 0), 0);
+    if (avgDaily) avgDaily.textContent = data.length ? formatCurrency(totalExpenses / periodDaysCovered(data)) : NA;
+
+    const volatility = computeWeeklySpendingVolatility(data);
     if (spendVolatility) {
-        spendVolatility.textContent = volatility.label === 'N/A'
-            ? 'N/A'
+        spendVolatility.textContent = volatility.label === NA
+            ? NA
             : `${volatility.label} (${(volatility.cv * 100).toFixed(0)}%)`;
     }
 
+    const daily = buildDailyTotals(data);
     const expensive = [...daily].sort((a, b) => b.expenses - a.expenses)[0];
     if (expensiveDay) {
-        expensiveDay.textContent = expensive ? `${expensive.date.toLocaleDateString('nl-NL')} (${formatCurrency(expensive.expenses)})` : 'N/A';
+        expensiveDay.textContent = expensive ? `${expensive.date.toLocaleDateString('nl-NL')} (${formatCurrency(expensive.expenses)})` : NA;
     }
 
-    const windows = splitRollingWindows(data, 30);
-    const recentExpenses = windows.recent.filter((transaction) => transaction.amount < 0).reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
-    const priorExpenses = windows.prior.filter((transaction) => transaction.amount < 0).reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
-    const recentIncome = windows.recent.filter((transaction) => transaction.amount > 0).reduce((sum, transaction) => sum + transaction.amount, 0);
-    const recentChange = priorExpenses > 0 ? ((recentExpenses - priorExpenses) / priorExpenses) * 100 : 0;
-
+    // Latest complete month vs the complete month(s) before it.
+    const expenseCompare = compareLatestCompleteMonth(data, (row) => row.expenses);
     if (trendInsight) {
-        const direction = recentChange <= 0 ? 'daalt' : 'stijgt';
-        const biggestLabel = biggest ? biggest[0] : 'Overig';
-        const biggestValue = biggest ? biggest[1] : 0;
-        const action = recentChange > 10
-            ? `Actie: beperk ${biggestLabel} met ~${formatCurrency(biggestValue * 0.1)}`
-            : 'Actie: houd dit niveau vast';
-        trendInsight.textContent = `30d uitgaventrend ${direction} (${recentChange.toFixed(1)}%). ${action}.`;
+        if (!expenseCompare || expenseCompare.changePct === null) {
+            trendInsight.textContent = `${NA} (minder dan 2 volledige maanden in de periode)`;
+        } else {
+            const change = expenseCompare.changePct;
+            const direction = change <= 0 ? 'lager' : 'hoger';
+            const latestSpend = buildExpenseByCategory(
+                transactionsInMonths(data, [expenseCompare.latest.monthKey])
+                    .filter((transaction) => !NON_ACTIONABLE_CATEGORIES.has(transaction.category))
+            );
+            const biggestActionable = Object.entries(latestSpend).sort((a, b) => b[1] - a[1])[0];
+            const action = change > 10 && biggestActionable
+                ? `Actie: beperk ${biggestActionable[0]} met ~${formatCurrency(biggestActionable[1] * 0.1)}/mnd`
+                : 'Actie: houd dit niveau vast';
+            trendInsight.textContent = `Uitgaven ${expenseCompare.latest.monthLabel} ${Math.abs(change).toFixed(1)}% ${direction} dan ${expenseCompare.previousLabel}. ${action}.`;
+        }
     }
 
     const liquidBalance = balanceMetrics
         ? (Number(balanceMetrics.totals.checking) || 0) + (Number(balanceMetrics.totals.savings) || 0)
         : null;
-    const observedRecentDays = Math.max(new Set(windows.recent.map((transaction) => toDateKey(transaction.date))).size, 1);
-    const dailyBurn = Math.max((recentExpenses - recentIncome) / observedRecentDays, 0);
+    const dailyBurn = computeDailyBurn(data);
 
     if (liquidityRunway) {
         if (liquidBalance === null) {
-            liquidityRunway.textContent = 'N/A';
+            liquidityRunway.textContent = NA;
         } else if (dailyBurn <= 0.01) {
             liquidityRunway.textContent = '∞ (positieve cashflow)';
         } else {
@@ -5018,7 +5150,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const totalNeedsWants = needsSummary.essentialTotal + needsSummary.discretionaryTotal;
     if (needsVsWants) {
         if (totalNeedsWants <= 0.01) {
-            needsVsWants.textContent = 'N/A';
+            needsVsWants.textContent = NA;
         } else {
             const essentialShare = (needsSummary.essentialTotal / totalNeedsWants) * 100;
             needsVsWants.textContent = `${essentialShare.toFixed(1)}% noodzakelijk`;
@@ -5029,7 +5161,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const latestBudget = latestCompleteBudgetMonth(monthlyBudget);
     if (budgetRuleFit) {
         if (!latestBudget) {
-            budgetRuleFit.textContent = 'N/A';
+            budgetRuleFit.textContent = NA;
         } else {
             budgetRuleFit.textContent = `N ${latestBudget.essentialsPct.toFixed(0)} / V ${latestBudget.discretionaryPct.toFixed(0)} / S ${latestBudget.savingsPct.toFixed(0)}`;
             budgetRuleFit.title = `Noodzakelijk / vrij besteedbaar / sparen in % van het inkomen, ${latestBudget.monthLabel}.`;
@@ -5045,7 +5177,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const merchantsSorted = Object.entries(merchantExpenses).sort((a, b) => b[1] - a[1]);
     if (topMerchantShare) {
         if (!merchantsSorted.length || kpis.expenses <= 0) {
-            topMerchantShare.textContent = 'N/A';
+            topMerchantShare.textContent = NA;
         } else {
             const [merchantName, merchantTotal] = merchantsSorted[0];
             const share = (merchantTotal / kpis.expenses) * 100;
@@ -5056,7 +5188,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const recurring = summarizeRecurringCosts(data);
     if (recurringCosts) {
         if (!recurring.rows.length) {
-            recurringCosts.textContent = 'N/A';
+            recurringCosts.textContent = NA;
         } else {
             const recurringMonthly = recurring.rows.reduce((sum, row) => sum + row.avgMonthly, 0);
             recurringCosts.textContent = `${formatCurrency(recurringMonthly)}/mnd`;
@@ -5064,19 +5196,12 @@ function renderInsights(data, kpis, qualitySummary = null) {
     }
 
     if (projectedMonthNet) {
-        const now = new Date();
-        const monthTransactions = data.filter((transaction) => (
-            transaction.date.getFullYear() === now.getFullYear()
-            && transaction.date.getMonth() === now.getMonth()
-        ));
-        if (!monthTransactions.length) {
-            projectedMonthNet.textContent = 'N/A';
+        const projection = projectCurrentMonthNet(data);
+        if (!projection) {
+            projectedMonthNet.textContent = NA;
         } else {
-            const monthNet = monthTransactions.reduce((sum, transaction) => sum + (transaction.amount || 0), 0);
-            const elapsedDays = Math.max(now.getDate(), 1);
-            const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-            const projected = (monthNet / elapsedDays) * daysInMonth;
-            projectedMonthNet.textContent = formatCurrency(projected);
+            projectedMonthNet.textContent = formatCurrency(projection.projected);
+            projectedMonthNet.title = `Tot nu toe ${formatCurrency(projection.monthToDate)}, verwacht rest van de maand ${formatCurrency(projection.rest)} (basis: ${projection.basis}).`;
         }
     }
 
@@ -5084,7 +5209,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     if (nextBestAction) {
         const topAction = actionPlan[0];
         if (!topAction) {
-            nextBestAction.textContent = 'N/A';
+            nextBestAction.textContent = NA;
         } else {
             const confidencePct = Math.round((Number(topAction.confidence) || 0.75) * 100);
             nextBestAction.textContent = topAction.impact > 0.01
@@ -5095,7 +5220,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
 
     if (dataQualityScore) {
         if (!qualitySummary || !qualitySummary.metrics || !qualitySummary.metrics.total_transactions) {
-            dataQualityScore.textContent = 'N/A';
+            dataQualityScore.textContent = NA;
         } else {
             const warningCount = Array.isArray(qualitySummary.warnings) ? qualitySummary.warnings.length : 0;
             const warningSuffix = warningCount ? ` · ${warningCount} waarschuwing${warningCount > 1 ? 'en' : ''}` : '';

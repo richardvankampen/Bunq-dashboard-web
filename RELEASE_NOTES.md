@@ -22,6 +22,15 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Insights
+- Month-based where it matters (salary and rent are monthly): trend, income/spending alerts and the `Uitgavenmomentum` popup compare the last complete month with the month(s) before it.
+- `Liquiditeitsrunway`: average monthly net of complete months per calendar day (was: net of the last 30 days divided by days *with* transactions).
+- `Verwacht netto per maand`: month so far plus what usually still comes in and goes out after today's date (was: linear extrapolation, which multiplied an early salary).
+- `Terugkerende kosten`: only fixed monthly items (±1 payment per month, stable amount); supermarkets and restaurants no longer count.
+- `Uitgavenvolatiliteit`: weekly variable spending without fixed costs (was: daily, always "Hoog" because of rent day).
+- Action plan: no "cut this" advice for housing or taxes; savings levers use real monthly averages.
+- `Gemiddelde daguitgaven` per calendar day of the selected period; Dutch labels and `n.v.t.` in cards and data quality; transaction-count warning scales with the period.
+
 ### Tooling
 - Test suite (`tests/`, pytest) and GitHub Actions CI; dev tools moved to `requirements_dev.txt`.
 

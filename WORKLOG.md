@@ -4,6 +4,22 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — inzichtlogica gecontroleerd en gecorrigeerd
+
+- Review van alle 13 inzichtkaarten + actieplan; 10 bevindingen, allemaal opgelost:
+  1. Runway/buffer-acties: 30d-netto gedeeld door dagen *met* transacties → nu gem. maandnetto volledige maanden / 30,44 (`computeDailyBurn`).
+  2. Verwacht netto: lineaire extrapolatie → maand tot nu toe + typisch restant na deze dag uit recente maanden (`projectCurrentMonthNet`).
+  3. Terugkerende kosten: elke tegenrekening in 2–3 maanden telde mee (supermarkt, horeca) → alleen ±1 betaling/maand met stabiel bedrag.
+  4. Trend en inkomens-/uitgavenalerts: rollende 30d-vensters (0 of 2 salarissen mogelijk) → laatste volledige maand vs daarvoor; momentum-venster idem.
+  5. Volatiliteit: dagelijks incl. huurdag (altijd Hoog) → wekelijkse variabele uitgaven zonder vaste lasten.
+  6. Besparingshefbomen: maandbedrag × 30/actieve dagen → echte maandgemiddelden.
+  7. Actieplan adviseerde huur/verhuurder te verlagen → Wonen/Belastingen uitgesloten van zulk advies.
+  8. Gemiddelde daguitgaven: tooltip zei "per actieve dag", nu per kalenderdag van de gekozen periode.
+  9. Engelse labels/N/A in datakwaliteit en kaarten → Nederlands, `n.v.t.` (ook backend-waarschuwingen).
+  10. Datakwaliteit: vaste drempel 120 transacties → schaalt met periode; interne-overboekingsaandeel op ongefilterde data.
+- `index.html`: hover-teksten van 6 inzichtkaarten aangepast aan de nieuwe berekening. `RELEASE_NOTES(-NL).md`: sectie Inzichten.
+- Verificatie: headless Chromium (Europe/Amsterdam) met gemockte API: burn €9,86/dag bij −€300/mnd; prognose €2.000 bij salaris op de 1e en huur later (i.p.v. vermenigvuldigd); terugkerend = Verhuurder + Netflix (niet Albert Heijn); stabiele weekuitgaven + huur → Laag; actieplan zonder huuradvies; alle gewijzigde vensters openen zonder JS-fouten. pytest 208 groen.
+
 ### Opgeleverd — grafieklogica gecontroleerd en gecorrigeerd
 
 - Review van alle grafieken en tegels in `app.js`; 9 bevindingen, allemaal opgelost:
