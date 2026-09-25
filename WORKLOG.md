@@ -4,6 +4,19 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-25
 
+### Opgeleverd — dashboard laden sneller (achtergrond-sync, rekeninglijst-cache, card-backoff)
+
+- Productielogs na de transactie-opslag: herladen even traag als eerste load. Oorzaak niet de transacties (pagina uit opslag: 0,05s) maar Bunq-calls vóór het lezen:
+  - `list_monetary_accounts()` ~6,5s (SDK + 6 raw savings-fallback calls), bij élke request (accounts + elke transactiepagina);
+  - incrementele check na >60s: ~23,5s (13 rekeningen × payment-check + mislukkende card-payment-endpoint die nooit werd overgeslagen).
+- `api_proxy.py`:
+  - `get_monetary_accounts()`: cache per proces (vers 60s, daarna geserveerd + achtergrond-refresh tot 30 min); gebruikt in `/api/accounts`, `/api/transactions`, `/api/statistics`. Reconcile blijft live ophalen. Cache geleegd na fork.
+  - `load_transactions`: als opslag de periode dekt (`store_covers_period`) → direct uit opslag + `_start_background_sync`; anders blokkerende sync (eerste load / langere periode).
+  - card-payment fout → backoff per rekening (`SOURCE_FAILURE_BACKOFF_SECONDS`, 1u).
+  - achtergrondtaken resetten de Bunq-context bij `UnauthorizedException` (zoals de request-handlers).
+- Tests: 5 nieuwe (direct serveren zonder wachten, blokkerend bij ontbrekende periode, achtergrond-sync slaat nieuwe op, card-backoff, rekeninglijst-cache); fixtures joinen achtergrondthreads en legen module-caches. Suite: 208 groen.
+- Docs: TROUBLESHOOTING EN/NL 5b, `.env.example`, `CLAUDE.md`.
+
 ### Opgeleverd — transactie-opslag met incrementele sync en maandelijkse controle
 
 - Analyse vooraf: de DB was alleen een bijproduct. Transacties werden nooit uit de DB gelezen; elke request haalde de hele periode opnieuw uit Bunq (per pagina opnieuw, cache-key per pagina). Sleutel `transaction_cache` = hash incl. bedrag/omschrijving → wijzigingen bij Bunq gaven dubbele rijen; verwijderingen werden nooit verwerkt; `/api/statistics` persisteerde niet; `exclude_internal=true` filterde vóór opslaan.

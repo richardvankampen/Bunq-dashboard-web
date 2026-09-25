@@ -196,7 +196,7 @@ Actions:
 
 ### 5b. Transaction store and monthly reconcile
 
-Transactions are stored in SQLite (`config/dashboard_data.db`, table `bunq_transactions`). A dashboard load only asks Bunq for transactions newer than the newest stored one (at most once per `SYNC_MIN_INTERVAL_SECONDS`), plus older pages once when you pick a longer period than is stored.
+Transactions are stored in SQLite (`config/dashboard_data.db`, table `bunq_transactions`). When the stored data covers the selected period, the dashboard answers from the database right away and checks Bunq for newer transactions in the background (at most once per `SYNC_MIN_INTERVAL_SECONDS`); new transactions appear on the next load. It only waits for Bunq on the first load or when you pick a longer period than is stored. The account list is reused for `ACCOUNTS_CACHE_SECONDS` and then refreshed in the background.
 
 Once a month (default: the 1st, 03:00–06:00 Europe/Amsterdam) the app refetches everything back to the oldest stored transaction and applies the differences:
 - new transactions are added, changed ones updated;

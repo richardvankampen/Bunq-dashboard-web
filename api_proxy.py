@@ -2285,6 +2285,12 @@ _BUNQ_CARD_PAYMENT_MAX_PAGES = max(1, get_int_env('BUNQ_CARD_PAYMENT_MAX_PAGES',
 
 # Transaction store: incremental sync + monthly reconcile against Bunq.
 SYNC_MIN_INTERVAL_SECONDS = max(0, get_int_env('SYNC_MIN_INTERVAL_SECONDS', 60))
+# Account list (with balances) reuse: fresh for ACCOUNTS_CACHE_SECONDS, then served while a
+# background refresh runs, up to ACCOUNTS_STALE_SECONDS. Listing accounts costs ~6s at Bunq.
+ACCOUNTS_CACHE_SECONDS = max(0, get_int_env('ACCOUNTS_CACHE_SECONDS', 60))
+ACCOUNTS_STALE_SECONDS = max(ACCOUNTS_CACHE_SECONDS, get_int_env('ACCOUNTS_STALE_SECONDS', 1800))
+# After an optional endpoint (card payments) fails for an account, skip it for this long.
+SOURCE_FAILURE_BACKOFF_SECONDS = max(0, get_int_env('SOURCE_FAILURE_BACKOFF_SECONDS', 3600))
 RECONCILE_ENABLED = get_bool_env('RECONCILE_ENABLED', True)
 RECONCILE_DAY = min(28, max(1, get_int_env('RECONCILE_DAY', 1)))
 RECONCILE_HOUR = min(23, max(0, get_int_env('RECONCILE_HOUR', 3)))
@@ -3314,6 +3320,69 @@ def persist_account_snapshots(accounts_data):
         connection.close()
 
 # ============================================
+# ACCOUNT LIST CACHE
+# ============================================
+
+_ACCOUNTS_CACHE = {'accounts': None, 'fetched_at': 0.0}
+_ACCOUNTS_REFRESH_LOCK = threading.Lock()
+_ACCOUNTS_BACKGROUND_THREAD = None
+
+
+def _store_accounts(accounts):
+    _ACCOUNTS_CACHE['accounts'] = accounts
+    _ACCOUNTS_CACHE['fetched_at'] = time.time()
+
+
+def _refresh_accounts_in_background():
+    """Refresh the cached account list without blocking; no-op when a refresh is running."""
+    global _ACCOUNTS_BACKGROUND_THREAD
+    if not _ACCOUNTS_REFRESH_LOCK.acquire(blocking=False):
+        return None
+
+    def _run():
+        global _BUNQ_CONTEXT_INITIALIZED
+        try:
+            _store_accounts(list_monetary_accounts())
+        except UnauthorizedException as exc:
+            logger.warning(f"⚠️ Bunq session rejected during account refresh — resetting context: {exc}")
+            _BUNQ_CONTEXT_INITIALIZED = False
+        except Exception as exc:
+            logger.warning(f"⚠️ Background account refresh failed: {exc}")
+        finally:
+            _ACCOUNTS_REFRESH_LOCK.release()
+
+    _ACCOUNTS_BACKGROUND_THREAD = threading.Thread(target=_run, name='bunq-accounts-refresh', daemon=True)
+    _ACCOUNTS_BACKGROUND_THREAD.start()
+    return _ACCOUNTS_BACKGROUND_THREAD
+
+
+def get_monetary_accounts():
+    """
+    Account list for request handlers. Fresh within ACCOUNTS_CACHE_SECONDS; after that the
+    cached list is still served (up to ACCOUNTS_STALE_SECONDS) while it refreshes in the background.
+    """
+    cached = _ACCOUNTS_CACHE['accounts']
+    age = time.time() - _ACCOUNTS_CACHE['fetched_at']
+    if cached is not None and age < ACCOUNTS_CACHE_SECONDS:
+        return cached
+    if cached is not None and age < ACCOUNTS_STALE_SECONDS:
+        _refresh_accounts_in_background()
+        return cached
+    with _ACCOUNTS_REFRESH_LOCK:
+        cached = _ACCOUNTS_CACHE['accounts']
+        if cached is not None and time.time() - _ACCOUNTS_CACHE['fetched_at'] < ACCOUNTS_CACHE_SECONDS:
+            return cached
+        accounts = list_monetary_accounts()
+        _store_accounts(accounts)
+        return accounts
+
+
+def clear_accounts_cache():
+    _ACCOUNTS_CACHE['accounts'] = None
+    _ACCOUNTS_CACHE['fetched_at'] = 0.0
+
+
+# ============================================
 # TRANSACTION STORE (incremental sync + monthly reconcile)
 # ============================================
 #
@@ -3328,6 +3397,10 @@ _TX_SOURCES = ('payment', 'card_payment')
 # FX values can be filled in later without Bunq changing anything; they don't count as a change.
 _TX_HASH_EXCLUDED_FIELDS = ('amount_eur', 'fx_rate_to_eur', 'fx_converted')
 _TX_SYNC_LOCK = threading.Lock()
+_BACKGROUND_SYNC_LOCK = threading.Lock()
+_BACKGROUND_SYNC_THREAD = None
+# (account_id, source) -> unix time until which a failing optional source is skipped (per process).
+_SOURCE_BACKOFF_UNTIL = {}
 _FETCH_COMPLETE_REASONS = ('cutoff_reached', 'empty_page', 'short_page')
 _HISTORY_END_REASONS = ('empty_page', 'short_page')
 
@@ -3618,6 +3691,9 @@ def sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date):
                 account_name = get_obj_field(account, 'description', 'display_name') or f"Account {account_id}"
                 truncated_sources = {}
                 for source in _TX_SOURCES:
+                    backoff_key = (str(account_id), source)
+                    if _SOURCE_BACKOFF_UNTIL.get(backoff_key, 0) > time.time():
+                        continue
                     try:
                         result = sync_account_source(
                             connection, account, source, own_account_ids, own_ibans, cutoff_date,
@@ -3627,6 +3703,8 @@ def sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date):
                     except Exception as exc:
                         if source == 'card_payment':
                             # Optional endpoint; not available in every SDK/runtime variant.
+                            # Don't retry it on every request.
+                            _SOURCE_BACKOFF_UNTIL[backoff_key] = time.time() + SOURCE_FAILURE_BACKOFF_SECONDS
                             logger.debug(f"Card payment sync skipped for account {account_id}: {exc}")
                         else:
                             logger.warning(f"⚠️ Transaction sync failed for account {account_id}: {exc}")
@@ -3650,6 +3728,47 @@ def sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date):
     finally:
         connection.close()
     return truncated_accounts, errors
+
+
+def store_covers_period(accounts, cutoff_date):
+    """True when every account's payments have been synced back to cutoff_date."""
+    connection = get_data_db_connection()
+    try:
+        for account in accounts:
+            state = _get_sync_state(connection, str(get_obj_field(account, 'id_', 'id')), 'payment')
+            if state['last_sync_at'] is None:
+                return False
+            if state['history_complete']:
+                continue
+            covered = parse_bunq_datetime(state['covered_from']) if state['covered_from'] else None
+            if covered is None or covered > cutoff_date:
+                return False
+        return True
+    finally:
+        connection.close()
+
+
+def _start_background_sync(accounts, own_account_ids, own_ibans, cutoff_date):
+    """Run sync_transactions in a background thread; no-op when one is already running."""
+    global _BACKGROUND_SYNC_THREAD
+    if not _BACKGROUND_SYNC_LOCK.acquire(blocking=False):
+        return None
+
+    def _run():
+        global _BUNQ_CONTEXT_INITIALIZED
+        try:
+            sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date)
+        except UnauthorizedException as exc:
+            logger.warning(f"⚠️ Bunq session rejected during background sync — resetting context: {exc}")
+            _BUNQ_CONTEXT_INITIALIZED = False
+        except Exception as exc:
+            logger.warning(f"⚠️ Background transaction sync failed: {exc}")
+        finally:
+            _BACKGROUND_SYNC_LOCK.release()
+
+    _BACKGROUND_SYNC_THREAD = threading.Thread(target=_run, name='bunq-transaction-sync', daemon=True)
+    _BACKGROUND_SYNC_THREAD.start()
+    return _BACKGROUND_SYNC_THREAD
 
 
 def read_stored_transactions(account_ids, cutoff_date):
@@ -3710,7 +3829,14 @@ def load_transactions(accounts, own_account_ids, own_ibans, cutoff_date):
                 })
         return transactions, truncated_accounts, []
 
-    truncated_accounts, errors = sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date)
+    if store_covers_period(accounts, cutoff_date):
+        # Stored data covers the period: answer from the store right away and look for
+        # new transactions in the background (they show up on the next load).
+        _start_background_sync(accounts, own_account_ids, own_ibans, cutoff_date)
+        truncated_accounts, errors = [], []
+    else:
+        # First load or a longer period than stored: wait for the fetch.
+        truncated_accounts, errors = sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date)
     account_ids = [get_obj_field(account, 'id_', 'id') for account in accounts]
     transactions = read_stored_transactions(account_ids, cutoff_date)
     if errors and not transactions:
@@ -5080,6 +5206,7 @@ def reset_bunq_state_after_fork():
     _BUNQ_INIT_LAST_ATTEMPT_TS = 0.0
     _BUNQ_INIT_LAST_ERROR = None
     _BUNQ_INIT_LOCK = threading.Lock()
+    clear_accounts_cache()
 
 def start_background_bunq_init():
     """
@@ -5479,7 +5606,7 @@ def get_accounts():
                 return jsonify(cached)
         
         logger.info(f"📊 Fetching accounts for {session.get('username')}")
-        accounts = list_monetary_accounts()
+        accounts = get_monetary_accounts()
         # Derive type hints from the accounts we just fetched — no extra API calls needed.
         account_type_hints = derive_account_type_hints_from_accounts(accounts)
         
@@ -5612,7 +5739,7 @@ def get_transactions():
         
         logger.info(f"📊 Fetching transactions (last {days} days) for {session.get('username')}")
         
-        accounts = list_monetary_accounts()
+        accounts = get_monetary_accounts()
         accounts_by_id = {}
         for acc in accounts:
             acc_id = get_obj_field(acc, 'id_', 'id')
@@ -6004,7 +6131,7 @@ def get_statistics():
             if cached:
                 return jsonify(cached)
         
-        accounts = list_monetary_accounts()
+        accounts = get_monetary_accounts()
         own_account_ids = extract_own_account_ids(accounts)
         own_ibans = extract_own_ibans(accounts)
         all_transactions, _, _ = load_transactions(accounts, own_account_ids, own_ibans, cutoff_date)

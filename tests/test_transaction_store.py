@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from conftest import TEST_PASSWORD, TEST_USERNAME
+from conftest import TEST_PASSWORD, TEST_USERNAME, join_background_threads
 
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
 ACCOUNT = {'id': 1, 'description': 'Hoofdrekening'}
@@ -90,7 +90,9 @@ def store(ap, monkeypatch, tmp_path):
         return bunq.fetch(source, account_id, **kwargs)
 
     monkeypatch.setattr(ap, '_fetch_source_payments', fake_fetch)
-    return bunq
+    yield bunq
+    # Background sync threads must finish before monkeypatch restores the real DB path.
+    join_background_threads()
 
 
 def _sync(ap, days, now=NOW, account=ACCOUNT):
@@ -431,3 +433,67 @@ def test_data_quality_summary_reads_store_and_skips_deleted(ap, store):
     assert summary['error'] is None
     assert summary['metrics']['total_transactions'] == 2
     assert summary['metrics']['latest_capture_at'] is not None
+
+
+# --- speed: background sync, account cache, card backoff -----------------------
+
+def test_covered_period_is_served_without_waiting_for_bunq(ap, store, monkeypatch):
+    for pid, days_ago in [(10, 20), (11, 10)]:
+        store.add(pid, days_ago)
+    _sync(ap, days=30)
+    blocking_calls = []
+    real_sync = ap.sync_transactions
+    monkeypatch.setattr(ap, 'sync_transactions', lambda *args: blocking_calls.append(args) or real_sync(*args))
+    started = []
+    monkeypatch.setattr(ap, '_start_background_sync', lambda *args: started.append(True))
+    transactions, _, _ = ap.load_transactions([ACCOUNT], set(), set(), NOW - timedelta(days=30))
+    assert sorted(tx['id'] for tx in transactions) == [10, 11]
+    assert blocking_calls == []      # no waiting on Bunq
+    assert started == [True]         # new transactions are checked in the background
+
+
+def test_uncovered_period_waits_for_fetch(ap, store):
+    for pid, days_ago in [(10, 100), (11, 80), (12, 60), (13, 20), (14, 10), (15, 5)]:
+        store.add(pid, days_ago)
+    _sync(ap, days=30)
+    assert ap.store_covers_period([ACCOUNT], NOW - timedelta(days=30)) is True
+    assert ap.store_covers_period([ACCOUNT], NOW - timedelta(days=90)) is False
+    transactions, _, _ = ap.load_transactions([ACCOUNT], set(), set(), NOW - timedelta(days=90))
+    assert {12, 13, 14, 15} <= {tx['id'] for tx in transactions}
+
+
+def test_background_sync_stores_new_transactions(ap, store):
+    store.add(10, 5)
+    _sync(ap, days=30)
+    store.add(11, 0)
+    thread = ap._start_background_sync([ACCOUNT], set(), set(), NOW - timedelta(days=30))
+    thread.join(timeout=10)
+    assert _read_ids(ap, 30) == [10, 11]
+
+
+def test_card_payment_failure_is_backed_off(ap, store):
+    store.add(10, 5)
+    store.failing.add(('1', 'card_payment'))
+    ap.sync_transactions([ACCOUNT], set(), set(), NOW - timedelta(days=30))
+    card_calls = [call for call in store.fetches if call['source'] == 'card_payment']
+    assert len(card_calls) == 1
+    ap.sync_transactions([ACCOUNT], set(), set(), NOW - timedelta(days=30))
+    card_calls = [call for call in store.fetches if call['source'] == 'card_payment']
+    assert len(card_calls) == 1  # not retried within the backoff period
+
+
+def test_account_list_is_reused_then_refreshed_in_background(ap, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ap, 'list_monetary_accounts', lambda: calls.append(True) or [dict(ACCOUNT, n=len(calls))])
+    clock = [1000.0]
+    monkeypatch.setattr(ap.time, 'time', lambda: clock[0])
+    first = ap.get_monetary_accounts()
+    assert ap.get_monetary_accounts() is first and len(calls) == 1       # fresh: reused
+    clock[0] += ap.ACCOUNTS_CACHE_SECONDS + 1
+    assert ap.get_monetary_accounts() is first                          # stale: served immediately...
+    ap._ACCOUNTS_BACKGROUND_THREAD.join(timeout=5)
+    assert len(calls) == 2                                              # ...and refreshed in the background
+    assert ap.get_monetary_accounts()[0]['n'] == 2                     # refreshed list is used
+    clock[0] += ap.ACCOUNTS_STALE_SECONDS + 1
+    ap.get_monetary_accounts()                                          # too old: fetched while waiting
+    assert len(calls) == 3

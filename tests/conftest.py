@@ -56,6 +56,23 @@ def reset_rate_limiter():
     yield
 
 
+@pytest.fixture(autouse=True)
+def reset_module_caches():
+    """Account cache and source backoff are module-global; start each test clean."""
+    api_proxy.clear_accounts_cache()
+    api_proxy._SOURCE_BACKOFF_UNTIL.clear()
+    yield
+    api_proxy.clear_accounts_cache()
+    api_proxy._SOURCE_BACKOFF_UNTIL.clear()
+
+
+def join_background_threads():
+    for name in ('_BACKGROUND_SYNC_THREAD', '_ACCOUNTS_BACKGROUND_THREAD'):
+        thread = getattr(api_proxy, name, None)
+        if thread is not None:
+            thread.join(timeout=10)
+
+
 @pytest.fixture
 def client():
     api_proxy.app.config['TESTING'] = True
