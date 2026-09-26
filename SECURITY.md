@@ -248,7 +248,7 @@ The script:
 - restarts the service and shows the relevant logs
 - checks the egress IP against the active whitelist and stops with a recovery command on mismatch
 
-**Alternative via the UI:** dashboard → Settings → `Admin Maintenance`:
+**Alternative via the UI:** dashboard → Settings → `Admin maintenance` (see also the situation "Your public IP address has changed" in the panel):
 - `Check egress IP` shows which public IP must be whitelisted
 - `Set Bunq API whitelist IP` performs only the safe 2-step whitelist update
 - `Run full maintenance (recommended)` with the default options:

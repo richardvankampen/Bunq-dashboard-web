@@ -248,7 +248,7 @@ Het script:
 - herstart de service en toont de relevante logs
 - vergelijkt het egress-IP met de actieve whitelist en stopt met een herstelcommando als ze niet overeenkomen
 
-**Alternatief via de UI:** dashboard → Instellingen → `Beheeronderhoud`:
+**Alternatief via de UI:** dashboard → Instellingen → `Beheeronderhoud` (zie ook de situatie "Je publieke IP-adres is veranderd" in het paneel):
 - `Egress-IP controleren` toont welk publiek IP op de whitelist moet
 - `Bunq API-whitelist-IP instellen` doet alleen de veilige whitelistupdate in 2 stappen
 - `Volledig onderhoud uitvoeren (aanbevolen)` met de standaardopties:

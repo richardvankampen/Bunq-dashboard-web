@@ -11,6 +11,8 @@
 // need no code changes. Composed texts, chart labels and dialogs call t() in app.js; on a
 // language switch app.js re-renders ('uilanguagechange' event).
 // Elements with `data-no-i18n` (transaction rows, account names) are never translated.
+// Elements with `data-i18n-html` are translated as a whole: the key is their inner HTML, so a
+// sentence with <strong>/<em> inside keeps its word order in both languages.
 
 (function () {
     const STORAGE_KEY = 'uiLanguage';
@@ -71,7 +73,9 @@
     // ---------- DOM translation ----------
     const TRANSLATED_ATTRIBUTES = ['title', 'placeholder', 'aria-label', 'data-tooltip'];
     const SKIP_SELECTOR = '[data-no-i18n], .js-plotly-plot, svg, canvas, script, style, pre, code, textarea';
+    const HTML_SELECTOR = '[data-i18n-html]';
     const textState = new WeakMap();   // Text node -> { original, written }
+    const htmlState = new WeakMap();   // Element with data-i18n-html -> { original, written }
     const attrState = new WeakMap();   // Element -> { [attr]: { original, written } }
 
     function isSkipped(element) {
@@ -89,10 +93,27 @@
         return `${leading}${translated}${trailing}`;
     }
 
+    function translateHtmlElement(element) {
+        const value = element.innerHTML;
+        let state = htmlState.get(element);
+        if (!state || value !== state.written) {
+            // New content (from the page or from app.js): that is the source.
+            state = { original: value, written: value, rendered: value };
+            htmlState.set(element, state);
+        }
+        const next = translateString(state.original);
+        if (next === state.rendered) return;
+        element.innerHTML = next;
+        state.rendered = next;
+        // The browser's serialisation of what we wrote, to recognise our own change.
+        state.written = element.innerHTML;
+    }
+
     function translateTextNode(node) {
         const value = node.nodeValue;
         if (!value || !value.trim()) return;
         if (isSkipped(node.parentElement)) return;
+        if (node.parentElement?.closest(HTML_SELECTOR)) return;
         let state = textState.get(node);
         if (!state || value !== state.written) {
             state = { original: value, written: null };
@@ -137,6 +158,11 @@
         if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_NODE) return;
         if (root.nodeType === Node.ELEMENT_NODE) {
             if (isSkipped(root)) return;
+            const htmlParent = root.closest(HTML_SELECTOR);
+            if (htmlParent) {
+                translateHtmlElement(htmlParent);
+                return;
+            }
             translateElement(root);
         }
         const walker = document.createTreeWalker(
@@ -145,7 +171,13 @@
             {
                 acceptNode(node) {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        return node.matches(SKIP_SELECTOR) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+                        if (node.matches(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+                        if (node.matches(HTML_SELECTOR)) {
+                            translateElement(node);
+                            translateHtmlElement(node);
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                        return NodeFilter.FILTER_ACCEPT;
                     }
                     return NodeFilter.FILTER_ACCEPT;
                 }
@@ -181,6 +213,11 @@
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 if (mutation.type === 'childList') {
+                    const htmlParent = mutation.target.closest?.(HTML_SELECTOR);
+                    if (htmlParent) {
+                        translateHtmlElement(htmlParent);
+                        return;
+                    }
                     mutation.addedNodes.forEach((node) => translateTree(node));
                 } else if (mutation.type === 'characterData') {
                     translateTextNode(mutation.target);

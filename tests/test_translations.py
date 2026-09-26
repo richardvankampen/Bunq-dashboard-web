@@ -136,6 +136,10 @@ def test_sunburst_share_texts_are_translated():
         assert _known('{share} van ' + of)
 
 
+# Elements translated as a whole (i18n.js, data-i18n-html): the key is their inner HTML.
+_HTML_BLOCK = re.compile(r'<(li|p|span|summary)((?:\s[^>]*)?\sdata-i18n-html[^>]*)>(.*?)</\1>', re.S)
+
+
 class _HtmlTexts(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -159,9 +163,12 @@ class _HtmlTexts(HTMLParser):
 
 
 def test_every_html_text_is_translated():
+    html = (ROOT / 'index.html').read_text(encoding='utf-8')
+    blocks = [match.group(3) for match in _HTML_BLOCK.finditer(html)]
+    assert blocks, 'expected data-i18n-html blocks in the admin panel'
     parser = _HtmlTexts()
-    parser.feed((ROOT / 'index.html').read_text(encoding='utf-8'))
-    missing = sorted({_normalize(text) for text in parser.texts if not _known(text)})
+    parser.feed(_HTML_BLOCK.sub('', html))
+    missing = sorted({_normalize(text) for text in parser.texts + blocks if not _known(text)})
     assert not missing, missing
 
 

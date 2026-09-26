@@ -7,6 +7,13 @@
 
 ## 2026-09-26
 
+### Admin maintenance
+- New **What problem do you have?** guide in Settings → Admin maintenance: eight situations (no Bunq data / IP or key error, IP change, new API key, Vaultwarden error, missing or deleted transactions, outdated figures, new version, slow or restarting), each with numbered steps and buttons that run the right action (e.g. "Full maintenance with automatic IP") or show the right terminal commands.
+- Every button says what it does and whether it changes anything; every option says what it does and which buttons use it.
+- `Check status` also shows the last Bunq error, the transaction store, the last reconcile with Bunq and an **Advice** line pointing to the matching situation.
+- New button `Reconcile with Bunq` (same as the monthly reconcile).
+- Terminal commands now come with an explanation per line, use `sudo` like the docs, and cover five situations: install new version, restart and validate, Bunq whitelist, new API key, view logs.
+
 ### Settings
 - The account selection is applied when you press Save (closing the panel discards it) and no longer triggers a new fetch: all accounts are always loaded and the selection is applied in the browser. This also fixes household figures (runway, savings via transfers) that only saw the selected accounts.
 - "All accounts" is stored as all, so accounts opened later are included automatically; accounts that no longer exist are dropped from the selection.

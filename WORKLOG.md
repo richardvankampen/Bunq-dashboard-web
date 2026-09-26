@@ -4,6 +4,13 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — beheeronderhoud: uitleg per situatie, knop en optie
+
+- Vraag: zijn de instructies in het beheerscherm duidelijk genoeg (wat doet een commando, welke opties, wanneer wat) en koppel commando's aan situaties.
+- Bevindingen: alleen een korte "When to use what"-lijst zonder situaties; niet duidelijk welke knoppen iets wijzigen; opties zonder uitleg van effect; terminalcommando's zonder uitleg en zonder `sudo` (docs vereisen root), geen snelle redeploy, geen whitelist-/key-rotatie-/logcommando's; status zonder laatste Bunq-fout of advies; de bestaande reconcile-API had geen knop; "API key vernieuwen" geldt maar voor één Gunicorn-proces zonder dat te zeggen.
+- Wat: gids met 8 situaties en actieknoppen, uitleg per knop (incl. of hij iets wijzigt) en per optie, 5 terminalsets met uitleg per regel, statusregels Advies/Laatste Bunq-fout/Omgeving/API key beschikbaar/Transactieopslag/Laatste controle met Bunq, knop Controle met Bunq uitvoeren, resultaat bovenaan de status. i18n: `data-i18n-html` voor zinnen met opmaak; paneel en terminal worden bij taalwissel opnieuw opgebouwd. Docs (SYNOLOGY_INSTALL, SECURITY, TROUBLESHOOTING, EN+NL) bijgewerkt.
+- Verificatie: pytest 337 groen (vertaaltest dekt nu ook de `data-i18n-html`-blokken); headless Chromium met gemockte beheer-API: advies bij IP-fout, gidsknop "Volledig onderhoud met automatisch IP" stuurt `auto_target_ip: true`, reconcile-knop POST + status met laatste controle, terminalset met uitleg, alles in NL en EN, geen JS-fouten.
+
 ### Opgeleverd — instellingen gecontroleerd en gecorrigeerd
 
 - Bevindingen en oplossingen:

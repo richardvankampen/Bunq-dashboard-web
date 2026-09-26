@@ -23,9 +23,20 @@ Dit bestand is de actuele bron voor overdracht.
 - `saveSettings`: endpoint gewijzigd → `checkAuthStatus` + herladen; anders alleen `processAndRenderData` (filter/selectie zijn client-side). `startAutoRefresh()` wordt altijd opnieuw gestart (0 = uit); automatisch vernieuwen is stil (`refreshData({ silent: true })`, geen laadscherm), slaat over bij verborgen tabblad of lopende load, en ververst demodata niet.
 - Echte-data-schakelaar: zonder login blijft hij uit en opent het loginvenster (niets opgeslagen).
 
+## Beheeronderhoud (instellingenpaneel)
+
+- Opbouw: gids **Welk probleem heb je?** (`<details class="admin-situation">`, 8 situaties met genummerde stappen), uitleg per knop, knoppen, whitelist-opties en onderhoudsopties met uitleg, terminalknoppen, statuspaneel, terminalpaneel.
+- Knoppen in de gids en de terminalrij gebruiken `data-admin-action` → `runAdminGuideAction()`: `status`, `egress`, `whitelist`, `maintenance`, `maintenance-auto-ip` (vinkt automatisch IP aan, leegt IP-veld), `maintenance-refresh-key`, `reconcile`, `terminal:<set>`.
+- Terminalsets (`getTerminalCommandSets`, elk commando `{ command, note }`): `installUpdate` (git pull + quick_redeploy, of install_or_update), `restartValidate`, `ipChange` (register_bunq_ip), `keyRotation` (register_bunq_ip + restart), `logs`. Alle host-commando's met `sudo`.
+- Status (`loadAdminStatus` + `GET /api/admin/reconcile`): regel **Advies** (`buildAdminStatusAdvice`: Vaultwarden-token/item, geen API key, IP-/keyfout, niet verbonden, mislukte controle), laatste Bunq-fout, omgeving, API key beschikbaar, transactieopslag, laatste controle met Bunq; het resultaat van de laatste actie staat bovenaan.
+- `Controle met Bunq uitvoeren` → `POST /api/admin/reconcile` (achtergrond), daarna status herladen.
+- Zinnen met opmaak (`<strong>`, `<em>`) staan in elementen met `data-i18n-html` en worden als geheel vertaald (sleutel = inner HTML).
+- Bekend: `API key vernieuwen` via het paneel geldt alleen voor het Gunicorn-proces dat het verzoek afhandelt; de gids adviseert daarom na een nieuwe key de terminalroute (register_bunq_ip + herstart).
+
 ## UI-taal (NL/EN)
 
 - Knop NL/EN in de header (`.lang-toggle`, `data-lang-option`); keuze in `localStorage.uiLanguage`, standaard `nl`. `<html lang>` en `document.title` volgen mee.
+- Elementen met `data-i18n-html` worden als geheel vertaald (sleutel = inner HTML), voor zinnen met opmaak.
 - `i18n.js`: `t(tekst, params)` (placeholders `{naam}`; Plotly `%{...}` blijft staan), `uiLang()`, `uiLocale()` (`nl-NL` / `en-GB`), `setUiLanguage()`. Een MutationObserver vertaalt tekstnodes en de attributen `title`, `placeholder`, `aria-label`, `data-tooltip` (origineel per node onthouden; teksten die al vertaald binnenkomen worden via een omgekeerde tabel herkend). Overgeslagen: `[data-no-i18n]` (transactierijen, rekeningnamen), Plotly/SVG/canvas, `pre`/`code`.
 - `translations.js`: eerste tabel Nederlands→Engels, tweede Engels→Nederlands (bron is gemengd: dashboard NL, instellingen/login/beheer EN). Nieuwe UI-tekst altijd toevoegen; `tests/test_translations.py` controleert alle `t()`-teksten, alle teksten in `index.html`, placeholders en categorienamen.
 - `app.js`: samengestelde teksten, grafieklabels/hovertemplates, dialogen (`confirm`/`prompt`) via `t()`; categorieën blijven intern Nederlands en worden alleen voor weergave vertaald (`t(category)`, Sankey via `sankeyDisplayLabel`, sunburst-labels met Nederlandse ids). Getallen/datums via `uiLocale()`; Plotly krijgt `plotlyConfig()` met een geregistreerde `nl`-locale (maanden, `,`/`.`).
