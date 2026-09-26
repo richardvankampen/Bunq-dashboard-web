@@ -4,6 +4,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — taalkeuze NL/EN in het dashboard
+
+- Vraag: taalswitch NL/EN, met alle getoonde tekst in beide talen.
+- Wat: `i18n.js` (t(), locale, DOM-observer voor statische teksten en tooltips, taalknop), `translations.js` (±410 teksten NL→EN en ±140 EN→NL), `app.js` omgezet (samengestelde teksten, grafieklabels, hovertemplates, dialogen, getal-/datumformaat via `uiLocale()`, Plotly-locale `nl`, herrender bij taalwissel incl. open detailvenster), knop in `index.html` + CSS, fullscreen-selectors via `data-action`. Nederlandse bronteksten die nog Engels bevatten ("Login required om …", "target", "cuts", "Top merchant") vernederlandst. `STATIC_FILES` en Dockerfile uitgebreid met de twee nieuwe bestanden. NL-docs gebruiken nu de Nederlandse knopnamen van het beheeronderhoud.
+- Verificatie: pytest 337 groen (nieuw `tests/test_translations.py`: alle t()-teksten en index.html-teksten hebben een vertaling, placeholders kloppen, categorieën); headless Chromium met demodata: EN en NL volledig (tegels, alle grafieken incl. Sankey/sunburst/heatmap, 13 detailvensters, inzichten, instellingen), wissel heen en terug en herladen met opgeslagen taal, geen JS-fouten.
+
 ### Opgeleverd — documentatie bijgewerkt, EN en NL gelijkgetrokken
 
 - Waarom: EN-versies van SECURITY/SYNOLOGY_INSTALL/TROUBLESHOOTING waren samenvattingen ("Dutch (full original)"), NL-versies deels Engels; troubleshooting had per taal andere secties; docs bevatten verouderde knopnamen ("Admin Maintenance (P1)", "Run maintenance now"), placeholder "[your-email]", niet-bestaand backuppad, compose-snippet met variabelen die compose niet doorgeeft, en een README-featurelijst met oude widgets ("3D time-space chart").

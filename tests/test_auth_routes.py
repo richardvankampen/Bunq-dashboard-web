@@ -108,7 +108,7 @@ def test_malformed_session_expiry_is_rejected(client):
 
 # --- static files + probes ---------------------------------------------------
 
-@pytest.mark.parametrize('path', ['/', '/index.html', '/app.js', '/styles.css'])
+@pytest.mark.parametrize('path', ['/', '/index.html', '/app.js', '/styles.css', '/i18n.js', '/translations.js'])
 def test_static_allowlist_served(client, path):
     assert client.get(path).status_code == 200
 

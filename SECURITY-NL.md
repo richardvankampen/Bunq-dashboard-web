@@ -248,11 +248,11 @@ Het script:
 - herstart de service en toont de relevante logs
 - vergelijkt het egress-IP met de actieve whitelist en stopt met een herstelcommando als ze niet overeenkomen
 
-**Alternatief via de UI:** dashboard → Instellingen → `Admin Maintenance`:
-- `Check egress IP` toont welk publiek IP op de whitelist moet
-- `Set Bunq API whitelist IP` doet alleen de veilige whitelistupdate in 2 stappen
-- `Run full maintenance (recommended)` met de standaardopties:
-  - `Try to determine whitelist IP (egress) automatically` staat standaard uit (of vul handmatig een IP in)
+**Alternatief via de UI:** dashboard → Instellingen → `Beheeronderhoud`:
+- `Egress-IP controleren` toont welk publiek IP op de whitelist moet
+- `Bunq API-whitelist-IP instellen` doet alleen de veilige whitelistupdate in 2 stappen
+- `Volledig onderhoud uitvoeren (aanbevolen)` met de standaardopties:
+  - `Whitelist-IP (egress) automatisch bepalen` staat standaard uit (of vul handmatig een IP in)
   - de optie om de API key te vernieuwen staat standaard uit (alleen nodig na key-rotatie)
 - Een handmatig IP wordt gecontroleerd als publiek IPv4-adres (geen privé/lokale ranges)
 

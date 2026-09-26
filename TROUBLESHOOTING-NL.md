@@ -148,7 +148,7 @@ sudo docker service logs --since 15m bunq_bunq-dashboard | grep -E "Bunq API ini
 Waarschijnlijke oorzaken: verkeerde Bunq API key, whitelist-IP komt niet overeen, ophalen uit Vaultwarden mislukt.
 
 Herstel:
-1. In het dashboard: `Instellingen → Admin Maintenance → Run full maintenance (recommended)`.
+1. In het dashboard: `Instellingen → Beheeronderhoud → Volledig onderhoud uitvoeren (aanbevolen)`.
 2. Of in de terminal:
    ```bash
    cd /volume1/docker/bunq-dashboard

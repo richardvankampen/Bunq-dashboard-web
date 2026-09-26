@@ -20,7 +20,8 @@ Elk document heeft een Engelse (`*.md`) en een Nederlandse (`*-NL.md`) versie me
 
 ## ✨ Belangrijkste functies
 
-- Dashboard op één poort (frontend + API) op poort 5000, Nederlandstalige UI
+- Dashboard op één poort (frontend + API) op poort 5000
+- Dashboard in het Nederlands of Engels: de NL/EN-knop in de header wisselt alle teksten, grafieklabels en getal-/datumnotatie (de keuze wordt per browser onthouden)
 - Alleen-lezen toegang tot de Bunq API (betalingen en, waar beschikbaar, kaartbetalingen; rekeningen SDK-first inclusief sparen)
 - Lokale transactieopslag (SQLite): laden gebeurt uit de opslag met een incrementele sync op de achtergrond; een maandelijkse controle houdt hem gelijk met Bunq en bewaart geschiedenis die Bunq niet meer levert
 - Saldoverloop opgebouwd uit opgeslagen transacties (met dagelijkse snapshots als terugval)
