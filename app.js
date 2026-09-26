@@ -1665,7 +1665,12 @@ function processAndRenderData(data) {
     const kpis = calculateKPIs(normalized);
     kpis.savingsWidgetNet = savingsWidgetNet;
     kpis.savingsTransactions = savingsTransactions;
-    kpis.savingsRate = kpis.income > 0 ? (savingsWidgetNet / kpis.income) * 100 : 0;
+    // Spaarquote only with real income in the selection: interest alone (e.g. only savings
+    // accounts selected) would give absurd percentages.
+    const incomeExcludingInterest = normalized
+        .filter((transaction) => transaction.amount > 0 && !isRefundTransaction(transaction) && transaction.category !== 'Rente')
+        .reduce((sum, transaction) => sum + transaction.amount, 0);
+    kpis.savingsRate = incomeExcludingInterest >= 1 ? (savingsWidgetNet / kpis.income) * 100 : null;
     renderKPIs(kpis, normalized);
     renderBalanceKPIs(balanceMetrics);
 
@@ -1834,9 +1839,12 @@ function buildSavingsWidgetTransactions(rawTransactions) {
     const scoped = normalizeTransactions(applyClientFilters(Array.isArray(rawTransactions) ? rawTransactions : [], {
         excludeInternalTransfers: false
     }));
+    // Moves with the own Triodos account are own money changing place, not saved from income.
+    const externalSets = getOwnExternalAccountSets();
     const direct = scoped
         .filter((transaction) => savingsSets.savingsIds.has(String(transaction?.account_id)))
-        .filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsSets));
+        .filter((transaction) => !isInternalSavingsToSavingsTransfer(transaction, savingsSets))
+        .filter((transaction) => !isOwnExternalTransfer(transaction, externalSets));
     const viaTransfers = selection
         ? scoped
             .filter((transaction) => !savingsSets.savingsIds.has(String(transaction?.account_id)))
@@ -2019,13 +2027,15 @@ function formatCurrencyWithCode(value, currencyCode = 'EUR') {
     }
 }
 
+// Dutch number format (16,7%); n.v.t. when there is no value.
 function formatPercent(value) {
-    return `${value.toFixed(1)}%`;
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return 'n.v.t.';
+    return `${Number(value).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
 function formatRatioPercent(value) {
-    if (!Number.isFinite(Number(value))) return 'N/A';
-    return `${(Number(value) * 100).toFixed(1)}%`;
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return 'n.v.t.';
+    return formatPercent(Number(value) * 100);
 }
 
 function renderKPIs(kpis, data) {
@@ -2042,14 +2052,19 @@ function renderKPIs(kpis, data) {
     if (netSavings) netSavings.textContent = formatCurrency(
         Number.isFinite(Number(kpis.savingsWidgetNet)) ? Number(kpis.savingsWidgetNet) : kpis.netSavings
     );
-    if (savingsRate) savingsRate.textContent = formatPercent(kpis.savingsRate);
-    
+    if (savingsRate) {
+        savingsRate.textContent = formatPercent(kpis.savingsRate);
+        savingsRate.title = kpis.savingsRate === null
+            ? 'Niet te berekenen: geen inkomsten (behalve rente) in de selectie. Selecteer ook je betaalrekening.'
+            : 'Sparen als % van de inkomsten in de gekozen periode.';
+    }
+
     // Update savings ring
     const circle = document.getElementById('savingsCircle');
     if (circle) {
         const radius = 25;
         const circumference = 2 * Math.PI * radius;
-        const offset = circumference * (1 - Math.min(Math.max(kpis.savingsRate, 0), 100) / 100);
+        const offset = circumference * (1 - Math.min(Math.max(kpis.savingsRate ?? 0, 0), 100) / 100);
         circle.style.strokeDasharray = `${circumference} ${circumference}`;
         circle.style.strokeDashoffset = `${offset}`;
     }

@@ -22,6 +22,11 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Savings rate
+- `Spaarquote` shows `n.v.t.` when the selection has no income apart from interest (e.g. only savings accounts selected) instead of `0.0%` or absurd percentages.
+- Transfers between your own Triodos account and your savings accounts no longer count as saving.
+- Percentages use Dutch notation (`16,7%`), and missing values show `n.v.t.`.
+
 ### Spending
 - Refunds now lower spending everywhere, also in `Top tegenrekeningen`, `Categorie-race`, the largest-category and top-counterparty insights, `Uitgavenmomentum` and the savings levers (a returned order no longer shows up as spending).
 - Branches of the same shop (e.g. "Albert Heijn 1234" and "ALBERT HEIJN 5678 UTRECHT") count as one counterparty in totals.

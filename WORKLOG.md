@@ -4,6 +4,15 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — spaarquote gecontroleerd en gecorrigeerd
+
+- 4 bevindingen, allemaal opgelost:
+  1. Zonder inkomsten toonde `Spaarquote` `0.0%` → `n.v.t.` met uitleg.
+  2. Alleen spaarrekeningen geselecteerd → noemer was alleen rente (bv. 20000%) → `n.v.t.` zonder inkomsten behalve rente.
+  3. Overboekingen tussen eigen Triodos-rekening en spaarrekeningen telden als sparen → uitgesloten uit `Sparen`/`Spaarquote`/`Spaarrekening mutaties` (keuze gebruiker).
+  4. Percentages `16.7%` en `N/A` → Nederlands formaat `16,7%`, `n.v.t.`.
+- Verificatie: headless Chromium met gemockte API: Sparen €1.005 zonder €2.000 van Triodos, Spaarquote `16,7%`, alleen spaarrekeningen → `n.v.t.` met tooltip, geen JS-fouten; pytest 298 groen.
+
 ### Opgeleverd — uitgavenlogica gecontroleerd en gecorrigeerd
 
 - Review van alle uitgavenweergaven; 5 bevindingen, allemaal opgelost:

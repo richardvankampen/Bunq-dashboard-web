@@ -22,6 +22,11 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Spaarquote
+- `Spaarquote` toont `n.v.t.` als de selectie geen inkomsten heeft behalve rente (bv. alleen spaarrekeningen geselecteerd), in plaats van `0.0%` of absurde percentages.
+- Overboekingen tussen je eigen Triodos-rekening en je spaarrekeningen tellen niet meer als sparen.
+- Percentages in Nederlandse notatie (`16,7%`); ontbrekende waarden tonen `n.v.t.`.
+
 ### Uitgaven
 - Terugbetalingen verlagen nu overal de uitgaven, ook in `Top tegenrekeningen`, `Categorie-race`, de inzichten grootste categorie en top-tegenrekening, `Uitgavenmomentum` en de besparingshefbomen (een geretourneerde bestelling telt niet meer als uitgave).
 - Filialen van dezelfde winkel (bv. "Albert Heijn 1234" en "ALBERT HEIJN 5678 UTRECHT") tellen in totalen als één tegenrekening.
