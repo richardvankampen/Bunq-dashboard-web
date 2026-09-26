@@ -22,6 +22,12 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Data quality
+- Warnings are no longer shown twice (backend and dashboard each had their own wording); each warning comes with one piece of advice.
+- All coverage figures are measured over the same set: real spending in your selection, without transfers between your own accounts.
+- "Last sync" is measured from the last sync with Bunq, so quiet days no longer trigger an "older than 24 hours" warning.
+- Texts are in Dutch and refer to settings you can find (e.g. "Interne overboekingen uitsluiten").
+
 ### Insights and categories
 - New category `Alimentatie` (essential, fixed cost, no cut-back advice). An outgoing payment from an own sub-account named after its purpose (e.g. "Alimentatie") gets that category; personal rules can be added in `config/category_rules.json` (see README).
 - Fixed: payments whose category matched the name of an own account (e.g. alimony from sub-account "Alimentatie") were treated as internal transfers and left out of all figures.

@@ -1877,102 +1877,100 @@ function isUnknownMerchantLabel(value) {
     return false;
 }
 
+/**
+ * Data quality. All coverage figures are measured over one set: real spending in the selection
+ * (outflows, without own transfers incl. Triodos). The backend only adds what the browser can't
+ * know (active days, data span, EUR amounts, time of the last sync). One list of warnings, each
+ * with one piece of advice.
+ */
 function computeDataQualitySummary(transactions, accounts, serverSummary = null, rawTransactions = null) {
     const tx = Array.isArray(transactions) ? transactions : [];
-    const expenseTransactions = tx.filter((transaction) => (transaction.amount || 0) < 0);
     const totalTransactions = tx.length;
+    const spending = excludeOwnTransfersForBudget(tx).filter((transaction) => (transaction.amount || 0) < 0);
+    const amountOf = (transaction) => Math.abs(Number(transaction.amount) || 0);
+    const sumAmounts = (list) => list.reduce((sum, transaction) => sum + amountOf(transaction), 0);
+    const isCategorized = (transaction) => {
+        const category = String(transaction.category || '').trim().toLowerCase();
+        return Boolean(category) && !['overig', 'unknown', 'onbekend'].includes(category);
+    };
+    const categorized = spending.filter(isCategorized);
+    const merchantNamed = spending.filter((transaction) => !isUnknownMerchantLabel(resolveMerchantLabel(transaction)));
+    const expenseAmountTotal = sumAmounts(spending);
+
     // Internal-transfer share is measured on the unfiltered data: when the setting removes
     // internal transfers, the filtered list would always show 0%.
     const allTransactions = Array.isArray(rawTransactions) ? rawTransactions : tx;
     const ownIdentity = getOwnBunqAccountIdentitySets();
     const internalTransactions = allTransactions.filter((transaction) => isInternalOwnTransfer(transaction, ownIdentity)).length;
 
-    const categorizedExpenses = expenseTransactions.filter((transaction) => {
-        const category = String(transaction.category || '').trim().toLowerCase();
-        return Boolean(category) && !['overig', 'unknown', 'onbekend'].includes(category);
-    }).length;
-
-    const merchantNamedExpenses = expenseTransactions.filter((transaction) => {
-        const merchant = resolveMerchantLabel(transaction);
-        return !isUnknownMerchantLabel(merchant);
-    }).length;
-
     const validAccounts = (accounts || []).filter((account) => account && account.balance);
     const nonEurAccounts = validAccounts.filter((account) => (
         String(account?.balance?.currency || 'EUR').toUpperCase() !== 'EUR'
     ));
-    const nonEurConvertedAccounts = nonEurAccounts.filter((account) => {
-        const converted = Number(account?.balance_eur?.value);
-        return Number.isFinite(converted);
-    });
+    const nonEurConvertedAccounts = nonEurAccounts.filter((account) => Number.isFinite(Number(account?.balance_eur?.value)));
 
-    const categoryCoverage = safeRatio(categorizedExpenses, expenseTransactions.length, null);
-    const merchantCoverage = safeRatio(merchantNamedExpenses, expenseTransactions.length, null);
-    const internalShare = safeRatio(internalTransactions, allTransactions.length, 0);
-    const fxCoverage = nonEurAccounts.length
-        ? safeRatio(nonEurConvertedAccounts.length, nonEurAccounts.length, null)
-        : 1;
-
+    const serverMetrics = serverSummary?.metrics || {};
     const serverCoverage = serverSummary?.coverage || {};
-    const mergedCoverage = {
-        category_coverage: categoryCoverage ?? serverCoverage.category_coverage,
-        merchant_coverage: merchantCoverage ?? serverCoverage.merchant_coverage,
-        category_amount_coverage: serverCoverage.category_amount_coverage ?? categoryCoverage,
-        merchant_amount_coverage: serverCoverage.merchant_amount_coverage ?? merchantCoverage,
+    const coverage = {
+        category_coverage: safeRatio(categorized.length, spending.length, null),
+        merchant_coverage: safeRatio(merchantNamed.length, spending.length, null),
+        category_amount_coverage: safeRatio(sumAmounts(categorized), expenseAmountTotal, null),
+        merchant_amount_coverage: safeRatio(sumAmounts(merchantNamed), expenseAmountTotal, null),
         amount_eur_coverage: serverCoverage.amount_eur_coverage ?? 1,
-        fx_coverage: serverCoverage.fx_coverage ?? fxCoverage,
-        internal_share: internalShare ?? serverCoverage.internal_share
+        fx_coverage: nonEurAccounts.length ? safeRatio(nonEurConvertedAccounts.length, nonEurAccounts.length, null) : 1,
+        internal_share: safeRatio(internalTransactions, allTransactions.length, 0)
     };
 
-    const categoryComponent = mergedCoverage.category_coverage ?? 0;
-    const merchantComponent = mergedCoverage.merchant_coverage ?? 0;
-    const categoryAmountComponent = mergedCoverage.category_amount_coverage ?? categoryComponent;
-    const merchantAmountComponent = mergedCoverage.merchant_amount_coverage ?? merchantComponent;
-    const amountComponent = mergedCoverage.amount_eur_coverage ?? 0;
-    const fxComponent = mergedCoverage.fx_coverage ?? 0;
+    const categoryComponent = coverage.category_coverage ?? 0;
+    const merchantComponent = coverage.merchant_coverage ?? 0;
+    const score = Math.round(100 * (
+        0.25 * categoryComponent
+        + 0.20 * merchantComponent
+        + 0.20 * (coverage.category_amount_coverage ?? categoryComponent)
+        + 0.15 * (coverage.merchant_amount_coverage ?? merchantComponent)
+        + 0.10 * (coverage.amount_eur_coverage ?? 0)
+        + 0.10 * (coverage.fx_coverage ?? 0)
+    ));
 
-    const score = Math.round(
-        100 * (
-            0.25 * categoryComponent +
-            0.20 * merchantComponent +
-            0.20 * categoryAmountComponent +
-            0.15 * merchantAmountComponent +
-            0.10 * amountComponent +
-            0.10 * fxComponent
-        )
-    );
-
-    const warnings = [];
-    // ~1.3 transactions per day of the selected period (120 for 90 days), capped for long periods.
-    const expectedMinTransactions = Math.min(400, Math.max(20, Math.round((Number(CONFIG.timeRange) || 90) * 1.33)));
-    if (totalTransactions < expectedMinTransactions) warnings.push('Relatief weinig transacties in deze periode.');
-    if ((serverSummary?.metrics?.active_transaction_days ?? 0) > 0) {
-        const activeDays = Number(serverSummary.metrics.active_transaction_days) || 0;
-        const expectedDays = Math.max(10, Math.floor((Number(serverSummary.days) || 90) * 0.35));
-        if (activeDays < expectedDays) warnings.push(`Beperkte dagdekking: ${activeDays} actieve dagen.`);
-    }
-    if ((mergedCoverage.category_coverage ?? 1) < 0.78) warnings.push('Categorie-dekking op uitgaven is laag.');
-    if ((mergedCoverage.category_amount_coverage ?? 1) < 0.84) warnings.push('Hoge uitgaven staan nog in categorie Overig/onbekend.');
-    if ((mergedCoverage.merchant_coverage ?? 1) < 0.85) warnings.push('Tegenrekening-dekking op uitgaven is laag.');
-    if ((mergedCoverage.merchant_amount_coverage ?? 1) < 0.88) warnings.push('Tegenrekening ontbreekt bij hoge uitgaven.');
-    if ((mergedCoverage.amount_eur_coverage ?? 1) < 0.95) warnings.push('Niet alle transacties hebben EUR-waarde in lokale store.');
-    if ((mergedCoverage.fx_coverage ?? 1) < 0.95) warnings.push('Niet alle non-EUR rekeningen zijn omgerekend.');
-    if ((mergedCoverage.internal_share ?? 0) > 0.5) warnings.push('Meer dan 50% van de transacties lijkt een interne overboeking.');
-    if (serverSummary?.metrics?.capture_freshness_hours > 24) warnings.push('Lokale cache is ouder dan 24 uur.');
-
-    const mergedWarnings = Array.from(new Set([
-        ...(Array.isArray(serverSummary?.warnings) ? serverSummary.warnings : []),
-        ...warnings
-    ]));
-    const mergedRecommendations = Array.from(new Set([
-        ...(Array.isArray(serverSummary?.recommendations) ? serverSummary.recommendations : []),
-        ...((mergedCoverage.category_amount_coverage ?? 1) < 0.84
-            ? ['Prioriteer categorisatie op tegenrekeningen met de hoogste uitgaven.']
-            : []),
-        ...((mergedCoverage.merchant_amount_coverage ?? 1) < 0.88
-            ? ['Voeg extra tegenrekening-herkenning toe op omschrijving/tegenpartij.']
-            : [])
-    ]));
+    const days = Number(CONFIG.timeRange) || 90;
+    const activeDays = Number(serverMetrics.active_transaction_days) || 0;
+    const spanDays = Number(serverMetrics.dataset_span_days) || 0;
+    const freshnessHours = serverMetrics.capture_freshness_hours;
+    const checks = [
+        [totalTransactions < Math.min(400, Math.max(20, Math.round(days * 1.33))),
+            'Relatief weinig transacties in deze periode.',
+            'Kies een langere periode of vernieuw de gegevens.'],
+        [activeDays > 0 && activeDays < Math.max(10, Math.floor(days * 0.35)),
+            `Beperkte dagdekking: ${activeDays} dagen met transacties.`,
+            'Kies een langere periode voor stabielere trends en budgetcijfers.'],
+        [spanDays > 0 && spanDays < Math.max(14, Math.floor(days * 0.5)),
+            `De transacties beslaan slechts ${spanDays} dagen van de periode.`,
+            'Controleer of de historie volledig is opgehaald (handmatige controle: TROUBLESHOOTING, stap 5b).'],
+        [(coverage.category_coverage ?? 1) < 0.78,
+            'Categorie-dekking op uitgaven is laag.',
+            'Voeg eigen categorieregels toe in config/category_rules.json voor veelvoorkomende tegenrekeningen.'],
+        [(coverage.category_amount_coverage ?? 1) < 0.84,
+            'Een groot deel van het uitgavenbedrag valt in Overig/onbekend.',
+            'Begin met de tegenrekeningen met de hoogste uitgaven in Overig.'],
+        [(coverage.merchant_coverage ?? 1) < 0.85,
+            'Tegenrekening-dekking op uitgaven is laag.',
+            'Controleer de herkenning van tegenrekeningen in de Bunq-gegevens.'],
+        [(coverage.merchant_amount_coverage ?? 1) < 0.88,
+            'Tegenrekening ontbreekt bij uitgaven met hoge bedragen.',
+            'Controleer de herkenning van tegenrekeningen in de Bunq-gegevens.'],
+        [(coverage.amount_eur_coverage ?? 1) < 0.95,
+            'Niet alle transacties hebben een EUR-bedrag.',
+            'Controleer het ophalen van wisselkoersen en de EUR-bedragen in de opslag.'],
+        [(coverage.fx_coverage ?? 1) < 0.95,
+            'Niet alle rekeningen in vreemde valuta zijn omgerekend naar EUR.',
+            'Controleer de wisselkoersen en de omrekening van saldi in vreemde valuta.'],
+        [(coverage.internal_share ?? 0) > 0.5 && !CONFIG.excludeInternalTransfers,
+            'Meer dan de helft van de transacties is een interne overboeking.',
+            "Zet 'Interne overboekingen uitsluiten' aan in de instellingen."],
+        [Number.isFinite(Number(freshnessHours)) && Number(freshnessHours) > 24,
+            'De laatste synchronisatie met Bunq is meer dan 24 uur geleden.',
+            'Vernieuw de gegevens; blijft dit terugkomen, controleer dan de Bunq-verbinding in de logs.']
+    ].filter(([failed]) => failed);
 
     let qualityLabel = 'Aandacht nodig';
     if (score >= 85) qualityLabel = 'Goed';
@@ -1983,24 +1981,24 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null,
         qualityLabel,
         metrics: {
             total_transactions: totalTransactions,
-            expense_transactions: expenseTransactions.length,
+            expense_transactions: spending.length,
             internal_transactions: internalTransactions,
-            active_transaction_days: Number(serverSummary?.metrics?.active_transaction_days) || 0,
-            dataset_span_days: Number(serverSummary?.metrics?.dataset_span_days) || 0,
-            categorized_expenses: categorizedExpenses,
-            merchant_named_expenses: merchantNamedExpenses,
-            expense_amount_total: Number(serverSummary?.metrics?.expense_amount_total) || 0,
-            categorized_expense_amount: Number(serverSummary?.metrics?.categorized_expense_amount) || 0,
-            merchant_named_expense_amount: Number(serverSummary?.metrics?.merchant_named_expense_amount) || 0,
+            active_transaction_days: activeDays,
+            dataset_span_days: spanDays,
+            categorized_expenses: categorized.length,
+            merchant_named_expenses: merchantNamed.length,
+            expense_amount_total: expenseAmountTotal,
+            categorized_expense_amount: sumAmounts(categorized),
+            merchant_named_expense_amount: sumAmounts(merchantNamed),
             total_accounts: validAccounts.length,
             non_eur_accounts: nonEurAccounts.length,
             non_eur_converted_accounts: nonEurConvertedAccounts.length,
-            latest_capture_at: serverSummary?.metrics?.latest_capture_at ?? null,
-            capture_freshness_hours: serverSummary?.metrics?.capture_freshness_hours ?? null
+            latest_capture_at: serverMetrics.latest_sync_at ?? serverMetrics.latest_capture_at ?? null,
+            capture_freshness_hours: freshnessHours ?? null
         },
-        coverage: mergedCoverage,
-        warnings: mergedWarnings,
-        recommendations: mergedRecommendations,
+        coverage,
+        warnings: checks.map(([, warning]) => warning),
+        recommendations: Array.from(new Set(checks.map(([, , recommendation]) => recommendation))),
         source: serverSummary ? 'server+client' : 'client-only'
     };
 }
@@ -3557,7 +3555,7 @@ function showTransactionDetail(detailType) {
             openDetailModal({
                 title: '<i class="fas fa-shield-halved"></i> Datakwaliteit',
                 summary: 'Nog geen kwaliteitsmeting beschikbaar.',
-                rows: [{ label: 'Laad eerst real data om kwaliteitsmetingen te berekenen.', value: '' }],
+                rows: [{ label: 'Laad eerst echte gegevens om de kwaliteit te meten.', value: '' }],
                 chart: null
             });
             return;
@@ -3571,7 +3569,7 @@ function showTransactionDetail(detailType) {
             { label: 'Categorie-dekking (bedrag)', value: Number(coverage.category_amount_coverage) || 0 },
             { label: 'Tegenrekening-dekking (bedrag)', value: Number(coverage.merchant_amount_coverage) || 0 },
             { label: 'EUR-dekking', value: Number(coverage.amount_eur_coverage) || 0 },
-            { label: 'FX-dekking', value: Number(coverage.fx_coverage) || 0 }
+            { label: 'Omrekening valuta', value: Number(coverage.fx_coverage) || 0 }
         ];
 
         const chart = {
@@ -3606,15 +3604,15 @@ function showTransactionDetail(detailType) {
             { label: 'Kwaliteitsscore', value: `${quality.score}/100 (${quality.qualityLabel})` },
             { label: 'Transacties (periode)', value: String(metrics.total_transactions ?? 0) },
             { label: 'Actieve transactiedagen', value: String(metrics.active_transaction_days ?? 0) },
-            { label: 'Dataspan (dagen)', value: String(metrics.dataset_span_days ?? 0) },
+            { label: 'Dagen tussen eerste en laatste transactie', value: String(metrics.dataset_span_days ?? 0) },
             { label: 'Uitgaven met categorie', value: `${metrics.categorized_expenses ?? 0}/${metrics.expense_transactions ?? 0} (${formatRatioPercent(coverage.category_coverage)})` },
             { label: 'Uitgavenvolume met categorie', value: `${formatCurrency(metrics.categorized_expense_amount ?? 0)} / ${formatCurrency(metrics.expense_amount_total ?? 0)} (${formatRatioPercent(coverage.category_amount_coverage)})` },
             { label: 'Uitgaven met tegenrekening', value: `${metrics.merchant_named_expenses ?? 0}/${metrics.expense_transactions ?? 0} (${formatRatioPercent(coverage.merchant_coverage)})` },
             { label: 'Uitgavenvolume met tegenrekening', value: `${formatCurrency(metrics.merchant_named_expense_amount ?? 0)} / ${formatCurrency(metrics.expense_amount_total ?? 0)} (${formatRatioPercent(coverage.merchant_amount_coverage)})` },
             { label: 'EUR-dekking', value: formatRatioPercent(coverage.amount_eur_coverage) },
-            { label: 'FX-dekking (non-EUR)', value: formatRatioPercent(coverage.fx_coverage) },
+            { label: 'Rekeningen in vreemde valuta omgerekend', value: formatRatioPercent(coverage.fx_coverage) },
             { label: 'Aandeel interne overboekingen', value: formatRatioPercent(coverage.internal_share) },
-            { label: 'Laatst bijgewerkt', value: metrics.latest_capture_at ? new Date(metrics.latest_capture_at).toLocaleString('nl-NL') : 'n.v.t.' }
+            { label: 'Laatste synchronisatie met Bunq', value: metrics.latest_capture_at ? new Date(metrics.latest_capture_at).toLocaleString('nl-NL') : 'n.v.t.' }
         ];
 
         if (Array.isArray(quality.warnings) && quality.warnings.length) {
@@ -3630,7 +3628,7 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-shield-halved"></i> Datakwaliteit',
-            summary: 'Kwaliteitsscore voor analyses op basis van live transacties en lokale historie.',
+            summary: 'Kwaliteitsscore voor de analyses in de gekozen periode en selectie. Dekking wordt gemeten over echte uitgaven (zonder overboekingen tussen eigen rekeningen).',
             rows,
             chart
         });

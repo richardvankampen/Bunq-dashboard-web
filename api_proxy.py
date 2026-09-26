@@ -4670,7 +4670,7 @@ def build_data_quality_summary(days=90):
         'history_store_enabled': DATA_DB_ENABLED,
         'db_available': False,
         'score': 0,
-        'quality_label': 'Unknown',
+        'quality_label': 'Onbekend',
         'metrics': {
             'total_transactions': 0,
             'expense_transactions': 0,
@@ -4687,6 +4687,7 @@ def build_data_quality_summary(days=90):
             'earliest_transaction_at': None,
             'latest_transaction_at': None,
             'latest_capture_at': None,
+            'latest_sync_at': None,
             'capture_freshness_hours': None,
             'latest_snapshot_date': None,
             'total_accounts': 0,
@@ -4727,14 +4728,14 @@ def build_data_quality_summary(days=90):
             """
             SELECT
                 COUNT(*) AS total_transactions,
-                SUM(CASE WHEN amount < 0 THEN 1 ELSE 0 END) AS expense_transactions,
+                SUM(CASE WHEN amount < 0 AND is_internal_transfer = 0 THEN 1 ELSE 0 END) AS expense_transactions,
                 SUM(CASE WHEN amount > 0 THEN 1 ELSE 0 END) AS income_transactions,
                 SUM(CASE WHEN is_internal_transfer = 1 THEN 1 ELSE 0 END) AS internal_transactions,
                 COUNT(DISTINCT SUBSTR(tx_date, 1, 10)) AS active_transaction_days,
-                SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) AS expense_amount_total,
+                SUM(CASE WHEN amount < 0 AND is_internal_transfer = 0 THEN ABS(amount) ELSE 0 END) AS expense_amount_total,
                 SUM(
                     CASE
-                        WHEN amount < 0
+                        WHEN amount < 0 AND is_internal_transfer = 0
                              AND category IS NOT NULL
                              AND TRIM(category) != ''
                              AND LOWER(TRIM(category)) NOT IN ('overig', 'unknown', 'onbekend')
@@ -4744,7 +4745,7 @@ def build_data_quality_summary(days=90):
                 ) AS categorized_expenses,
                 SUM(
                     CASE
-                        WHEN amount < 0
+                        WHEN amount < 0 AND is_internal_transfer = 0
                              AND category IS NOT NULL
                              AND TRIM(category) != ''
                              AND LOWER(TRIM(category)) NOT IN ('overig', 'unknown', 'onbekend')
@@ -4754,7 +4755,7 @@ def build_data_quality_summary(days=90):
                 ) AS categorized_expense_amount,
                 SUM(
                     CASE
-                        WHEN amount < 0
+                        WHEN amount < 0 AND is_internal_transfer = 0
                              AND merchant IS NOT NULL
                              AND TRIM(merchant) != ''
                              AND LOWER(TRIM(merchant)) NOT IN ('unknown', 'onbekend')
@@ -4764,7 +4765,7 @@ def build_data_quality_summary(days=90):
                 ) AS merchant_named_expenses,
                 SUM(
                     CASE
-                        WHEN amount < 0
+                        WHEN amount < 0 AND is_internal_transfer = 0
                              AND merchant IS NOT NULL
                              AND TRIM(merchant) != ''
                              AND LOWER(TRIM(merchant)) NOT IN ('unknown', 'onbekend')
@@ -4781,6 +4782,11 @@ def build_data_quality_summary(days=90):
             """,
             (cutoff_iso,),
         ).fetchone()
+
+        # Freshness from the last sync: on a day without new transactions no row is written,
+        # but the sync did run.
+        sync_row = connection.execute("SELECT MAX(last_sync_at) AS latest_sync_at FROM bunq_sync_state").fetchone()
+        latest_sync_raw = sync_row['latest_sync_at'] if sync_row else None
 
         latest_snapshot_row = connection.execute(
             "SELECT MAX(snapshot_date) AS latest_snapshot_date FROM account_snapshots"
@@ -4854,7 +4860,10 @@ def build_data_quality_summary(days=90):
 
         capture_freshness_hours = None
         latest_capture_raw = tx_row['latest_capture_at']
-        latest_capture_dt = parse_bunq_datetime(latest_capture_raw, context='bunq_transactions.latest_capture_at')
+        latest_capture_dt = (
+            parse_bunq_datetime(latest_sync_raw, context='bunq_sync_state.last_sync_at')
+            or parse_bunq_datetime(latest_capture_raw, context='bunq_transactions.latest_capture_at')
+        )
         if latest_capture_dt is not None:
             capture_freshness_hours = round(
                 max((datetime.now(timezone.utc) - latest_capture_dt).total_seconds(), 0) / 3600,
@@ -4877,6 +4886,7 @@ def build_data_quality_summary(days=90):
             'earliest_transaction_at': earliest_transaction_raw,
             'latest_transaction_at': latest_transaction_raw,
             'latest_capture_at': latest_capture_raw,
+            'latest_sync_at': latest_sync_raw,
             'capture_freshness_hours': capture_freshness_hours,
             'latest_snapshot_date': latest_snapshot_date,
             **accounts_metrics,
@@ -4936,41 +4946,43 @@ def build_data_quality_summary(days=90):
 
         warnings = []
         recommendations = []
-        if total_transactions < 120:
-            warnings.append('Relatief weinig transacties in cache voor geselecteerde periode.')
-            recommendations.append('Gebruik een langere periode of laad live transacties opnieuw in het dashboard.')
+        # ~1.3 transactions per day of the period (120 for 90 days), between 20 and 400.
+        expected_transactions = min(400, max(20, round(days * 1.33)))
+        if total_transactions < expected_transactions:
+            warnings.append('Relatief weinig transacties in deze periode.')
+            recommendations.append('Kies een langere periode of vernieuw de gegevens.')
         minimum_active_days = max(10, int(days * 0.35))
         if active_transaction_days < minimum_active_days:
             warnings.append(f'Beperkte dagdekking: {active_transaction_days} actieve dagen in de periode.')
             recommendations.append('Gebruik langere datumfilters voor stabielere trend- en budgetanalyse.')
         minimum_span_days = max(14, int(days * 0.5))
         if dataset_span_days and dataset_span_days < minimum_span_days:
-            warnings.append(f'Dataset bevat slechts {dataset_span_days} dagen aan transacties.')
-            recommendations.append('Controleer of historische transacties volledig worden opgehaald (paginatie/range).')
+            warnings.append(f'De transacties beslaan slechts {dataset_span_days} dagen van de periode.')
+            recommendations.append('Controleer of de historie volledig is opgehaald (handmatige controle: TROUBLESHOOTING, stap 5b).')
         if category_coverage is not None and category_coverage < 0.78:
             warnings.append('Categorie-dekking op uitgaven is laag.')
-            recommendations.append('Verfijn categorisatieregels voor veelvoorkomende tegenrekeningen/omschrijvingen.')
+            recommendations.append('Voeg eigen categorieregels toe in config/category_rules.json voor veelvoorkomende tegenrekeningen.')
         if category_amount_coverage is not None and category_amount_coverage < 0.84:
-            warnings.append('Groot deel van uitgavenvolume valt in categorie Overig/onbekend.')
+            warnings.append('Een groot deel van het uitgavenbedrag valt in Overig/onbekend.')
             recommendations.append('Prioriteer categorisatie op tegenrekeningen met de hoogste uitgaven.')
         if merchant_coverage is not None and merchant_coverage < 0.85:
             warnings.append('Tegenrekening-dekking op uitgaven is laag.')
             recommendations.append('Controleer de herkenning van tegenrekeningen in de Bunq-gegevens.')
         if merchant_amount_coverage is not None and merchant_amount_coverage < 0.88:
-            warnings.append('Tegenrekening ontbreekt bij uitgaven met relatief hoge bedragen.')
+            warnings.append('Tegenrekening ontbreekt bij uitgaven met hoge bedragen.')
             recommendations.append('Voeg extra tegenrekening-herkenning toe op omschrijving/tegenpartij.')
         if amount_eur_coverage is not None and amount_eur_coverage < 0.95:
-            warnings.append('Niet alle transacties hebben EUR-waarde in lokale store.')
+            warnings.append('Niet alle transacties hebben een EUR-bedrag.')
             recommendations.append('Controleer het ophalen van wisselkoersen en de EUR-bedragen in de opslag.')
         if fx_coverage is not None and fx_coverage < 0.95:
-            warnings.append('Niet alle non-EUR rekeningen zijn omgerekend naar EUR.')
-            recommendations.append('Controleer FX-rates en balance conversion voor non-EUR accounts.')
+            warnings.append('Niet alle rekeningen in vreemde valuta zijn omgerekend naar EUR.')
+            recommendations.append('Controleer de wisselkoersen en de omrekening van saldi in vreemde valuta.')
         if capture_freshness_hours is not None and capture_freshness_hours > 24:
-            warnings.append('Lokale datacache is ouder dan 24 uur.')
-            recommendations.append('Voer een refresh uit zodat recente accounts/transacties worden opgeslagen.')
+            warnings.append('De laatste synchronisatie met Bunq is meer dan 24 uur geleden.')
+            recommendations.append('Vernieuw de gegevens; blijft dit terugkomen, controleer dan de Bunq-verbinding in de logs.')
         if internal_share is not None and internal_share > 0.5:
-            warnings.append('Meer dan 50% van transacties lijkt internal transfer.')
-            recommendations.append('Gebruik filter `exclude_internal=true` voor zuivere uitgavenanalyses.')
+            warnings.append('Meer dan de helft van de transacties is een interne overboeking.')
+            recommendations.append("Zet 'Interne overboekingen uitsluiten' aan in de instellingen.")
 
         summary['warnings'] = warnings
         summary['recommendations'] = list(dict.fromkeys(recommendations))

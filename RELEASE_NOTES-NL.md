@@ -22,6 +22,12 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Datakwaliteit
+- Waarschuwingen staan er niet meer dubbel in (backend en dashboard hadden elk hun eigen formulering); bij elke waarschuwing hoort één advies.
+- Alle dekkingscijfers worden over dezelfde set gemeten: echte uitgaven in je selectie, zonder overboekingen tussen je eigen rekeningen.
+- "Laatste synchronisatie" volgt de laatste sync met Bunq, zodat rustige dagen geen waarschuwing "ouder dan 24 uur" meer geven.
+- Teksten in het Nederlands, met verwijzingen naar instellingen die je kunt vinden (bv. "Interne overboekingen uitsluiten").
+
 ### Inzichten en categorieën
 - Nieuwe categorie `Alimentatie` (noodzakelijk, vaste last, geen bezuinigingsadvies). Een afschrijving vanaf een eigen subrekening met een naam die zegt waarvoor die is (bv. "Alimentatie") krijgt die categorie; eigen regels kun je zetten in `config/category_rules.json` (zie README).
 - Opgelost: betalingen waarvan de categorie gelijk was aan de naam van een eigen rekening (bv. alimentatie vanaf subrekening "Alimentatie") werden als interne overboeking gezien en vielen uit alle cijfers.

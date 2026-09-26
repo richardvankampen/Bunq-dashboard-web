@@ -4,6 +4,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — datakwaliteit gecontroleerd en gecorrigeerd
+
+- 6 bevindingen opgelost: dubbele waarschuwingen (backend + frontend in andere woorden, telling tot 2× te hoog) → één lijst; popup mengde selectie-aantallen met backend-bedragen → alles uit dezelfde set; interne overboekingen telden als goed gecategoriseerde uitgave (en Triodos als ongecategoriseerd) → echte uitgaven; "cache ouder dan 24 uur" op rustige dagen → versheid uit laatste sync; vaste drempel 120 in backend → geschaald; Engelse/technische teksten (`Unknown`, `exclude_internal=true`, FX-advies, "non-EUR", "real data") → Nederlands.
+- Verificatie: pytest 307 groen (nieuw: interne overboeking geen uitgave in backend-metrics; versheid volgt laatste sync); headless Chromium met gemockte backend-samenvatting met dubbele waarschuwingen en afwijkend bedrag: één waarschuwing, bedragen gelijk aan aantallen-basis, geen JS-fouten.
+
 ### Opgeleverd — inzichten opnieuw gecontroleerd + alimentatie + eigen categorieregels
 
 - 7 bevindingen opgelost: Duurste dag (was huur-/alimentatiedag) → alleen variabele uitgaven; Aandeel top-tegenrekening (was verhuurder) → zonder wonen/belastingen/alimentatie; Liquiditeitsrunway: burn over alle rekeningen zoals het saldo, Nederlandse notatie; Verwacht netto en runway-fallback zonder eigen overboekingen; Grootste categorie + grootste variabele; "zekerheid x%" met uitleg; "Last updated" → "Laatst bijgewerkt".
