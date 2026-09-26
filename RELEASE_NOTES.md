@@ -22,6 +22,12 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Income
+- Salary is recognised more often (loonbetaling, maandloon, vakantiegeld, eindejaarsuitkering, bonus, 13th month), and a payer who pays about the same amount every month counts as regular income even without a keyword (e.g. "Periode 9").
+- New category `Uitkeringen & toeslagen` for UWV, SVB (child benefit, AOW), pension funds, DUO student finance, allowances and municipal benefits (these used to be `Overig` or `Belastingen`). Stored transactions are updated once.
+- Transfers with your own Triodos account are no longer income or spending.
+- Refunds no longer show as income in `Verdeling in categorieën`; the income popup splits regular and one-off income.
+
 ### Budget
 - 50/30/20, `Noodzaak vs wens` and `Geldstromen` never count transfers between your own accounts, even with the internal-transfer filter off.
 - A refund lowers the kind of spending it belongs to: an energy settlement lowers essential spending, a Tikkie for dinner discretionary spending (stored transactions are updated once after the update).

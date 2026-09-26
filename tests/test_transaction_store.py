@@ -665,3 +665,25 @@ def test_refund_rows_store_their_purchase_category(ap, store):
     refund = ap.json.loads(_row(ap, 10)['payload_json'])
     assert (refund['category'], refund['refund_category']) == ('Refund', 'Utilities')
     assert ap.json.loads(_row(ap, 11)['payload_json'])['refund_category'] is None
+
+
+def test_statistics_income_excludes_refunds_and_own_external_accounts(ap, store, live_api, monkeypatch):
+    triodos_iban = 'NL91TRIO0123456789'
+    external = {'id': 9, 'description': 'Triodos', '_raw_type': 'MonetaryAccountExternal',
+                'alias': [{'type': 'IBAN', 'value': triodos_iban}]}
+    monkeypatch.setattr(ap, 'list_monetary_accounts', lambda: [ACCOUNT, external])
+    today = datetime.now(timezone.utc)
+    created = (today - timedelta(days=3)).strftime('%Y-%m-%d %H:%M:%S.%f')
+    payments = store.items.setdefault(('1', 'payment'), {})
+    payments[10] = {'id': 10, 'created': created, 'amount': {'value': '3000.00', 'currency': 'EUR'},
+                    'description': 'Salaris', 'counterparty_alias': {'display_name': 'Werkgever'}}
+    payments[11] = {'id': 11, 'created': created, 'amount': {'value': '-100.00', 'currency': 'EUR'},
+                    'description': 'Albert Heijn', 'counterparty_alias': {'display_name': 'Albert Heijn'}}
+    payments[12] = {'id': 12, 'created': created, 'amount': {'value': '20.00', 'currency': 'EUR'},
+                    'description': 'Retour', 'counterparty_alias': {'display_name': 'Albert Heijn'}}
+    payments[13] = {'id': 13, 'created': created, 'amount': {'value': '1000.00', 'currency': 'EUR'},
+                    'description': 'Van Triodos',
+                    'counterparty_alias': {'display_name': 'R van Kampen', 'iban': triodos_iban}}
+    data = live_api.get('/api/statistics?days=30&cache=false').get_json()['data']
+    assert data['income'] == pytest.approx(3000.0)      # no refund, no Triodos transfer
+    assert data['expenses'] == pytest.approx(80.0)      # 100 minus the 20 refund
