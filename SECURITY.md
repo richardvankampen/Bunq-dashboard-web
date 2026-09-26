@@ -24,7 +24,7 @@ The dashboard is built for a private, read-only view of your finances.
 | **Authentication** | Session-based, server-side session cookie |
 | **Cookies** | `HttpOnly`, `SameSite=Lax`, `Secure` by default |
 | **Secret management** | Vaultwarden (Bunq API key) + Docker Swarm secrets |
-| **Network access** | VPN-only, no port forwarding |
+| **Network access** | Only via VPN or Tailscale, no port forwarding |
 | **Rate limiting** | 30 requests/min on the API, 5 login attempts/min |
 | **Session expiry** | 24 hours |
 | **Password check** | Constant-time comparison |
@@ -34,15 +34,47 @@ The dashboard is built for a private, read-only view of your finances.
 
 ## 🛡️ Critical Requirements
 
-### 1. ⚠️ VPN-only access
+### 1. ⚠️ Private access only: VPN or Tailscale
 
 **Why:** your financial data must never be reachable from the internet.
 
 Requirements:
-- ✅ Access the dashboard only through your VPN
+- ✅ Access the dashboard only from your home network, through a VPN, or through Tailscale
 - ✅ Never forward port 5000 on your router
-- ✅ Keep the dashboard on a private LAN/VPN segment
-- ✅ Use Synology VPN Server (OpenVPN or L2TP/IPSec) or a comparable VPN
+- ✅ Keep the dashboard on a private network segment
+
+Choose one of the two options below. Tailscale needs no open port on your router and is the easiest to set up; a classic VPN keeps everything on your own hardware.
+
+#### Option A: Tailscale (recommended for remote access)
+
+Tailscale builds a private network (a "tailnet") between your own devices, based on WireGuard. Nothing is opened on your router.
+
+```text
+1. Create a Tailscale account (tailscale.com) and sign in on your phone/laptop with the Tailscale app.
+2. Synology: Package Center → search "Tailscale" → Install → open it and sign in to the same account.
+3. In the Tailscale admin console (login.tailscale.com → Machines): note the NAS name
+   (e.g. nas) and its Tailscale IP (100.x.y.z). Optionally disable "key expiry" for the NAS.
+4. Open the dashboard from a device in your tailnet: http://100.x.y.z:5000
+```
+
+**HTTPS with a Tailscale name (recommended):** enable **MagicDNS** and **HTTPS certificates** in the admin console (DNS page), then on the NAS via SSH:
+```bash
+sudo tailscale serve --bg 5000
+# The dashboard is now at https://nas.<your-tailnet>.ts.net (only inside your tailnet)
+```
+Set in `.env` and do a full deploy (config change):
+```bash
+ALLOWED_ORIGINS=https://nas.<your-tailnet>.ts.net
+SESSION_COOKIE_SECURE=true
+```
+
+Tailscale tips:
+- Use **only `tailscale serve`**, never `tailscale funnel`: funnel publishes the dashboard on the internet.
+- Don't make the NAS use an **exit node**: Bunq would then see the exit node's public IP, which is not on your Bunq whitelist.
+- Share the NAS only with your own devices; with Tailscale ACLs you can limit which users/devices reach port 5000.
+- If the Synology firewall blocks the Tailscale traffic, allow `100.64.0.0/10` (the Tailscale address range) for port 5000 (see Firewall below).
+
+#### Option B: Synology VPN Server
 
 **Set up the VPN (Synology):**
 
@@ -61,15 +93,18 @@ Clients:
 Windows: OpenVPN GUI · Mac: Tunnelblick · iOS/Android: OpenVPN Connect · Linux: openvpn
 ```
 
-**Verify the VPN from outside your network (e.g. phone on mobile data):**
+#### Verify from outside your network (e.g. phone on mobile data)
+
 ```bash
-# Without VPN:
-curl http://192.168.1.100:5000
+# Without VPN/Tailscale connected:
+curl http://<your-public-ip>:5000
 # Must time out (not reachable)
 
 # With VPN connected:
 curl http://192.168.1.100:5000
-# Returns the dashboard
+# With Tailscale connected:
+curl http://100.x.y.z:5000
+# Both return the dashboard
 ```
 
 ---
@@ -232,7 +267,7 @@ Keep this folder out of git (it is), restrict access to admins, and include it i
 Bunq API keys can be restricted to IP addresses. Your container's public egress IP must then be allowed, otherwise you get
 `Incorrect API key or IP address`.
 
-**After an API key rotation or a network/VPN change:**
+**After an API key rotation or a network change (new provider, router, VPN or Tailscale exit node):**
 ```bash
 cd /volume1/docker/bunq-dashboard
 sudo env NO_PROMPT=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard
@@ -267,8 +302,13 @@ The script:
 Control Panel → Security → Firewall → Edit Rules
 
 Allow rule:
-├── Ports: 5000 (dashboard), your Vaultwarden port, 1194 (VPN)
+├── Ports: 5000 (dashboard), your Vaultwarden port, 1194 (VPN, only with option B)
 ├── Source IP: 192.168.0.0/16 (local network only)
+└── Action: Allow
+
+Allow rule (only with Tailscale):
+├── Ports: 5000
+├── Source IP: 100.64.0.0/10 (Tailscale address range)
 └── Action: Allow
 
 Deny rule (below it):
@@ -280,7 +320,9 @@ Deny rule (below it):
 ```bash
 # Local network only
 sudo iptables -A INPUT -p tcp --dport 5000 -s 192.168.0.0/16 -j ACCEPT
-# VPN
+# Tailscale (only with option A)
+sudo iptables -A INPUT -p tcp --dport 5000 -s 100.64.0.0/10 -j ACCEPT
+# VPN (only with option B)
 sudo iptables -A INPUT -p udp --dport 1194 -j ACCEPT
 # Drop everything else on the dashboard port
 sudo iptables -A INPUT -p tcp --dport 5000 -j DROP
@@ -288,6 +330,8 @@ sudo iptables-save > /etc/iptables/rules.v4
 ```
 
 ### Reverse proxy with HTTPS (recommended)
+
+With Tailscale, `tailscale serve` (option A above) already gives you HTTPS with a valid certificate; you don't need the reverse proxy below for the dashboard.
 
 **Synology reverse proxy:**
 ```text
@@ -381,7 +425,7 @@ Monitor the health endpoints:
 - Rotate the dashboard password (`bunq_basic_auth_password`)
 - Optionally rotate the Bunq API key: create a new key in the Bunq app, update it in Vaultwarden, run `register_bunq_ip.sh`, test
 - Update to the latest code: `sudo sh scripts/install_or_update_synology.sh`
-- Test that the VPN still works and the dashboard is not reachable without it
+- Test that the VPN or Tailscale still works and the dashboard is not reachable without it
 
 **Yearly:**
 - Rotate all credentials, including `bunq_flask_secret_key`
@@ -436,7 +480,7 @@ sudo tar -czf bunq-dashboard-incident-$(date +%Y%m%d).tar.gz /volume1/docker/bun
 ## 📋 Security Checklist
 
 ### Initial setup
-- [ ] VPN installed and tested
+- [ ] VPN or Tailscale installed and tested (no `tailscale funnel`, no exit node on the NAS)
 - [ ] Firewall rules block external access
 - [ ] Port 5000 NOT forwarded on the router
 - [ ] Vaultwarden with a strong master password and `SIGNUPS_ALLOWED=false`
@@ -458,7 +502,7 @@ sudo tar -czf bunq-dashboard-incident-$(date +%Y%m%d).tar.gz /volume1/docker/bun
 ### Quarterly
 - [ ] Dashboard password rotated
 - [ ] Code and images updated
-- [ ] VPN-only access re-tested
+- [ ] Access only via VPN/Tailscale re-tested
 
 ### Yearly
 - [ ] All credentials rotated (including secret keys)

@@ -31,6 +31,7 @@ Stap-voor-stap instructies voor het installeren van het Bunq Dashboard op je Syn
 - **Vast LAN-IP** voor je NAS (bv. `192.168.1.100`)
 - **Sterk aanbevolen:** een vast publiek IP (beste keuze) of een sticky dynamisch publiek IP bij je provider
 - **Vrije lokale poorten:** `5000` (dashboard + API), `9000` (Vaultwarden)
+- **Toegang van buitenaf** (optioneel): Tailscale (aanbevolen, geen open poort op de router) of een VPN; zie Deel 4
 
 ---
 
@@ -211,7 +212,7 @@ Maak `/volume1/docker/bunq-dashboard/.env`.
 | `VAULTWARDEN_ITEM_NAME` | Naam van het vault-item met je Bunq API key | `Bunq API Key` |
 | `USE_VAULTWARDEN` | Vaultwarden gebruiken i.p.v. een directe API key | `true` |
 | `BUNQ_ENVIRONMENT` | Bunq-omgeving | `PRODUCTION` (of `SANDBOX` om te testen) |
-| `AUTO_SET_BUNQ_WHITELIST_IP` | Bij start/reinit proberen de Bunq-allowlist bij te werken | `true` |
+| `AUTO_SET_BUNQ_WHITELIST_IP` | Bij start/reinit proberen de Bunq-whitelist bij te werken | `true` |
 | `AUTO_SET_BUNQ_WHITELIST_DEACTIVATE_OTHERS` | Andere ACTIVE IP's automatisch op INACTIVE zetten | `false` (veiligst) |
 | `ALLOWED_ORIGINS` | Toegestane frontend-origins (CORS) | `https://bunq.jouwdomein.nl` (of `http://<NAS-IP>:5000` bij lokale HTTP) |
 | `SESSION_COOKIE_SECURE` | Cookies alleen via HTTPS versturen | `true` (standaard); alleen `false` bij lokale HTTP |
@@ -318,7 +319,7 @@ sudo docker network connect bunq-net vaultwarden                    # "already c
 | `bunq_vaultwarden_client_secret` | Vaultwarden-`client_secret` | Uit stap 2.6 |
 | `bunq_vaultwarden_master_password` | Hoofdwachtwoord van hetzelfde Vaultwarden-account | Verplicht bij `VAULTWARDEN_ACCESS_METHOD=cli` |
 
-**Optioneel (alleen bij `USE_VAULTWARDEN=false`):** `bunq_api_key` (directe Bunq API key). Laat `USE_VAULTWARDEN=true` staan en gebruik dit alleen als nood-fallback.
+**Optioneel (alleen bij `USE_VAULTWARDEN=false`):** `bunq_api_key` (directe Bunq API key). Laat `USE_VAULTWARDEN=true` staan en gebruik dit alleen als noodoplossing.
 
 **Secrets aanmaken (veilige invoer, geen shell-expansie van speciale tekens):**
 ```bash
@@ -383,7 +384,7 @@ cd /volume1/docker/bunq-dashboard
 TAG=$(sudo git rev-parse --short HEAD)
 sudo docker build --no-cache -t bunq-dashboard:$TAG .
 sudo docker tag bunq-dashboard:$TAG bunq-dashboard:local
-# amd64: native bw-binary (npm-fallback als de release tijdelijk niet beschikbaar is)
+# amd64: native bw-binary (valt terug op npm als de release tijdelijk niet beschikbaar is)
 # arm64: @bitwarden/cli via npm (grotere image)
 # Meldingen "Running pip as the 'root' user" zijn normaal in Docker-builds.
 
@@ -408,19 +409,19 @@ Listening at: http://0.0.0.0:5000
 
 Gebruik precies je `ALLOWED_ORIGINS`-URL:
 - aanbevolen: `https://bunq.jouwdomein.nl` (reverse proxy + `SESSION_COOKIE_SECURE=true`)
-- alleen als lokale HTTP-fallback: `http://192.168.1.100:5000` met `SESSION_COOKIE_SECURE=false`
+- alleen als lokale HTTP-noodoplossing: `http://192.168.1.100:5000` met `SESSION_COOKIE_SECURE=false`
 
 De eerste keer dat je een periode laadt, worden de transacties bij Bunq opgehaald en opgeslagen in `config/dashboard_data.db`; daarna komt het laden uit de opslag, met een incrementele sync op de achtergrond.
 
 **Health-endpoints:**
 - `/api/live` = liveness (service draait)
-- `/api/health` = readiness (status van de Bunq-context; kan `503` geven bij een key/IP-mismatch)
+- `/api/health` = readiness (status van de Bunq-context; kan `503` geven als key en IP niet kloppen)
 
 ### Stap 3.7: Bunq IP-whitelist en herregistratie (na een key- of IP-wijziging)
 
 Gebruik dit als:
 - je een nieuwe Bunq API key hebt gemaakt
-- je publieke IP is veranderd (VPN-/providerwissel)
+- je publieke IP is veranderd (nieuwe provider, router, VPN of Tailscale-exit node)
 - de logs `Incorrect API key or IP address` tonen
 
 Met een vast of sticky publiek IP heb je dit veel minder vaak nodig; zie [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md), sectie `Publiek IP-beleid (vast vs sticky)`.
@@ -437,11 +438,11 @@ Het script:
 - toont het publieke egress-IP van de container
 - vraagt optioneel om een doel-IPv4 (leeg = huidig egress-IP)
 - herkent de auth-modus (`USE_VAULTWARDEN=true/false`)
-- werkt de Bunq API-allowlist bij (doel-IP ACTIVE)
-- controleert bij de directe key-flow het secret `bunq_api_key` (64 hex-tekens)
+- werkt de Bunq API-whitelist bij (doel-IP ACTIVE)
+- controleert bij een directe key het secret `bunq_api_key` (64 hex-tekens)
 - verwijdert de oude Bunq-context en maakt een nieuwe `ApiContext`
 - herstart de service geforceerd en toont de relevante logs
-- vergelijkt het egress-IP met de actieve whitelist (mismatch = duidelijke fout + herstelcommando)
+- vergelijkt het egress-IP met de actieve whitelist (komt het niet overeen: duidelijke fout + herstelcommando)
 
 Met `AUTO_SET_BUNQ_WHITELIST_IP=true` probeert de backend dit ook bij start/reinit.
 
@@ -455,15 +456,36 @@ Zet eigen categorieregels in `/volume1/docker/bunq-dashboard/config/category_rul
 
 ## 🔒 Deel 4: Beveiliging aanscherpen
 
-### Stap 4.1: Firewall
+### Stap 4.1: Toegang van buitenaf met Tailscale of een VPN
+
+Zet poort 5000 nooit open op je router. Wil je het dashboard buitenshuis gebruiken, kies dan één van deze:
+
+**Tailscale (aanbevolen):**
+1. Package Center → zoek "Tailscale" → Installeren → openen en inloggen (maak zo nodig een account op tailscale.com).
+2. Installeer de Tailscale-app op je telefoon/laptop en log in met hetzelfde account.
+3. Open het dashboard op `http://<Tailscale-IP van de NAS>:5000` (het 100.x.y.z-adres in de Tailscale-app).
+4. HTTPS (aanbevolen): zet **MagicDNS** en **HTTPS-certificaten** aan in de Tailscale-beheerconsole, voer `sudo tailscale serve --bg 5000` uit op de NAS en zet in `.env`:
+   ```bash
+   ALLOWED_ORIGINS=https://nas.<jouw-tailnet>.ts.net
+   SESSION_COOKIE_SECURE=true
+   ```
+   Doe daarna een volledige deploy (configwijziging).
+5. Gebruik nooit `tailscale funnel` (dat zet het dashboard op internet) en laat de NAS geen exit node gebruiken (Bunq ziet dan een ander publiek IP).
+
+**VPN:** Synology VPN Server (OpenVPN); zie [SECURITY-NL.md](SECURITY-NL.md), optie B.
+
+### Stap 4.2: Firewall
 
 ```text
 Configuratiescherm → Beveiliging → Firewall → Regels bewerken
 ├── Toestaan: poorten 5000, 9000 vanaf 192.168.0.0/16 (lokaal netwerk)
+├── Toestaan: poort 5000 vanaf 100.64.0.0/10 (alleen bij Tailscale)
 └── Weigeren: alle andere IP's
 ```
 
-### Stap 4.2: Reverse proxy met HTTPS (aanbevolen)
+### Stap 4.3: Reverse proxy met HTTPS (aanbevolen)
+
+Met Tailscale geeft `tailscale serve` (stap 4.1) het dashboard al HTTPS; voor Vaultwarden heb je nog steeds een reverse proxy met HTTPS nodig (stap 2.7).
 
 ```text
 Configuratiescherm → Aanmeldingsportaal → Geavanceerd → Reverse proxy → Maken
@@ -477,7 +499,7 @@ Certificaat: Configuratiescherm → Beveiliging → Certificaat → Toevoegen �
 
 Meer in [SECURITY-NL.md](SECURITY-NL.md).
 
-### Stap 4.3: Back-ups
+### Stap 4.4: Back-ups
 
 Via Hyper Backup (dagelijks, bv. 02:00, 30 dagen bewaren, versleuteld):
 - `/volume1/docker/vaultwarden` (Vaultwarden-data)
@@ -486,7 +508,7 @@ Via Hyper Backup (dagelijks, bv. 02:00, 30 dagen bewaren, versleuteld):
 
 De opslag bewaart ook transacties die Bunq niet meer levert; een back-up van `config/` is dus de enige kopie van die geschiedenis.
 
-### Stap 4.4: Updatemeldingen
+### Stap 4.5: Updatemeldingen
 
 ```text
 Package Center → Container Manager → Instellingen → updatemeldingen inschakelen
@@ -556,7 +578,7 @@ In **Instellingen → Beheeronderhoud** (ingelogd):
 **Knoppen** (het paneel legt ze ook uit):
 - `Status controleren` (alleen lezen): Bunq-verbinding, laatste Bunq-fout, Vaultwarden, transactieopslag, laatste controle met Bunq, en een **advies** dat naar de passende situatie verwijst
 - `Egress-IP controleren` (alleen lezen): het huidige publieke uitgaande IP van de container (dit IP moet op de Bunq-whitelist staan)
-- `Bunq API-whitelist-IP instellen`: veilige flow in 2 stappen (1. doel-IP activeren, 2. na bevestiging andere ACTIVE IP's deactiveren)
+- `Bunq API-whitelist-IP instellen`: veilige werkwijze in 2 stappen (1. doel-IP activeren, 2. na bevestiging andere ACTIVE IP's deactiveren)
 - `Alleen context opnieuw opbouwen (gevorderd)`: de API key opnieuw ophalen en de Bunq-context opnieuw opbouwen, zonder whitelistwijziging
 - `Volledig onderhoud uitvoeren (aanbevolen)`: cache wissen, Bunq-context opnieuw opbouwen en het whitelist-IP bijwerken, volgens de opties
 - `Controle met Bunq uitvoeren`: alle transacties opnieuw ophalen en de opslag bijwerken (zoals de maandelijkse controle, loopt op de achtergrond)
@@ -564,7 +586,7 @@ In **Instellingen → Beheeronderhoud** (ingelogd):
 **Terminal**-knoppen tonen kant-en-klare commando's voor de NAS, elk met wat het doet: `Nieuwe versie installeren` (snelle redeploy of volledige install/update), `Herstarten en controleren`, `Bunq-whitelist via terminal` (`register_bunq_ip.sh`), `Nieuwe API key via terminal`, `Logs bekijken`.
 
 Standaardopties voor `Volledig onderhoud uitvoeren`:
-- whitelistupdate: altijd onderdeel van de flow
+- whitelistupdate: gebeurt altijd
 - `Whitelist-IP (egress) automatisch bepalen`: uit (vul handmatig een IP in, of vink aan; de gidsknop "Volledig onderhoud met automatisch IP" vinkt het aan)
 - API key vernieuwen uit Vaultwarden/direct secret: uit (alleen na key-rotatie; alleen het proces dat het verzoek afhandelt krijgt de nieuwe key, herstart daarna dus de service)
 - `Bunq-context opnieuw opbouwen`: aan
@@ -576,8 +598,8 @@ Standaardopties voor `Volledig onderhoud uitvoeren`:
 
 1. Maak een nieuwe key in de Bunq-app
 2. Werk hem bij:
-   - Vaultwarden-flow: het Vaultwarden-item bijwerken
-   - directe key-flow (`USE_VAULTWARDEN=false`): Docker secret `bunq_api_key` opnieuw aanmaken
+   - met Vaultwarden: het Vaultwarden-item bijwerken
+   - met een directe key (`USE_VAULTWARDEN=false`): Docker secret `bunq_api_key` opnieuw aanmaken
 3. Draai `sudo env NO_PROMPT=true sh scripts/register_bunq_ip.sh`
 4. Valideer: `sudo sh scripts/restart_bunq_service.sh`
 
@@ -620,7 +642,7 @@ python3 /volume1/docker/bunq-dashboard/scripts/check_accounts_api.py \
 - [ ] Vaultwarden-registraties uitgeschakeld
 - [ ] Secrets aangemaakt, `bunq-net` bestaat en Vaultwarden is eraan gekoppeld
 - [ ] Dashboardservice draait; `/api/live` en `/api/health` reageren
-- [ ] Dashboard bereikbaar op je `ALLOWED_ORIGINS`-URL (via VPN)
+- [ ] Dashboard bereikbaar op je `ALLOWED_ORIGINS`-URL (via je thuisnetwerk, VPN of Tailscale) en niet vanaf internet
 - [ ] Logs tonen geen fouten
 - [ ] Firewallregels ingesteld
 - [ ] Back-ups ingepland (inclusief `config/`)

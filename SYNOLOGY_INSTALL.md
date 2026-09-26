@@ -31,6 +31,7 @@ Step-by-step instructions for installing the Bunq Dashboard on your Synology NAS
 - **Fixed LAN IP** for your NAS (e.g. `192.168.1.100`)
 - **Strongly recommended:** a fixed public IP (best) or a sticky dynamic public IP from your ISP
 - **Free local ports:** `5000` (dashboard + API), `9000` (Vaultwarden)
+- **Remote access** (optional): Tailscale (recommended, no open router port) or a VPN; see Part 4
 
 ---
 
@@ -420,7 +421,7 @@ The first load of a period fetches the transactions from Bunq and stores them in
 
 Use this when:
 - you created a new Bunq API key
-- your public IP changed (VPN/ISP change)
+- your public IP changed (new provider, router, VPN or Tailscale exit node)
 - the logs show `Incorrect API key or IP address`
 
 With a fixed or sticky public IP you need this much less often; see [TROUBLESHOOTING.md](TROUBLESHOOTING.md), section `Public IP strategy (fixed vs sticky)`.
@@ -455,15 +456,36 @@ Add your own category rules in `/volume1/docker/bunq-dashboard/config/category_r
 
 ## 🔒 Part 4: Security Hardening
 
-### Step 4.1: Firewall
+### Step 4.1: Remote access with Tailscale or a VPN
+
+Never forward port 5000 on your router. To use the dashboard away from home, pick one:
+
+**Tailscale (recommended):**
+1. Package Center → search "Tailscale" → Install → open it and sign in (create an account at tailscale.com if needed).
+2. Install the Tailscale app on your phone/laptop and sign in to the same account.
+3. Open the dashboard at `http://<Tailscale IP of the NAS>:5000` (the 100.x.y.z address in the Tailscale app).
+4. HTTPS (recommended): enable **MagicDNS** and **HTTPS certificates** in the Tailscale admin console, run `sudo tailscale serve --bg 5000` on the NAS, and set in `.env`:
+   ```bash
+   ALLOWED_ORIGINS=https://nas.<your-tailnet>.ts.net
+   SESSION_COOKIE_SECURE=true
+   ```
+   Then do a full deploy (config change).
+5. Never use `tailscale funnel` (that publishes the dashboard on the internet), and don't let the NAS use an exit node (Bunq would see another public IP).
+
+**VPN:** Synology VPN Server (OpenVPN); see [SECURITY.md](SECURITY.md), option B.
+
+### Step 4.2: Firewall
 
 ```text
 Control Panel → Security → Firewall → Edit Rules
 ├── Allow: ports 5000, 9000 from 192.168.0.0/16 (local network)
+├── Allow: port 5000 from 100.64.0.0/10 (only with Tailscale)
 └── Deny: all other IPs
 ```
 
-### Step 4.2: Reverse proxy with HTTPS (recommended)
+### Step 4.3: Reverse proxy with HTTPS (recommended)
+
+With Tailscale, `tailscale serve` (step 4.1) already provides HTTPS for the dashboard; you still need a reverse proxy with HTTPS for Vaultwarden (step 2.7).
 
 ```text
 Control Panel → Login Portal → Advanced → Reverse Proxy → Create
@@ -477,7 +499,7 @@ Certificate: Control Panel → Security → Certificate → Add → Let's Encryp
 
 More in [SECURITY.md](SECURITY.md).
 
-### Step 4.3: Backups
+### Step 4.4: Backups
 
 Via Hyper Backup (daily, e.g. 02:00, 30 days retention, encrypted):
 - `/volume1/docker/vaultwarden` (Vaultwarden data)
@@ -486,7 +508,7 @@ Via Hyper Backup (daily, e.g. 02:00, 30 days retention, encrypted):
 
 The store also keeps transactions that Bunq no longer serves, so a backup of `config/` is the only copy of that history.
 
-### Step 4.4: Update notifications
+### Step 4.5: Update notifications
 
 ```text
 Package Center → Container Manager → Settings → enable update notifications
@@ -620,7 +642,7 @@ python3 /volume1/docker/bunq-dashboard/scripts/check_accounts_api.py \
 - [ ] Vaultwarden signups disabled
 - [ ] Secrets created, `bunq-net` exists and Vaultwarden is connected to it
 - [ ] Dashboard service running; `/api/live` and `/api/health` respond
-- [ ] Dashboard reachable on your `ALLOWED_ORIGINS` URL (via VPN)
+- [ ] Dashboard reachable on your `ALLOWED_ORIGINS` URL (via your home network, VPN or Tailscale) and not from the internet
 - [ ] Logs show no errors
 - [ ] Firewall rules configured
 - [ ] Backups scheduled (including `config/`)

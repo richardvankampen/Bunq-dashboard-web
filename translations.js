@@ -239,8 +239,8 @@ addTranslations({
     'Inkomsten - geselecteerde periode': 'Income - selected period',
     'Uitgaven - geselecteerde periode': 'Expenses - selected period',
     '{count} transacties · totaal {amount}': '{count} transactions · total {amount}',
-    ' · terugbetalingen en overboekingen tussen eigen rekeningen (ook Triodos) tellen niet als inkomen':
-        ' · refunds and transfers between own accounts (including Triodos) don\'t count as income',
+    ' · terugbetalingen en overboekingen tussen eigen rekeningen (ook bij andere banken) tellen niet als inkomen':
+        ' · refunds and transfers between own accounts (including at other banks) don\'t count as income',
     'Individuele inkomsten ({count})': 'Individual income ({count})',
     'Individuele uitgaven ({count})': 'Individual expenses ({count})',
     'Spaarrekening mutaties': 'Savings account movements',
@@ -637,7 +637,7 @@ addTranslations({
     'Enable background particles': 'Achtergronddeeltjes aan',
     'Turn the dashboard backdrop into a live animated scene.': 'Maak van de dashboardachtergrond een bewegende animatie.',
     'Exclude internal transfers (recommended)': 'Interne overboekingen uitsluiten (aanbevolen)',
-    'Transfers between your own accounts (including linked external accounts such as Triodos) won\'t count as income or expense.': 'Overboekingen tussen je eigen rekeningen (ook gekoppelde externe rekeningen zoals Triodos) tellen niet als inkomsten of uitgaven.',
+    'Transfers between your own accounts (including your own linked accounts at other banks) won\'t count as income or expense.': 'Overboekingen tussen je eigen rekeningen (ook je gekoppelde rekeningen bij andere banken) tellen niet als inkomsten of uitgaven.',
     '0 = off. Updates in the background while this tab is visible.': '0 = uit. Vernieuwt op de achtergrond zolang dit tabblad zichtbaar is.',
     'Applied when you save. All accounts selected (or none) = all accounts, including accounts opened later.': 'Wordt toegepast bij opslaan. Alle rekeningen (of geen) geselecteerd = alle rekeningen, ook rekeningen die later worden geopend.',
     'Use real Bunq data (requires login)': 'Echte Bunq-gegevens gebruiken (inloggen vereist)',

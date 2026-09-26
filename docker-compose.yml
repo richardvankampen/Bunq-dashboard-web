@@ -6,7 +6,7 @@ services:
 
     ports:
       # Single port for both API and Frontend (simplified architecture)
-      # Access: http://your-nas-ip:5000 (via VPN only!)
+      # Access: http://your-nas-ip:5000 (only via LAN, VPN or Tailscale; never forward this port)
       - "5000:5000"
 
     environment:

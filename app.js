@@ -97,14 +97,14 @@ const detailModalState = {
 function isOwnBunqAccount(account) {
     const className = String(account?.account_class || '').toLowerCase();
     if (!className) return true;
-    // Keep Bunq external-savings as own Bunq accounts, but exclude linked external accounts (e.g. Triodos).
+    // Keep Bunq external-savings as own Bunq accounts, but exclude linked external accounts (e.g. an account at another bank).
     if (className.includes('monetaryaccountexternal') && !className.includes('externalsavings')) {
         return false;
     }
     return true;
 }
 
-// The user's own linked external accounts (e.g. Triodos): not Bunq-internal, but transfers
+// The user's own linked external accounts (e.g. an account at another bank): not Bunq-internal, but transfers
 // with them are neither income nor spending.
 function getOwnExternalAccountSets() {
     const external = (accountsList || []).filter((account) => !isOwnBunqAccount(account));
@@ -1755,7 +1755,7 @@ function applyClientFilters(data, options = {}) {
         // One rule for every tile and chart (see isInternalOwnTransfer).
         const ownIdentity = getOwnBunqAccountIdentitySets();
         const externalSets = getOwnExternalAccountSets();
-        // Transfers with own linked external accounts (Triodos) go too: not income, not spending.
+        // Transfers with own linked external accounts (accounts at other banks) go too: not income, not spending.
         filtered = filtered.filter((transaction) => (
             !isInternalOwnTransfer(transaction, ownIdentity) && !isOwnExternalTransfer(transaction, externalSets)
         ));
@@ -1891,7 +1891,7 @@ function buildSavingsWidgetTransactions(rawTransactions) {
     const scoped = normalizeTransactions(applyClientFilters(Array.isArray(rawTransactions) ? rawTransactions : [], {
         excludeInternalTransfers: false
     }));
-    // Moves with the own Triodos account are own money changing place, not saved from income.
+    // Moves with own accounts at other banks are own money changing place, not saved from income.
     const externalSets = getOwnExternalAccountSets();
     const direct = scoped
         .filter((transaction) => savingsSets.savingsIds.has(String(transaction?.account_id)))
@@ -1930,7 +1930,7 @@ function isUnknownMerchantLabel(value) {
 
 /**
  * Data quality. All coverage figures are measured over one set: real spending in the selection
- * (outflows, without own transfers incl. Triodos). The backend only adds what the browser can't
+ * (outflows, without own transfers incl. linked accounts at other banks). The backend only adds what the browser can't
  * know (active days, data span, EUR amounts, time of the last sync). One list of warnings, each
  * with one piece of advice.
  */
@@ -3041,7 +3041,7 @@ function showTransactionDetail(detailType) {
         openDetailModal({
             title: `<i class="fas ${isIncome ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i> ${t(isIncome ? 'Inkomsten - geselecteerde periode' : 'Uitgaven - geselecteerde periode')}`,
             summary: t('{count} transacties · totaal {amount}', { count: subset.length, amount: formatCurrency(total) })
-                + (isIncome ? t(' · terugbetalingen en overboekingen tussen eigen rekeningen (ook Triodos) tellen niet als inkomen') : ''),
+                + (isIncome ? t(' · terugbetalingen en overboekingen tussen eigen rekeningen (ook bij andere banken) tellen niet als inkomen') : ''),
             rows: incomeRows,
             chart: { trace, layout },
             transactionRows,

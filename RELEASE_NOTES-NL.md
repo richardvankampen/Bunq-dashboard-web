@@ -28,12 +28,17 @@
 - De Nederlandse documentatie gebruikt de Nederlandse knopnamen van het beheeronderhoud.
 
 ### Documentatie
+- Toegang van buitenaf via **Tailscale** als alternatief voor een VPN (installeren, HTTPS met `tailscale serve`, firewall, waarschuwingen voor exit node en funnel) in SECURITY, SYNOLOGY_INSTALL, TROUBLESHOOTING en README.
+- De Engelse documentatie gebruikt de Engelse namen uit het dashboard (met een tabel van interne categorienamen voor eigen regels); de Nederlandse documentatie gebruikt alleen nog Engels voor ingeburgerde computertermen.
+- Voorbeelden verwijzen niet meer naar persoonlijke situaties; gekoppelde rekeningen bij andere banken worden algemeen beschreven (ook in de dashboardteksten).
 - Engelse en Nederlandse documentatie hebben nu dezelfde opbouw en inhoud: `SECURITY`, `SYNOLOGY_INSTALL` en `TROUBLESHOOTING` zijn in beide talen volledige gidsen (de Engelse versies waren korte samenvattingen, de Nederlandse deels Engels).
 - Bijgewerkt naar de huidige app: namen van de knoppen voor beheeronderhoud, actuele widgetnamen en functies in de README, de transactieopslag, eigen categorieregels en back-ups van `config/` (`dashboard_data.db`, `category_rules.json`).
 - Instellingen die de code leest maar `docker-compose.yml` niet doorgeeft (paging, maandelijkse controle, sync-intervallen) staan apart, met hoe je ze aanzet.
 - Beveiligingslekken meld je via een private GitHub security advisory.
 
 ## 2026-09-25
+
+Namen hieronder zijn de Nederlandse namen uit het dashboard (knop NL/EN).
 
 ### Data en snelheid
 - Transacties worden opgeslagen in SQLite: het dashboard leest uit de database, haalt bij Bunq alleen nieuwe transacties op (op de achtergrond als de periode al is opgeslagen) en hergebruikt de rekeninglijst een minuut.
@@ -47,29 +52,29 @@
 - Budgetdiscipline (50/30/20): maanden die maar deels in de periode vallen worden weggelaten, de lopende maand is gemarkeerd als `(lopend)`, terugbetalingen verlagen de uitgaven in plaats van als inkomen te tellen, maanden zonder inkomen zijn gaten; inzichten gebruiken de laatste volledige maand.
 - `Maandverdeling` (spreiding uitgaven): bedragklassen €0–5 … €1000+, top 4 categorieën op bedrag, aandeel van de betalingen per categorie.
 - Eén regel voor interne overboekingen in alle tegels en grafieken, volgens de instelling.
-- Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
+- Eenduidige labels in alle grafieken en detailvensters; €-bedragen bij het aanwijzen in `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
 ### Opgeslagen gegevens
 - De vlag "interne overboeking" van opgeslagen transacties wordt bij elke keer laden opnieuw gecontroleerd met je huidige eigen rekeningen en IBAN's (en tegengestelde boekingen tussen eigen rekeningen) en in de database gecorrigeerd, zodat backend-cijfers zoals datakwaliteit overeenkomen met het dashboard.
-- De reserve-saldohistorie uit snapshots gebruikt per rekening het huidige type.
+- De reserve-saldohistorie uit momentopnamen gebruikt per rekening het huidige type.
 
 ### Categorieëngrafiek
 - `Verdeling in categorieën` groepeert filialen net als `Top tegenrekeningen`, en een terugbetaling gaat af van de winkel waar hij vandaan komt in plaats van van alle winkels in de categorie.
-- Hover-teksten tonen zinvolle aandelen (uitgaven als % van de inkomsten, categorie als % van de uitgaven, tegenrekening als % van de categorie); duidelijkere labels ("Kleinere categorieën", "Overige tegenrekeningen", "Totaal").
+- Teksten bij het aanwijzen tonen zinvolle aandelen (uitgaven als % van de inkomsten, categorie als % van de uitgaven, tegenrekening als % van de categorie); duidelijkere labels ("Kleinere categorieën", "Overige tegenrekeningen", "Totaal").
 - Nieuw detailvenster met bedrag, aandeel en top 3 tegenrekeningen per categorie, plus de transacties.
 
 ### Datakwaliteit
 - Waarschuwingen staan er niet meer dubbel in (backend en dashboard hadden elk hun eigen formulering); bij elke waarschuwing hoort één advies.
 - Alle dekkingscijfers worden over dezelfde set gemeten: echte uitgaven in je selectie, zonder overboekingen tussen je eigen rekeningen.
 - "Laatste synchronisatie" volgt de laatste sync met Bunq, zodat rustige dagen geen waarschuwing "ouder dan 24 uur" meer geven.
-- Teksten in het Nederlands, met verwijzingen naar instellingen die je kunt vinden (bv. "Interne overboekingen uitsluiten").
+- Teksten verwijzen naar instellingen die je kunt vinden (bv. "Interne overboekingen uitsluiten").
 
 ### Inzichten en categorieën
-- Nieuwe categorie `Alimentatie` (noodzakelijk, vaste last, geen bezuinigingsadvies). Een afschrijving vanaf een eigen subrekening met een naam die zegt waarvoor die is (bv. "Alimentatie") krijgt die categorie; eigen regels kun je zetten in `config/category_rules.json` (zie README).
-- Opgelost: betalingen waarvan de categorie gelijk was aan de naam van een eigen rekening (bv. alimentatie vanaf subrekening "Alimentatie") werden als interne overboeking gezien en vielen uit alle cijfers.
+- Nieuwe categorie `Alimentatie` voor partner- en kinderalimentatie (noodzakelijk, vaste last, geen bezuinigingsadvies). Een afschrijving vanaf een eigen subrekening met een naam die zegt waarvoor die is (bv. een subrekening voor boodschappen) krijgt die categorie als niets anders past; eigen regels kun je zetten in `config/category_rules.json` (zie README).
+- Opgelost: betalingen waarvan de categorie gelijk was aan de naam van de eigen subrekening waar ze vandaan kwamen, werden als interne overboeking gezien en vielen uit alle cijfers.
 - `Duurste dag` kijkt alleen naar variabele uitgaven; `Aandeel top-tegenrekening` laat wonen, belastingen en alimentatie weg; `Grootste categorie` toont ook de grootste variabele categorie.
-- `Liquiditeitsrunway` gebruikt de uitgaven van alle rekeningen, net als het saldo; de maandprognose negeert eigen overboekingen; de volgende beste actie toont de zekerheid; "Laatst bijgewerkt" in het Nederlands.
+- `Liquiditeitsrunway` gebruikt de uitgaven van alle rekeningen, net als het saldo; de maandprognose negeert eigen overboekingen; de volgende beste actie toont de zekerheid; "Laatst bijgewerkt" wordt vertaald.
 
 ### Trends
 - Tegeltrends voor `Inkomsten` en `Uitgaven` gebruiken dezelfde maandcijfers als de inzichten (inclusief salarismaand-correctie) en vergelijken de laatste volledige maand met maximaal drie maanden daarvoor.
@@ -79,19 +84,19 @@
 
 ### Spaarquote
 - `Spaarquote` toont `n.v.t.` als de selectie geen inkomsten heeft behalve rente (bv. alleen spaarrekeningen geselecteerd), in plaats van `0.0%` of absurde percentages.
-- Overboekingen tussen je eigen Triodos-rekening en je spaarrekeningen tellen niet meer als sparen.
+- Overboekingen tussen je eigen rekening bij een andere bank en je spaarrekeningen tellen niet meer als sparen.
 - Percentages in Nederlandse notatie (`16,7%`); ontbrekende waarden tonen `n.v.t.`.
 
 ### Uitgaven
 - Terugbetalingen verlagen nu overal de uitgaven, ook in `Top tegenrekeningen`, `Categorie-race`, de inzichten grootste categorie en top-tegenrekening, `Uitgavenmomentum` en de besparingshefbomen (een geretourneerde bestelling telt niet meer als uitgave).
 - Filialen van dezelfde winkel (bv. "Albert Heijn 1234" en "ALBERT HEIJN 5678 UTRECHT") tellen in totalen als één tegenrekening.
 - `Dagpatroon` toont alleen variabele uitgaven: incasso's voor vaste lasten worden 's nachts geboekt en lieten de nacht lijken op het grootste uitgavenmoment.
-- De waarschuwing over vreemde valuta is in het Nederlands.
+- De waarschuwing over vreemde valuta wordt vertaald.
 
 ### Inkomen
 - Salaris wordt vaker herkend (loonbetaling, maandloon, vakantiegeld, eindejaarsuitkering, bonus, 13e maand), en een betaler die elke maand ongeveer hetzelfde bedrag betaalt telt als vast inkomen, ook zonder trefwoord (bv. "Periode 9").
 - Nieuwe categorie `Uitkeringen & toeslagen` voor UWV, SVB (kinderbijslag, AOW), pensioenfondsen, DUO-studiefinanciering, toeslagen en gemeentelijke uitkeringen (voorheen `Overig` of `Belastingen`). Opgeslagen transacties worden eenmalig bijgewerkt.
-- Overboekingen met je eigen Triodos-rekening zijn geen inkomen of uitgave meer.
+- Overboekingen met je eigen rekeningen bij een andere bank zijn geen inkomen of uitgave meer.
 - Terugbetalingen staan niet meer als inkomen in `Verdeling in categorieën`; het inkomstenvenster splitst vast en incidenteel inkomen.
 
 ### Budget
@@ -107,16 +112,16 @@
 - De periode begint om middernacht Nederlandse tijd, zodat de eerste dag compleet is.
 
 ### Sparen
-- Saldohistorie (`Spaarrekeningen (totaal)`, `Betaalrekeningen`) wordt voor elke dag van de periode opgebouwd uit de opgeslagen transacties, in plaats van snapshots van dagen waarop het dashboard toevallig open was (geen dips naar €0 meer, geen trends "sinds eerste gebruik"). Saldotrends tonen `n.v.t.` zonder beginsaldo, en een +/−-teken en kleur.
-- `Sparen` telt ook overboekingen naar spaarrekeningen die niet geselecteerd zijn, en herkent verplaatsingen tussen spaarrekeningen op rekening, IBAN of naam. `Savings Rate` heet nu `Spaarquote`. Beleggingsrekeningen tellen niet als sparen.
+- Saldohistorie (`Spaarrekeningen (totaal)`, `Betaalrekeningen`) wordt voor elke dag van de periode opgebouwd uit de opgeslagen transacties, in plaats van momentopnamen van dagen waarop het dashboard toevallig open was (geen dips naar €0 meer, geen trends "sinds eerste gebruik"). Saldotrends tonen `n.v.t.` zonder beginsaldo, en een +/−-teken en kleur.
+- `Sparen` telt ook overboekingen naar spaarrekeningen die niet geselecteerd zijn, en herkent verplaatsingen tussen spaarrekeningen op rekening, IBAN of naam. Beleggingsrekeningen tellen niet als sparen.
 - 50/30/20 en het actieplan noemen inkomen min uitgaven "overgehouden" (inclusief wat op de betaalrekening blijft), zodat het niet meer met `Sparen` wordt verward.
-- Rekeningnamen als "Shared household" of "Stockholm reis" worden niet meer als belegging ingedeeld.
+- Rekeningnamen die toevallig een kort woord als "share" of "stock" bevatten (bv. een vakantie- of huishoudrekening) worden niet meer als belegging ingedeeld.
 
 ### Categorieën
-- Trefwoorden matchen op hele woorden: namen en woorden als "Bart", "lens", "nov", "Gastouder", "Pinterest" of "Disney Plus" komen niet meer in Horeca, Vervoer, Utilities, Rente of Boodschappen terecht.
-- Meer merchantcodes van kaartbetalingen herkend (trein, parkeren, brandstof, vluchten, hotels, bouwmarkten, kleding, opticiens, ziekenhuizen); nieuwe categorieën `Reizen`, `Sport` en `Kinderopvang`; drogisterijen zijn `Zorg`, bij kaartbetaling én overboeking.
+- Trefwoorden moeten als heel woord voorkomen: voornamen en woorden als "lens", "nov" of "Disney Plus" komen niet meer in de verkeerde categorie terecht (horeca, vervoer, energie, rente of boodschappen).
+- Meer categoriecodes van winkels bij kaartbetalingen herkend (trein, parkeren, brandstof, vluchten, hotels, bouwmarkten, kleding, opticiens, ziekenhuizen); nieuwe categorieën `Reizen`, `Sport` en `Kinderopvang`; drogisterijen zijn `Zorg`, bij kaartbetaling én overboeking.
 - Inkomend geld voor een aankoop (kaartretour, Tikkie voor een gedeeld etentje, eindafrekening energie) telt als terugbetaling in plaats van inkomen in een uitgavencategorie; toeslagen en verzekeringsuitkeringen houden hun categorie.
-- Categorienamen zijn Nederlands in het dashboard (`Interne overboeking`, `Terugbetaling`, `Energie & telecom`, `Winkelen`, `Vrije tijd`).
+- Categorienamen worden eenduidig getoond (`Interne overboeking`, `Terugbetaling`, `Energie & telecom`, `Winkelen`, `Vrije tijd`).
 - Opgeslagen transacties worden na een update eenmalig opnieuw gecategoriseerd, zodat verbeterde regels ook voor de historie gelden.
 
 ### Inzichten
@@ -126,10 +131,10 @@
 - `Terugkerende kosten`: alleen vaste maandposten (±1 betaling per maand, stabiel bedrag); supermarkt en horeca tellen niet meer mee.
 - `Uitgavenvolatiliteit`: variabele uitgaven per week zonder vaste lasten (was: per dag, altijd "Hoog" door de huurdag).
 - Actieplan: geen "bezuinig hierop"-advies voor wonen en belastingen; besparingshefbomen gebruiken echte maandgemiddelden.
-- `Gemiddelde daguitgaven` per kalenderdag van de gekozen periode; Nederlandse labels en `n.v.t.` in kaarten en datakwaliteit; waarschuwing over aantal transacties schaalt mee met de periode.
+- `Gemiddelde daguitgaven` per kalenderdag van de gekozen periode; `n.v.t.` in kaarten en datakwaliteit; waarschuwing over aantal transacties schaalt mee met de periode.
 
-### Tooling
-- Testsuite (`tests/`, pytest) en GitHub Actions CI; dev-tools verplaatst naar `requirements_dev.txt`.
+### Ontwikkeling
+- Testsuite (`tests/`, pytest) en GitHub Actions CI; ontwikkelhulpmiddelen verplaatst naar `requirements_dev.txt`.
 
 ## 2026-03-07
 
