@@ -62,13 +62,25 @@ Tailscale builds a private network (a "tailnet") between your own devices, based
 4. Open the dashboard from a device in your tailnet: http://100.x.y.z:5000
 ```
 
-**HTTPS with a Tailscale name (recommended):** enable **MagicDNS** and **HTTPS certificates** in the admin console (DNS page), then on the NAS via SSH:
+**HTTPS over Tailscale** — choose one of two ways:
+
+*Way 1: your own domain via the DSM reverse proxy (recommended when you already use one).* The same address works at home and away, with the certificate you already have:
+1. Make the LAN reachable through Tailscale: on the NAS run `sudo tailscale set --advertise-routes=192.168.1.0/24` (your LAN range) and approve the route in the admin console (Machines → NAS → Edit route settings).
+2. Let a local DNS server (e.g. the Synology **DNS Server** package) answer `bunq.yourdomain.com` with the NAS LAN IP.
+3. Admin console → **DNS** → Nameservers → Add nameserver → Custom: the NAS LAN IP, with **Restrict to domain** = `yourdomain.com` (split DNS). Tailnet devices now ask your DNS server for that domain only.
+4. Use the DSM reverse proxy rule and Let's Encrypt certificate for `bunq.yourdomain.com` (see Reverse proxy below), with an access control profile that only allows `192.168.0.0/16` and `100.64.0.0/10`.
+5. `ALLOWED_ORIGINS=https://bunq.yourdomain.com` (full deploy after changing `.env`).
+
+Don't use `tailscale serve` on port 443 with this way: serve takes over port 443 on the NAS's Tailscale address, so the DSM reverse proxy no longer sees that traffic. Remove it with `sudo tailscale serve --https=443 off` (`sudo tailscale serve status` then shows `No serve config`).
+
+*Way 2: a Tailscale name with `tailscale serve` (no own domain needed).* Enable **MagicDNS** and **HTTPS certificates** in the admin console (DNS page), then on the NAS via SSH:
 ```bash
 sudo tailscale serve --bg 5000
 # The dashboard is now at https://nas.<your-tailnet>.ts.net (only inside your tailnet)
 sudo tailscale serve status
 # Must show "(tailnet only)" and "proxy http://127.0.0.1:5000"; never "Funnel on"
 ```
+This sends **all** traffic to `https://nas.<your-tailnet>.ts.net` (port 443) to the dashboard; other ports stay reachable directly. To keep port 443 free, use `--https=8443` or `--https=10000` instead (the only other ports serve allows for HTTPS) and include that port in `ALLOWED_ORIGINS`.
 The first time, Tailscale may answer `Serve is not enabled on your tailnet` with a link (`https://login.tailscale.com/f/serve?node=…`). That is a one-time approval: open the link while signed in as the tailnet admin, confirm, and run the command again. The first visit to the `https://` address can take a moment while the certificate is requested.
 Set in `.env` and do a full deploy (config change):
 ```bash
@@ -77,7 +89,7 @@ SESSION_COOKIE_SECURE=true
 ```
 
 Tailscale tips:
-- Use **only `tailscale serve`**, never `tailscale funnel`: funnel publishes the dashboard on the internet.
+- Never use `tailscale funnel`: funnel publishes the dashboard on the internet.
 - Don't make the NAS use an **exit node**: Bunq would then see the exit node's public IP, which is not on your Bunq whitelist.
 - Share the NAS only with your own devices; with Tailscale ACLs you can limit which users/devices reach port 5000.
 - If the Synology firewall blocks the Tailscale traffic, allow `100.64.0.0/10` (the Tailscale address range) for port 5000 (see Firewall below).
@@ -339,7 +351,7 @@ sudo iptables-save > /etc/iptables/rules.v4
 
 ### Reverse proxy with HTTPS (recommended)
 
-With Tailscale, `tailscale serve` (option A above) already gives you HTTPS with a valid certificate; you don't need the reverse proxy below for the dashboard.
+With Tailscale you can use this reverse proxy for access from away as well (option A, way 1), or use `tailscale serve` instead (way 2), which brings its own certificate.
 
 **Synology reverse proxy:**
 ```text

@@ -36,7 +36,7 @@
 - The Dutch docs use the Dutch button names of the admin maintenance panel.
 
 ### Documentation
-- Remote access via **Tailscale** as an alternative to a VPN (install, HTTPS with `tailscale serve`, firewall, exit-node and funnel warnings) in SECURITY, SYNOLOGY_INSTALL, TROUBLESHOOTING and README.
+- Remote access via **Tailscale** as an alternative to a VPN (install, HTTPS via your own domain and the DSM reverse proxy (subnet route + split DNS) or optionally `tailscale serve`, firewall, exit-node and funnel warnings) in SECURITY, SYNOLOGY_INSTALL, TROUBLESHOOTING and README.
 - The English docs use the English names from the dashboard (with a table of internal category names for personal rules); the Dutch docs keep English only for established computer terms.
 - Examples no longer refer to personal situations; linked accounts at other banks are described generically (also in the dashboard texts).
 - English and Dutch documentation now have the same structure and content: `SECURITY`, `SYNOLOGY_INSTALL` and `TROUBLESHOOTING` are full guides in both languages (the English versions were short summaries, the Dutch versions were partly English).

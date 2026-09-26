@@ -464,14 +464,17 @@ Zet poort 5000 nooit open op je router. Wil je het dashboard buitenshuis gebruik
 1. Package Center → zoek "Tailscale" → Installeren → openen en inloggen (maak zo nodig een account op tailscale.com).
 2. Installeer de Tailscale-app op je telefoon/laptop en log in met hetzelfde account.
 3. Open het dashboard op `http://<Tailscale-IP van de NAS>:5000` (het 100.x.y.z-adres in de Tailscale-app).
-4. HTTPS (aanbevolen): zet **MagicDNS** en **HTTPS-certificaten** aan in de Tailscale-beheerconsole, voer `sudo tailscale serve --bg 5000` uit op de NAS en zet in `.env`:
+4. HTTPS (aanbevolen), kies een van twee manieren (details: [SECURITY-NL.md](SECURITY-NL.md), optie A):
+   - **Manier 1: je eigen domein via de reverse proxy van DSM** (handig als je al een reverse proxy gebruikt, bv. `https://bunq.jouwdomein.nl` thuis). Geef je LAN door als subnet route (`sudo tailscale set --advertise-routes=192.168.1.0/24`, keur die goed in de beheerconsole onder Machines → NAS → Edit route settings), laat een lokale DNS-server (bv. het Synology-pakket DNS Server) `bunq.jouwdomein.nl` naar het LAN-IP van de NAS verwijzen, en voeg die DNS-server toe in de beheerconsole onder DNS → Nameservers → Custom met "Restrict to domain" (split DNS). De reverse proxy van DSM (stap 4.3) serveert het dashboard dan op poort 443, thuis en via Tailscale. Sta `100.64.0.0/10` toe in het toegangsbeheerprofiel. `tailscale serve` is dan niet nodig.
+   - **Manier 2: `tailscale serve`**: zet **MagicDNS** en **HTTPS-certificaten** aan in de beheerconsole en voer `sudo tailscale serve --bg 5000` uit op de NAS. Dit stuurt al het verkeer naar poort 443 van `nas.<jouw-tailnet>.ts.net` naar het dashboard. Wil je 443 vrijhouden, gebruik dan `sudo tailscale serve --bg --https=8443 5000` (en zet `:8443` in `ALLOWED_ORIGINS`).
+     - Alleen de eerste keer: antwoordt Tailscale met `Serve is not enabled on your tailnet` en een link, open die link als beheerder van het tailnet, bevestig, en voer het commando opnieuw uit.
+     - Controleer met `sudo tailscale serve status`: er moet "(tailnet only)" staan, nooit "Funnel on". Verwijderen: `sudo tailscale serve --https=443 off` (status toont dan `No serve config`).
+
+   Zet daarna in `.env` de URL die je opent (meerdere: gescheiden door komma's) en doe een volledige deploy (configwijziging):
    ```bash
-   ALLOWED_ORIGINS=https://nas.<jouw-tailnet>.ts.net
+   ALLOWED_ORIGINS=https://bunq.jouwdomein.nl   # manier 1, of https://nas.<jouw-tailnet>.ts.net bij manier 2
    SESSION_COOKIE_SECURE=true
    ```
-   Doe daarna een volledige deploy (configwijziging).
-   - Alleen de eerste keer: antwoordt Tailscale met `Serve is not enabled on your tailnet` en een link, open die link als beheerder van het tailnet, bevestig, en voer `sudo tailscale serve --bg 5000` opnieuw uit.
-   - Controleer met `sudo tailscale serve status`: er moet "(tailnet only)" staan, nooit "Funnel on".
 5. Gebruik nooit `tailscale funnel` (dat zet het dashboard op internet) en laat de NAS geen exit node gebruiken (Bunq ziet dan een ander publiek IP).
 
 **VPN:** Synology VPN Server (OpenVPN); zie [SECURITY-NL.md](SECURITY-NL.md), optie B.
@@ -482,12 +485,13 @@ Zet poort 5000 nooit open op je router. Wil je het dashboard buitenshuis gebruik
 Configuratiescherm → Beveiliging → Firewall → Regels bewerken
 ├── Toestaan: poorten 5000, 9000 vanaf 192.168.0.0/16 (lokaal netwerk)
 ├── Toestaan: poort 5000 vanaf 100.64.0.0/10 (alleen bij Tailscale)
+├── Toestaan: poort 443 vanaf 100.64.0.0/10 (alleen bij Tailscale manier 1: reverse proxy)
 └── Weigeren: alle andere IP's
 ```
 
 ### Stap 4.3: Reverse proxy met HTTPS (aanbevolen)
 
-Met Tailscale geeft `tailscale serve` (stap 4.1) het dashboard al HTTPS; voor Vaultwarden heb je nog steeds een reverse proxy met HTTPS nodig (stap 2.7).
+De reverse proxy serveert het dashboard thuis en, met Tailscale manier 1 (stap 4.1), ook van buitenaf. Gebruik je in plaats daarvan `tailscale serve` (manier 2), dan heeft het dashboard via Tailscale al HTTPS; voor Vaultwarden heb je nog steeds een reverse proxy met HTTPS nodig (stap 2.7).
 
 ```text
 Configuratiescherm → Aanmeldingsportaal → Geavanceerd → Reverse proxy → Maken

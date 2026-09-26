@@ -36,7 +36,7 @@
 - De Nederlandse documentatie gebruikt de Nederlandse knopnamen van het beheeronderhoud.
 
 ### Documentatie
-- Toegang van buitenaf via **Tailscale** als alternatief voor een VPN (installeren, HTTPS met `tailscale serve`, firewall, waarschuwingen voor exit node en funnel) in SECURITY, SYNOLOGY_INSTALL, TROUBLESHOOTING en README.
+- Toegang van buitenaf via **Tailscale** als alternatief voor een VPN (installeren, HTTPS via je eigen domein en de reverse proxy van DSM (subnet route + split DNS) of optioneel `tailscale serve`, firewall, waarschuwingen voor exit node en funnel) in SECURITY, SYNOLOGY_INSTALL, TROUBLESHOOTING en README.
 - De Engelse documentatie gebruikt de Engelse namen uit het dashboard (met een tabel van interne categorienamen voor eigen regels); de Nederlandse documentatie gebruikt alleen nog Engels voor ingeburgerde computertermen.
 - Voorbeelden verwijzen niet meer naar persoonlijke situaties; gekoppelde rekeningen bij andere banken worden algemeen beschreven (ook in de dashboardteksten).
 - Engelse en Nederlandse documentatie hebben nu dezelfde opbouw en inhoud: `SECURITY`, `SYNOLOGY_INSTALL` en `TROUBLESHOOTING` zijn in beide talen volledige gidsen (de Engelse versies waren korte samenvattingen, de Nederlandse deels Engels).

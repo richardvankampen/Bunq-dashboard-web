@@ -4,6 +4,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — docs: `tailscale serve` optioneel, eigen domein via reverse proxy
+
+- Aanleiding: `tailscale serve --bg 5000` stuurt al het verkeer op poort 443 van de ts.net-naam naar het dashboard; gebruiker wil liever het eigen domein via de lokale DNS-server en de reverse proxy van DSM (zoals thuis).
+- Wat: SECURITY, SYNOLOGY_INSTALL en TROUBLESHOOTING (EN+NL): HTTPS via Tailscale op twee manieren — 1) eigen domein: subnet route (`--advertise-routes`, goedkeuren), lokale DNS-server + split DNS in de beheerconsole, reverse proxy met toegangsprofiel incl. `100.64.0.0/10`; 2) optioneel `tailscale serve` (neemt 443; alternatief `--https=8443`; verwijderen met `--https=443 off`). Firewallregel 443 vanaf `100.64.0.0/10` bij manier 1; probleemoplossing voor route/DNS en een achtergebleven serve-config.
+- Resultaat: alleen documentatie; EN en NL gelijk.
+
 ### Opgeleverd — docs: eenmalige toestemming voor Tailscale Serve
 
 - Aanleiding: `sudo tailscale serve --bg 5000` gaf "Serve is not enabled on your tailnet" met een toestemmingslink.
