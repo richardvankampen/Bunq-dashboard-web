@@ -4,6 +4,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — documentatie: Engelse termen, Tailscale, geen persoonlijke situaties
+
+- Vraag: Nederlandse termen uit de Engelse documentatie halen (UI is nu tweetalig), in de Nederlandse documentatie alleen ingeburgerde computertermen in het Engels; Tailscale als alternatief voor VPN; persoonlijke situaties weghalen of generiek maken.
+- Wat: README EN/NL herschreven (Engelse resp. Nederlandse widgetnamen, tabel interne categorienamen ↔ weergave, generieke regelvoorbeelden, Tailscale); RELEASE_NOTES EN 2026-09-25 in Engelse UI-namen, NL zonder onnodig Engels; SECURITY: sectie "VPN of Tailscale" (optie A Tailscale, optie B VPN Server), firewall/iptables voor `100.64.0.0/10`, HTTPS via `tailscale serve`; SYNOLOGY_INSTALL: stap 4.1 toegang van buitenaf (stappen hernummerd); TROUBLESHOOTING: exit node, ALLOWED_ORIGINS met ts.net, sectie 13 Tailscale; Engelse woorden in NL-docs vervangen (flow, mismatch, allowlist, fallback …). Persoonlijk: alimentatie-/banknaam-/rekeningnaamvoorbeelden generiek in docs, UI-teksten (ook bij andere banken), codecommentaar, tests (naam en bank in testdata) en interne notities.
+- Verificatie: pytest 337 groen; zoekcontrole op persoonsnamen en banknaam in de repo leeg (behalve de GitHub-URL van de repository).
+
 ### Opgeleverd — beheeronderhoud: uitleg per situatie, knop en optie
 
 - Vraag: zijn de instructies in het beheerscherm duidelijk genoeg (wat doet een commando, welke opties, wanneer wat) en koppel commando's aan situaties.
@@ -23,7 +29,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   7. Echte-data-schakelaar sloeg `true` op vóór de logincheck → pas opslaan na geldige keuze.
   8. Filter/selectie wijzigen haalde alles opnieuw op (en herschudde demodata) → alleen opnieuw tekenen.
   9. Periode werd niet onthouden → `timeRange` in localStorage.
-  10. Helptekst interne overboekingen noemt nu ook gekoppelde externe rekeningen (Triodos); uitleg bij interval en rekeningselectie.
+  10. Helptekst interne overboekingen noemt nu ook gekoppelde externe rekeningen (externe bankrekening); uitleg bij interval en rekeningselectie.
 - Verificatie: pytest 337 groen; headless Chromium met gemockte API: verouderde id 99 + alles geselecteerd → `[]`, geen `account_ids` in de request, sluiten zonder opslaan verandert niets, opslaan met 2 van 3 rekeningen → uitgaven €1.814 → €1.214 zonder nieuwe request, interval 5 → timer aan, 0 → uit, ongeldig endpoint → melding en paneel blijft open, leeg → standaard, periode 30 na herladen behouden, geen JS-fouten.
 
 ### Opgeleverd — taalkeuze NL/EN in het dashboard
@@ -52,15 +58,15 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ### Opgeleverd — datakwaliteit gecontroleerd en gecorrigeerd
 
-- 6 bevindingen opgelost: dubbele waarschuwingen (backend + frontend in andere woorden, telling tot 2× te hoog) → één lijst; popup mengde selectie-aantallen met backend-bedragen → alles uit dezelfde set; interne overboekingen telden als goed gecategoriseerde uitgave (en Triodos als ongecategoriseerd) → echte uitgaven; "cache ouder dan 24 uur" op rustige dagen → versheid uit laatste sync; vaste drempel 120 in backend → geschaald; Engelse/technische teksten (`Unknown`, `exclude_internal=true`, FX-advies, "non-EUR", "real data") → Nederlands.
+- 6 bevindingen opgelost: dubbele waarschuwingen (backend + frontend in andere woorden, telling tot 2× te hoog) → één lijst; popup mengde selectie-aantallen met backend-bedragen → alles uit dezelfde set; interne overboekingen telden als goed gecategoriseerde uitgave (en externe bankrekeningen als ongecategoriseerd) → echte uitgaven; "cache ouder dan 24 uur" op rustige dagen → versheid uit laatste sync; vaste drempel 120 in backend → geschaald; Engelse/technische teksten (`Unknown`, `exclude_internal=true`, FX-advies, "non-EUR", "real data") → Nederlands.
 - Verificatie: pytest 307 groen (nieuw: interne overboeking geen uitgave in backend-metrics; versheid volgt laatste sync); headless Chromium met gemockte backend-samenvatting met dubbele waarschuwingen en afwijkend bedrag: één waarschuwing, bedragen gelijk aan aantallen-basis, geen JS-fouten.
 
-### Opgeleverd — inzichten opnieuw gecontroleerd + alimentatie + eigen categorieregels
+### Opgeleverd — inzichten opnieuw gecontroleerd + categorie alimentatie + eigen categorieregels
 
-- 7 bevindingen opgelost: Duurste dag (was huur-/alimentatiedag) → alleen variabele uitgaven; Aandeel top-tegenrekening (was verhuurder) → zonder wonen/belastingen/alimentatie; Liquiditeitsrunway: burn over alle rekeningen zoals het saldo, Nederlandse notatie; Verwacht netto en runway-fallback zonder eigen overboekingen; Grootste categorie + grootste variabele; "zekerheid x%" met uitleg; "Last updated" → "Laatst bijgewerkt".
-- Gebruiker: alimentatie gaat vanaf eigen subrekening "Alimentatie" naar een persoon, zonder trefwoord. Nieuwe categorie `Alimentatie` (trefwoorden + hint uit eigen rekeningnaam, noodzakelijk/vast/niet-stuurbaar) en eigen regels in `config/category_rules.json` (niet in git; geen namen in code). `CATEGORIZATION_VERSION` 5 (+ hash eigen regels).
-- Gevonden bij de browsercheck: `isInternalOwnTransfer` zag categorie = eigen rekeningnaam als interne overboeking, waardoor de alimentatie vanaf "Alimentatie" uit alle cijfers verdween → check verwijderd.
-- Verificatie: pytest 305 groen; headless Chromium: alimentatie €800/mnd vanaf subrekening telt als noodzakelijk (N 108% bij €2.000 inkomen), Duurste dag = boodschappendag, top-tegenrekening Albert Heijn (71,4% van stuurbare uitgaven), runway 1.479 dagen ook met alleen de betaalrekening geselecteerd (was ∞), geen JS-fouten.
+- 7 bevindingen opgelost: Duurste dag (was de dag van een vaste last) → alleen variabele uitgaven; Aandeel top-tegenrekening (was verhuurder) → zonder wonen/belastingen/alimentatie; Liquiditeitsrunway: burn over alle rekeningen zoals het saldo, Nederlandse notatie; Verwacht netto en runway-fallback zonder eigen overboekingen; Grootste categorie + grootste variabele; "zekerheid x%" met uitleg; "Last updated" → "Laatst bijgewerkt".
+- Aanleiding: een vaste betaling vanaf een eigen subrekening die naar zijn doel is genoemd, zonder trefwoord in de omschrijving. Nieuwe categorie `Alimentatie` (trefwoorden + hint uit eigen rekeningnaam, noodzakelijk/vast/niet-stuurbaar) en eigen regels in `config/category_rules.json` (niet in git; geen namen in code). `CATEGORIZATION_VERSION` 5 (+ hash eigen regels).
+- Gevonden bij de browsercheck: `isInternalOwnTransfer` zag categorie = eigen rekeningnaam als interne overboeking, waardoor zo'n betaling vanaf een subrekening met een categorienaam uit alle cijfers verdween → check verwijderd.
+- Verificatie: pytest 305 groen; headless Chromium: vaste betaling vanaf een naar zijn doel genoemde subrekening telt als noodzakelijk, Duurste dag = boodschappendag, top-tegenrekening Albert Heijn (71,4% van stuurbare uitgaven), runway 1.479 dagen ook met alleen de betaalrekening geselecteerd (was ∞), geen JS-fouten.
 
 ### Opgeleverd — trendlogica gecontroleerd en gecorrigeerd
 
@@ -78,9 +84,9 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - 4 bevindingen, allemaal opgelost:
   1. Zonder inkomsten toonde `Spaarquote` `0.0%` → `n.v.t.` met uitleg.
   2. Alleen spaarrekeningen geselecteerd → noemer was alleen rente (bv. 20000%) → `n.v.t.` zonder inkomsten behalve rente.
-  3. Overboekingen tussen eigen Triodos-rekening en spaarrekeningen telden als sparen → uitgesloten uit `Sparen`/`Spaarquote`/`Spaarrekening mutaties` (keuze gebruiker).
+  3. Overboekingen tussen eigen rekening bij een andere bank en spaarrekeningen telden als sparen → uitgesloten uit `Sparen`/`Spaarquote`/`Spaarrekening mutaties` (keuze gebruiker).
   4. Percentages `16.7%` en `N/A` → Nederlands formaat `16,7%`, `n.v.t.`.
-- Verificatie: headless Chromium met gemockte API: Sparen €1.005 zonder €2.000 van Triodos, Spaarquote `16,7%`, alleen spaarrekeningen → `n.v.t.` met tooltip, geen JS-fouten; pytest 298 groen.
+- Verificatie: headless Chromium met gemockte API: Sparen €1.005 zonder €2.000 van een externe bankrekening, Spaarquote `16,7%`, alleen spaarrekeningen → `n.v.t.` met tooltip, geen JS-fouten; pytest 298 groen.
 
 ### Opgeleverd — uitgavenlogica gecontroleerd en gecorrigeerd
 
@@ -101,8 +107,8 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   4. `Verdeling in categorieën` telde terugbetalingen als inkomen → verlagen nu hun aankoopcategorie.
   5. `/api/statistics` telde terugbetalingen als inkomen → gelijk aan tegels.
   6. Geen onderscheid vast/incidenteel → inkomstendetail splitst en toont incidentele posten.
-  - Gebruikerswens: overboekingen met eigen Triodos-rekening zijn geen inkomen (en geen uitgave); Triodos blijft buiten de interne-overboekingsvlag.
-- Verificatie: pytest 298 groen, pyflakes schoon; headless Chromium met gemockte API: inkomen €16.450 (excl. €1.000 van Triodos en €20 terugbetaling), uitgaven €5.180 (excl. €500 naar Triodos), werkgever "Periode x" herkend als vast inkomen en salaris van de 30e naar de juiste maand (elke maand €3.200), popup vast €16.300 / incidenteel €150, categorie-ring zonder terugbetaling als inkomen, geen JS-fouten.
+  - Gebruikerswens: overboekingen met eigen rekening bij een andere bank zijn geen inkomen (en geen uitgave); de externe rekening blijft buiten de interne-overboekingsvlag.
+- Verificatie: pytest 298 groen, pyflakes schoon; headless Chromium met gemockte API: inkomen €16.450 (excl. €1.000 van een externe bankrekening en €20 terugbetaling), uitgaven €5.180 (excl. €500 naar externe bankrekening), werkgever "Periode x" herkend als vast inkomen en salaris van de 30e naar de juiste maand (elke maand €3.200), popup vast €16.300 / incidenteel €150, categorie-ring zonder terugbetaling als inkomen, geen JS-fouten.
 
 ### Opgeleverd — budgetlogica gecontroleerd en gecorrigeerd
 
@@ -134,7 +140,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - Review van spaarrekening-classificatie, `Sparen`/`Savings Rate`, saldo-tegels en 50/30/20; 8 bevindingen, allemaal opgelost:
   1. Saldohistorie alleen uit snapshots (dagen waarop het dashboard open was; ontbrekende spaarsnapshot = €0-dip; oude classificatie) → `build_balance_history_from_store()` reconstrueert uit de transactie-opslag per Nederlandse dag; snapshots alleen als fallback.
   2. Frontend-fallback reconstrueerde uit gefilterde data (interne overboekingen eruit → spaarlijn vlak) → ongefilterde data.
-  3. Rekeningnaam "Shared household"/"Stockholm reis" → belegging → korte hints alleen als heel woord (backend + frontend); frontend volgt backend-type.
+  3. Rekeningnamen met een kort woord als "share"/"stock" → belegging → korte hints alleen als heel woord (backend + frontend); frontend volgt backend-type.
   4. `Sparen` = €0 als spaarrekeningen niet geselecteerd → overboekingen vanaf geselecteerde rekeningen naar niet-geselecteerde spaarrekeningen tellen mee.
   5. Twee betekenissen van "sparen" → 50/30/20 en actieplan heten nu "overgehouden" (inkomen − uitgaven), met uitleg; `Sparen` = stortingen op spaarrekeningen.
   6. Spaar→spaar alleen via backend-vlag → ook op id/IBAN/naam.
@@ -270,7 +276,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - Nieuwe map `tests/` (158 tests, draait in <1s, geen netwerk/Bunq/Vaultwarden/Docker nodig):
   - `conftest.py`: zet env vóór import (`USE_VAULTWARDEN=false`, lege `BUNQ_API_KEY`, `BUNQ_INIT_AUTO_ATTEMPT=false`, `DATA_DB_ENABLED=false`, vaste testcredentials) en reset de globale rate limiter per test.
   - `test_helpers.py`: env/config helpers, `safe_float`, `parse_monetary_value`, `clamp_days`, `parse_pagination`, IBAN/alias-extractie, datetime/IPv4-validatie, whitelist-helpers, `RateLimiter` (limieten, window, sweep).
-  - `test_internal_transfers.py`: `is_own_bunq_account` (Triodos `MonetaryAccountExternal` niet intern, `ExternalSavings` wel), eigen account-ids/IBANs, `reconcile_internal_transfers` (payment-id + minuut + bedrag + valuta, tegengesteld teken, verschillende eigen rekeningen).
+  - `test_internal_transfers.py`: `is_own_bunq_account` (externe bankrekening `MonetaryAccountExternal` niet intern, `ExternalSavings` wel), eigen account-ids/IBANs, `reconcile_internal_transfers` (payment-id + minuut + bedrag + valuta, tegengesteld teken, verschillende eigen rekeningen).
   - `test_categorization.py`: MCC-mapping, tekstregels, inkomende-bedragregels, `classify_account_type`.
   - `test_auth_routes.py`: login/logout/status, cookie-flags, login rate limit (5/min → 429), 401 op beschermde endpoints, verlopen/ongeldige sessie, static allowlist (geen `api_proxy.py`/`.env` etc.), liveness/readiness.
 - `README.md` / `README-NL.md`: sectie over tests draaien toegevoegd.
@@ -335,7 +341,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `persist_transactions`: individuele `execute()` per rij vervangen door `executemany()`.
 - `CLAUDE.md` toegevoegd aan repo root voor Claude Code sessie-context.
 - Workflow hersteld: alle wijzigingen via lokale Mac repo → commit → push → `git pull` op Synology.
-- `gh` CLI geïnstalleerd en geauthenticeerd (`richardvankampen`).
+- `gh` CLI geïnstalleerd en geauthenticeerd.
 
 ## 2026-03-06
 
@@ -467,7 +473,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - Widgetfiltering aangescherpt:
   - `Top tegenrekeningen` en `Verdeling in categorieën` gebruiken nu extra widgetfilter op interne/eigen tegenrekeningen.
   - filtering gebruikt `is_internal_transfer` + deterministische checks op eigen account-id, eigen IBAN en eigen Bunq-rekeningnaam.
-  - doel: interne tegenrekeninglabels (zoals `Richard`) uit deze twee widgets verwijderen.
+  - doel: interne tegenrekeninglabels (de eigen naam) uit deze twee widgets verwijderen.
 
 - Persoonsnaam-gebaseerde internal-transfer workarounds verwijderd (deterministische matching):
   - backend internal detectie gebruikt nu alleen account-id en IBAN-signalen (`counterparty_alias`, `monetary_account_counterparty`, `merchant_reference`);
@@ -481,7 +487,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - `/api/accounts` bevat nu `ibans` per account (naast `identity_names`);
   - frontend fallback gebruikt `counterparty_iban` vs eigen `ibans`, zodat interne transacties ook zonder goede naamherkenning weggefilterd worden.
 
-- Interne tegenpartij op eigen naam (bijv. `Richard`) nu ook gefilterd:
+- Interne tegenpartij op eigen naam (bijv. de eigen naam) nu ook gefilterd:
   - backend identity-extractie uitgebreid met account-houder/co-owner/aliasnamen (`display_name`, `public_nick_name`, `first_name + last_name`, etc.);
   - `extract_own_account_names(...)` gebruikt nu deze bredere identity-set, zodat interne transacties zonder bruikbaar account-id/IBAN alsnog als intern worden gemarkeerd;
   - `/api/accounts` levert per rekening `identity_names` mee;
@@ -533,12 +539,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
   - download-icoon verwijderd van `Cashflow (tijdslijn)`; detailview toegevoegd via actieknop.
   - nieuwe `cashflow` second-view toont individuele bij-/afschrijvingen met dezelfde sorteer/zoektabel.
 - Internal-transfer filtering verder gecorrigeerd voor externe rekeningen:
-  - backend detectie behandelt alleen eigen Bunq-rekeningen als intern; `MonetaryAccountExternal` (zoals Triodos) wordt expliciet extern gehouden.
+  - backend detectie behandelt alleen eigen Bunq-rekeningen als intern; `MonetaryAccountExternal` (externe bankrekening) wordt expliciet extern gehouden.
   - frontend fallback filter gebruikt nu ook `counterparty_account_id` naast naammatching.
-  - gevolg: interne overboekingen worden consistenter weggefilterd bij uitgaven/inkomsten, terwijl Triodos-transacties extern blijven.
+  - gevolg: interne overboekingen worden consistenter weggefilterd bij uitgaven/inkomsten, terwijl transacties van externe bankrekeningen extern blijven.
 - Balansweergave opgeschoond:
   - `Betaalrekeningen (totaal)`/`Spaarrekeningen (totaal)` detail blijft grafiek-only (geen dubbele tekstopsomming).
-  - berekening voor balans-KPI’s gebruikt alleen eigen Bunq-rekeningen (Triodos buiten de Bunq checking/savings widgets).
+  - berekening voor balans-KPI’s gebruikt alleen eigen Bunq-rekeningen (externe bankrekeningen buiten de Bunq checking/savings widgets).
 
 - Frontend second-view feedback verwerkt:
   - dubbele oude individuele opsomming verwijderd in detailmodals waar de nieuwe transactietabel actief is (inkomsten/uitgaven/spaarmutaties).

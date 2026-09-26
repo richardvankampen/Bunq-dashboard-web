@@ -2934,7 +2934,7 @@ def extract_account_ibans(account):
 def is_own_bunq_account(account):
     """
     Internal transfer detection should only treat Bunq-owned monetary accounts
-    as internal. Linked external accounts (e.g. Triodos) must remain external.
+    as internal. Linked external accounts (e.g. an account at another bank) must remain external.
     """
     class_name = _normalize_account_type_text(
         get_obj_field(account, '_raw_type', default=(account.__class__.__name__ if account is not None else ''))
@@ -2946,7 +2946,7 @@ def is_own_bunq_account(account):
     return True
 
 def extract_linked_external_ibans(accounts):
-    """IBANs of the user's linked external accounts (e.g. Triodos): own money, but not Bunq-internal."""
+    """IBANs of the user's linked external accounts (e.g. an account at another bank): own money, but not Bunq-internal."""
     ibans = set()
     for account in accounts or []:
         if is_own_bunq_account(account):
@@ -6247,7 +6247,7 @@ _INCOMING_KEEP_CATEGORIES = frozenset({
     'Belastingen', 'Verzekering', 'Wonen', 'Rente', 'Salaris', 'Uitkeringen', 'Alimentatie', 'Overig',
 })
 
-# Own sub-accounts named after what they pay for (e.g. "Alimentatie", "Boodschappen"): used
+# Own sub-accounts named after what they pay for (e.g. "Boodschappen", "Huur"): used
 # for outgoing payments the other rules can't place. Stems, matched in the account name only.
 _ACCOUNT_NAME_HINTS = (
     ('Alimentatie', ('alimentatie',)),
@@ -6265,7 +6265,7 @@ _ACCOUNT_NAME_HINTS = (
 )
 
 # Personal rules (not in git): config/category_rules.json, e.g.
-# {"rules": [{"category": "Alimentatie", "account": "Alimentatie"},
+# {"rules": [{"category": "Wonen", "account": "Huur"},
 #            {"category": "Sport", "counterparty": "Tennisclub"},
 #            {"category": "Wonen", "iban": "NL00BANK0123456789"},
 #            {"category": "Zorg", "description": "fysio"}]}
@@ -6388,7 +6388,7 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
     """
     Rule-based categorization: personal rules (config/category_rules.json) first, then the
     merchant category code, then text rules; an outgoing payment nothing places falls back
-    to the name of the own account it comes from (e.g. sub-account "Alimentatie").
+    to the name of the own account it comes from (e.g. sub-account "Boodschappen").
     """
     if is_internal:
         return 'Internal Transfer'
@@ -6575,7 +6575,7 @@ def get_statistics():
         
         if exclude_internal:
             all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]
-        # Transfers with the user's own linked external accounts (e.g. Triodos) are neither
+        # Transfers with the user's own linked external accounts (e.g. an account at another bank) are neither
         # income nor spending (they stay out of the internal-transfer filter).
         linked_external_ibans = extract_linked_external_ibans(accounts)
         all_transactions = [

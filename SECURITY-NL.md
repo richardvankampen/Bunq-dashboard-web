@@ -24,7 +24,7 @@ Het dashboard is gebouwd voor een privé, alleen-lezen overzicht van je financi�
 | **Authenticatie** | Sessiegebaseerd, sessiecookie server-side |
 | **Cookies** | `HttpOnly`, `SameSite=Lax`, standaard `Secure` |
 | **Geheimbeheer** | Vaultwarden (Bunq API key) + Docker Swarm secrets |
-| **Netwerktoegang** | Alleen via VPN, geen port forwarding |
+| **Netwerktoegang** | Alleen via VPN of Tailscale, geen port forwarding |
 | **Rate limiting** | 30 verzoeken/min op de API, 5 inlogpogingen/min |
 | **Sessieduur** | 24 uur |
 | **Wachtwoordcontrole** | Constant-time vergelijking |
@@ -34,15 +34,47 @@ Het dashboard is gebouwd voor een privé, alleen-lezen overzicht van je financi�
 
 ## 🛡️ Kritieke eisen
 
-### 1. ⚠️ Alleen toegang via VPN
+### 1. ⚠️ Alleen privé toegang: VPN of Tailscale
 
-**Waarom:** je financiële data mag nooit vanaf internet bereikbaar zijn.
+**Waarom:** je financiële gegevens mogen nooit vanaf internet bereikbaar zijn.
 
 Eisen:
-- ✅ Open het dashboard alleen via je VPN
+- ✅ Open het dashboard alleen vanuit je thuisnetwerk, via een VPN of via Tailscale
 - ✅ Zet poort 5000 nooit open op je router
-- ✅ Houd het dashboard in een privé LAN/VPN-segment
-- ✅ Gebruik Synology VPN Server (OpenVPN of L2TP/IPSec) of een vergelijkbare VPN
+- ✅ Houd het dashboard in een afgeschermd deel van je netwerk
+
+Kies een van de twee opties hieronder. Tailscale heeft geen open poort op je router nodig en is het eenvoudigst in te stellen; een klassieke VPN houdt alles op je eigen apparatuur.
+
+#### Optie A: Tailscale (aanbevolen voor toegang van buitenaf)
+
+Tailscale maakt een privénetwerk (een "tailnet") tussen je eigen apparaten, gebaseerd op WireGuard. Op je router gaat niets open.
+
+```text
+1. Maak een Tailscale-account (tailscale.com) en log in op je telefoon/laptop met de Tailscale-app.
+2. Synology: Package Center → zoek "Tailscale" → Installeren → openen en inloggen met hetzelfde account.
+3. In de Tailscale-beheerconsole (login.tailscale.com → Machines): noteer de naam van de NAS
+   (bv. nas) en het Tailscale-IP (100.x.y.z). Zet eventueel "key expiry" uit voor de NAS.
+4. Open het dashboard vanaf een apparaat in je tailnet: http://100.x.y.z:5000
+```
+
+**HTTPS met een Tailscale-naam (aanbevolen):** zet **MagicDNS** en **HTTPS-certificaten** aan in de beheerconsole (pagina DNS), en voer daarna op de NAS via SSH uit:
+```bash
+sudo tailscale serve --bg 5000
+# Het dashboard staat nu op https://nas.<jouw-tailnet>.ts.net (alleen binnen je tailnet)
+```
+Zet in `.env` en doe een volledige deploy (configwijziging):
+```bash
+ALLOWED_ORIGINS=https://nas.<jouw-tailnet>.ts.net
+SESSION_COOKIE_SECURE=true
+```
+
+Tips voor Tailscale:
+- Gebruik **alleen `tailscale serve`**, nooit `tailscale funnel`: funnel zet het dashboard op internet.
+- Laat de NAS **geen exit node** gebruiken: Bunq ziet dan het publieke IP van de exit node, en dat staat niet op je Bunq-whitelist.
+- Deel de NAS alleen met je eigen apparaten; met Tailscale-ACL's kun je beperken welke gebruikers/apparaten poort 5000 bereiken.
+- Blokkeert de Synology-firewall het Tailscale-verkeer, sta dan `100.64.0.0/10` (het Tailscale-adresbereik) toe voor poort 5000 (zie Firewall hieronder).
+
+#### Optie B: Synology VPN Server
 
 **VPN instellen (Synology):**
 
@@ -61,15 +93,18 @@ Clients:
 Windows: OpenVPN GUI · Mac: Tunnelblick · iOS/Android: OpenVPN Connect · Linux: openvpn
 ```
 
-**Controleer de VPN van buiten je netwerk (bv. telefoon op mobiele data):**
+#### Controleer van buiten je netwerk (bv. telefoon op mobiele data)
+
 ```bash
-# Zonder VPN:
-curl http://192.168.1.100:5000
+# Zonder VPN/Tailscale verbonden:
+curl http://<je-publieke-ip>:5000
 # Moet een time-out geven (niet bereikbaar)
 
 # Met VPN verbonden:
 curl http://192.168.1.100:5000
-# Geeft het dashboard terug
+# Met Tailscale verbonden:
+curl http://100.x.y.z:5000
+# Beide geven het dashboard terug
 ```
 
 ---
@@ -119,7 +154,7 @@ Eisen:
 Aanbevolen instellingen:
 - `USE_VAULTWARDEN=true`
 - `VAULTWARDEN_ACCESS_METHOD=cli` (ontsleutelt het vault-item via de `bw` CLI)
-- `VAULTWARDEN_URL=https://...` (de CLI-flow vereist HTTPS)
+- `VAULTWARDEN_URL=https://...` (de CLI-route vereist HTTPS)
 
 **Vaultwarden hardening (in de compose van Vaultwarden zelf):**
 ```yaml
@@ -180,7 +215,7 @@ ALLOWED_ORIGINS=https://bunq.jouwdomein.nl   # alleen jouw origin, geen wildcard
 # Vaultwarden
 USE_VAULTWARDEN=true
 VAULTWARDEN_ACCESS_METHOD=cli
-VAULTWARDEN_URL=https://vault.jouwdomein.nl  # CLI-flow vereist HTTPS
+VAULTWARDEN_URL=https://vault.jouwdomein.nl  # CLI-route vereist HTTPS
 
 # Bunq
 BUNQ_ENVIRONMENT=PRODUCTION
@@ -232,7 +267,7 @@ Houd deze map buiten git (dat is al zo), geef alleen beheerders toegang en neem 
 Bunq API keys kunnen aan IP-adressen gebonden zijn. Het publieke egress-IP van je container moet dan zijn toegestaan, anders krijg je
 `Incorrect API key or IP address`.
 
-**Na rotatie van de API key of een netwerk-/VPN-wijziging:**
+**Na rotatie van de API key of een netwerkwijziging (nieuwe provider, router, VPN of Tailscale-exit node):**
 ```bash
 cd /volume1/docker/bunq-dashboard
 sudo env NO_PROMPT=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard
@@ -242,8 +277,8 @@ sudo env NO_PROMPT=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard
 
 Het script:
 - toont het huidige publieke egress-IP van de container
-- gebruikt een veilige Bunq-allowlistupdate in 2 stappen (eerst activeren, daarna andere deactiveren)
-- controleert bij de directe key-flow het formaat van het secret `bunq_api_key`
+- gebruikt een veilige update van de Bunq-whitelist in 2 stappen (eerst activeren, daarna andere deactiveren)
+- controleert bij een directe key het formaat van het secret `bunq_api_key`
 - maakt een nieuwe Bunq `ApiContext` (installation + device-registratie)
 - herstart de service en toont de relevante logs
 - vergelijkt het egress-IP met de actieve whitelist en stopt met een herstelcommando als ze niet overeenkomen
@@ -267,8 +302,13 @@ Het script:
 Configuratiescherm → Beveiliging → Firewall → Regels bewerken
 
 Toestaan-regel:
-├── Poorten: 5000 (dashboard), je Vaultwarden-poort, 1194 (VPN)
+├── Poorten: 5000 (dashboard), je Vaultwarden-poort, 1194 (VPN, alleen bij optie B)
 ├── Bron-IP: 192.168.0.0/16 (alleen lokaal netwerk)
+└── Actie: Toestaan
+
+Toestaan-regel (alleen bij Tailscale):
+├── Poorten: 5000
+├── Bron-IP: 100.64.0.0/10 (Tailscale-adresbereik)
 └── Actie: Toestaan
 
 Weigeren-regel (daaronder):
@@ -280,7 +320,9 @@ Weigeren-regel (daaronder):
 ```bash
 # Alleen lokaal netwerk
 sudo iptables -A INPUT -p tcp --dport 5000 -s 192.168.0.0/16 -j ACCEPT
-# VPN
+# Tailscale (alleen bij optie A)
+sudo iptables -A INPUT -p tcp --dport 5000 -s 100.64.0.0/10 -j ACCEPT
+# VPN (alleen bij optie B)
 sudo iptables -A INPUT -p udp --dport 1194 -j ACCEPT
 # Al het andere op de dashboardpoort weigeren
 sudo iptables -A INPUT -p tcp --dport 5000 -j DROP
@@ -288,6 +330,8 @@ sudo iptables-save > /etc/iptables/rules.v4
 ```
 
 ### Reverse proxy met HTTPS (aanbevolen)
+
+Met Tailscale geeft `tailscale serve` (optie A hierboven) al HTTPS met een geldig certificaat; de reverse proxy hieronder is dan voor het dashboard niet nodig.
 
 **Synology reverse proxy:**
 ```text
@@ -381,7 +425,7 @@ Houd de health-endpoints in de gaten:
 - Dashboardwachtwoord wijzigen (`bunq_basic_auth_password`)
 - Optioneel de Bunq API key roteren: nieuwe key in de Bunq-app, bijwerken in Vaultwarden, `register_bunq_ip.sh` draaien, testen
 - Bijwerken naar de nieuwste code: `sudo sh scripts/install_or_update_synology.sh`
-- Testen dat de VPN werkt en het dashboard zonder VPN niet bereikbaar is
+- Testen dat de VPN of Tailscale werkt en het dashboard zonder niet bereikbaar is
 
 **Jaarlijks:**
 - Alle inloggegevens roteren, ook `bunq_flask_secret_key`
@@ -436,7 +480,7 @@ sudo tar -czf bunq-dashboard-incident-$(date +%Y%m%d).tar.gz /volume1/docker/bun
 ## 📋 Beveiligingschecklist
 
 ### Eerste installatie
-- [ ] VPN geïnstalleerd en getest
+- [ ] VPN of Tailscale geïnstalleerd en getest (geen `tailscale funnel`, geen exit node op de NAS)
 - [ ] Firewallregels blokkeren toegang van buiten
 - [ ] Poort 5000 NIET doorgestuurd op de router
 - [ ] Vaultwarden met sterk hoofdwachtwoord en `SIGNUPS_ALLOWED=false`
@@ -458,7 +502,7 @@ sudo tar -czf bunq-dashboard-incident-$(date +%Y%m%d).tar.gz /volume1/docker/bun
 ### Per kwartaal
 - [ ] Dashboardwachtwoord gewijzigd
 - [ ] Code en images bijgewerkt
-- [ ] VPN-only toegang opnieuw getest
+- [ ] Toegang alleen via VPN/Tailscale opnieuw getest
 
 ### Jaarlijks
 - [ ] Alle inloggegevens geroteerd (ook secret keys)

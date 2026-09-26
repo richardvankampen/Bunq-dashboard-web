@@ -42,6 +42,7 @@ Interpretatie:
 
 Voor dit dashboard is Bunq API-toegang in de praktijk gekoppeld aan je **huidige publieke egress-IP**.
 Als dat IP verandert, kan Bunq verzoeken weigeren met `Incorrect API key or IP address` totdat je de whitelist bijwerkt.
+Met Tailscale: gebruikt de NAS een **exit node**, dan ziet Bunq het publieke IP van die exit node; zet de exit node op de NAS uit (of zet dat IP op de whitelist).
 
 Begrippen:
 - **Vast/statisch publiek IP**: je publieke IP verandert niet, tenzij je provider het wijzigt.
@@ -50,13 +51,13 @@ Begrippen:
 
 Waarom dit hier belangrijk is:
 - minder Bunq-whitelistherregistraties
-- minder `503`-readinessincidenten na provider-/routergebeurtenissen
+- minder `503`-meldingen van `/api/health` na storingen of wijzigingen bij provider of router
 - voorspelbaardere werking en makkelijker diagnosticeren
 
 Providerpraktijk (Nederland, gebruikelijk beeld per maart 2026):
 - Een vast publiek IPv4-adres zit meestal op **zakelijke** abonnementen (vaak als add-on), onder andere bij veel pakketten van KPN Zakelijk, Ziggo Zakelijk en Odido Zakelijk.
 - Particuliere abonnementen zijn meestal dynamisch; soms sticky, maar zelden contractueel gegarandeerd.
-- Mobiele/5G- en CGNAT-verbindingen zijn het minst voorspelbaar voor IP-gebaseerde allowlists.
+- Mobiele/5G- en CGNAT-verbindingen zijn het minst voorspelbaar voor een whitelist op IP-adres.
 
 Als je publieke IP is veranderd:
 ```bash
@@ -265,7 +266,7 @@ Acties:
 grep '^ALLOWED_ORIGINS=' /volume1/docker/bunq-dashboard/.env
 ```
 
-`ALLOWED_ORIGINS` moet precies overeenkomen met de URL in je browser (schema, host en poort). Na een wijziging: volledige deploy.
+`ALLOWED_ORIGINS` moet precies overeenkomen met de URL in je browser (schema, host en poort), bv. `https://nas.<jouw-tailnet>.ts.net` als je `tailscale serve` gebruikt. Meerdere origins: scheid ze met komma's. Na een wijziging: volledige deploy.
 
 ### 11. Sessie verloopt te snel of inloggen blijft niet hangen
 
@@ -287,6 +288,15 @@ Meestal de browsercache.
    ```
 3. Doe een redeploy bij alleen codewijzigingen.
 
+### 13. Dashboard niet bereikbaar via Tailscale
+
+Controleer:
+- het apparaat en de NAS zijn allebei **verbonden** in de Tailscale-app (zelfde tailnet) en de sleutel van de NAS is niet verlopen (beheerconsole → Machines)
+- `http://<Tailscale-IP van de NAS>:5000` werkt; zo niet, sta `100.64.0.0/10` toe voor poort 5000 in de Synology-firewall
+- bij `tailscale serve`: MagicDNS en HTTPS-certificaten staan aan in de beheerconsole, en `sudo tailscale serve status` toont poort 5000
+- inloggen lukt maar de sessie blijft niet hangen: `ALLOWED_ORIGINS` moet de exacte `https://…ts.net`-URL bevatten en `SESSION_COOKIE_SECURE=true` staan (volledige deploy na het wijzigen van `.env`)
+- gebruik nooit `tailscale funnel`: dat maakt het dashboard bereikbaar vanaf internet
+
 ---
 
 ## 🧰 Handige commando's
@@ -295,7 +305,7 @@ Meestal de browsercache.
 # Image die de service nu draait
 sudo docker service inspect bunq_bunq-dashboard --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
 
-# Rolling restart (geen nieuwe image)
+# Herstarten zonder nieuwe image
 sudo docker service update --force bunq_bunq-dashboard
 
 # Herstart + startvalidatie

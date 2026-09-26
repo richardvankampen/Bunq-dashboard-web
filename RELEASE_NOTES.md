@@ -28,6 +28,9 @@
 - The Dutch docs use the Dutch button names of the admin maintenance panel.
 
 ### Documentation
+- Remote access via **Tailscale** as an alternative to a VPN (install, HTTPS with `tailscale serve`, firewall, exit-node and funnel warnings) in SECURITY, SYNOLOGY_INSTALL, TROUBLESHOOTING and README.
+- The English docs use the English names from the dashboard (with a table of internal category names for personal rules); the Dutch docs keep English only for established computer terms.
+- Examples no longer refer to personal situations; linked accounts at other banks are described generically (also in the dashboard texts).
 - English and Dutch documentation now have the same structure and content: `SECURITY`, `SYNOLOGY_INSTALL` and `TROUBLESHOOTING` are full guides in both languages (the English versions were short summaries, the Dutch versions were partly English).
 - Up to date with the app: admin maintenance button names, current widget names and features in the README, the transaction store, personal category rules, and backups of `config/` (`dashboard_data.db`, `category_rules.json`).
 - Settings the code reads but `docker-compose.yml` does not pass (paging, reconcile, sync intervals) are listed separately, with how to enable them.
@@ -35,100 +38,102 @@
 
 ## 2026-09-25
 
+Names below are the English names shown in the dashboard (NL/EN switch).
+
 ### Data and speed
 - Transactions are stored in SQLite: the dashboard reads from the database, only fetches new transactions from Bunq (in the background when the period is already stored), and reuses the account list for a minute.
-- Monthly nightly check (1st, 03:00–06:00 Dutch time) against Bunq: new and changed transactions are applied; transactions Bunq no longer returns are hidden, except when they are older than Bunq still serves.
+- Monthly nightly check (1st, 03:00–06:00 Amsterdam time) against Bunq: new and changed transactions are applied; transactions Bunq no longer returns are hidden, except when they are older than Bunq still serves.
 - Startup: the API key is fetched from Vaultwarden once; each worker connects to Bunq right away; healthcheck start period 300s.
 
 ### Charts
-- Days are counted in Dutch time (a payment at 00:30 belongs to that day).
-- `Sparen`: trend and mini-chart now follow the savings figure itself, and the tile respects the account selection.
-- Trends show `n.v.t.` instead of `0.0%` when the first half of the period has no value.
-- Budget discipline (50/30/20): months only partly inside the period are left out, the running month is marked `(lopend)`, refunds lower spending instead of counting as income, months without income show as gaps; insights use the last complete month.
-- `Maandverdeling` (spending spread): amount buckets €0–5 … €1000+, top 4 categories by amount, share of payments per category.
+- Days are counted in Amsterdam time (a payment at 00:30 belongs to that day).
+- `Savings`: trend and mini-chart now follow the savings figure itself, and the tile respects the account selection.
+- Trends show `n/a` instead of `0.0%` when the first half of the period has no value.
+- Budget discipline (50/30/20): months only partly inside the period are left out, the running month is marked `(running)`, refunds lower spending instead of counting as income, months without income show as gaps; insights use the last complete month.
+- `Spending spread`: amount buckets €0–5 … €1000+, top 4 categories by amount, share of payments per category.
 - One internal-transfer rule for all tiles and charts, following the setting.
-- Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
-- Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
+- Consistent labels throughout the charts and detail popups; € amounts in the hover of `Top counterparties` and `Category race`.
+- Outgoing interest (`Interest`) is no longer categorised as `Housing`.
 
 ### Stored data
 - The "internal transfer" flag of stored transactions is re-checked on every load with your current own accounts and IBANs (and matching opposite bookings between own accounts), and corrected in the database, so backend figures such as data quality agree with the dashboard.
 - The fallback balance history from snapshots uses each account's current type.
 
 ### Categories chart
-- `Verdeling in categorieën` groups shop branches like `Top tegenrekeningen`, and a refund comes off the shop it came from instead of all shops in the category.
-- Hover texts show meaningful shares (spending as % of income, category as % of spending, counterparty as % of the category); clearer labels ("Kleinere categorieën", "Overige tegenrekeningen", "Totaal").
+- `Breakdown by category` groups shop branches like `Top counterparties`, and a refund comes off the shop it came from instead of all shops in the category.
+- Hover texts show meaningful shares (spending as % of income, category as % of spending, counterparty as % of the category); clearer labels ("Smaller categories", "Other counterparties", "Total").
 - New detail popup with amount, share and top 3 counterparties per category, plus the transactions.
 
 ### Data quality
 - Warnings are no longer shown twice (backend and dashboard each had their own wording); each warning comes with one piece of advice.
 - All coverage figures are measured over the same set: real spending in your selection, without transfers between your own accounts.
 - "Last sync" is measured from the last sync with Bunq, so quiet days no longer trigger an "older than 24 hours" warning.
-- Texts are in Dutch and refer to settings you can find (e.g. "Interne overboekingen uitsluiten").
+- Texts refer to settings you can find (e.g. "Exclude internal transfers").
 
 ### Insights and categories
-- New category `Alimentatie` (essential, fixed cost, no cut-back advice). An outgoing payment from an own sub-account named after its purpose (e.g. "Alimentatie") gets that category; personal rules can be added in `config/category_rules.json` (see README).
-- Fixed: payments whose category matched the name of an own account (e.g. alimony from sub-account "Alimentatie") were treated as internal transfers and left out of all figures.
-- `Duurste dag` looks at variable spending only; `Aandeel top-tegenrekening` leaves out rent, taxes and alimony; `Grootste categorie` also shows the biggest variable category.
-- `Liquiditeitsrunway` uses the spending of all accounts, like the balance; the month forecast ignores own transfers; the next best action shows its certainty ("zekerheid"); "Laatst bijgewerkt" in Dutch.
+- New category `Alimony` for alimony and child support payments (essential, fixed cost, no cut-back advice). An outgoing payment from an own sub-account named after its purpose (e.g. a sub-account for groceries) gets that category when nothing else matches; personal rules can be added in `config/category_rules.json` (see README).
+- Fixed: payments whose category matched the name of the own sub-account they came from were treated as internal transfers and left out of all figures.
+- `Most expensive day` looks at variable spending only; `Top counterparty share` leaves out housing, taxes and alimony; `Largest category` also shows the biggest variable category.
+- `Liquidity runway` uses the spending of all accounts, like the balance; the month forecast ignores own transfers; the next best action shows its confidence; "Last updated" is translated.
 
 ### Trends
-- Tile trends for `Inkomsten` and `Uitgaven` use the same monthly figures as the insights (including the salary-month correction) and compare the last complete month with up to three months before it.
+- Tile trends for `Income` and `Expenses` use the same monthly figures as the insights (including the salary-month correction) and compare the last complete month with up to three months before it.
 - Arrows follow the direction of the change (no more fixed up/down arrows); colour shows whether that's good.
-- Periods shorter than 60 days: no income or savings trend (`n.v.t.`, they are monthly); the spending trend compares variable spending between the two halves.
-- A trend with a small comparison base (under €50) shows the euro difference instead of an extreme percentage; percentages use Dutch notation with a sign (`+12,3%`).
+- Periods shorter than 60 days: no income or savings trend (`n/a`, they are monthly); the spending trend compares variable spending between the two halves.
+- A trend with a small comparison base (under €50) shows the euro difference instead of an extreme percentage; percentages have a sign (`+12.3%`).
 
 ### Savings rate
-- `Spaarquote` shows `n.v.t.` when the selection has no income apart from interest (e.g. only savings accounts selected) instead of `0.0%` or absurd percentages.
-- Transfers between your own Triodos account and your savings accounts no longer count as saving.
-- Percentages use Dutch notation (`16,7%`), and missing values show `n.v.t.`.
+- `Savings rate` shows `n/a` when the selection has no income apart from interest (e.g. only savings accounts selected) instead of `0.0%` or absurd percentages.
+- Transfers between your own accounts at another bank and your savings accounts no longer count as saving.
+- Missing values show `n/a`.
 
 ### Spending
-- Refunds now lower spending everywhere, also in `Top tegenrekeningen`, `Categorie-race`, the largest-category and top-counterparty insights, `Uitgavenmomentum` and the savings levers (a returned order no longer shows up as spending).
+- Refunds now lower spending everywhere, also in `Top counterparties`, `Category race`, the largest-category and top-counterparty insights, `Spending momentum` and the savings levers (a returned order no longer shows up as spending).
 - Branches of the same shop (e.g. "Albert Heijn 1234" and "ALBERT HEIJN 5678 UTRECHT") count as one counterparty in totals.
-- `Dagpatroon` shows variable spending only: fixed-cost direct debits are booked at night and made the night look like the biggest spending moment.
-- The foreign-currency warning is in Dutch.
+- `Daily pattern` shows variable spending only: fixed-cost direct debits are booked at night and made the night look like the biggest spending moment.
+- The foreign-currency warning is translated.
 
 ### Income
-- Salary is recognised more often (loonbetaling, maandloon, vakantiegeld, eindejaarsuitkering, bonus, 13th month), and a payer who pays about the same amount every month counts as regular income even without a keyword (e.g. "Periode 9").
-- New category `Uitkeringen & toeslagen` for UWV, SVB (child benefit, AOW), pension funds, DUO student finance, allowances and municipal benefits (these used to be `Overig` or `Belastingen`). Stored transactions are updated once.
-- Transfers with your own Triodos account are no longer income or spending.
-- Refunds no longer show as income in `Verdeling in categorieën`; the income popup splits regular and one-off income.
+- Salary is recognised more often (Dutch terms such as loonbetaling, maandloon, vakantiegeld, eindejaarsuitkering, plus bonus and 13th month), and a payer who pays about the same amount every month counts as regular income even without a keyword (e.g. "Periode 9").
+- New category `Benefits & allowances` for UWV, SVB (child benefit, state pension), pension funds, DUO student finance, allowances and municipal benefits (these used to be `Other` or `Taxes`). Stored transactions are updated once.
+- Transfers with your own accounts at another bank are no longer income or spending.
+- Refunds no longer show as income in `Breakdown by category`; the income popup splits regular and one-off income.
 
 ### Budget
-- 50/30/20, `Noodzaak vs wens` and `Geldstromen` never count transfers between your own accounts, even with the internal-transfer filter off.
-- A refund lowers the kind of spending it belongs to: an energy settlement lowers essential spending, a Tikkie for dinner discretionary spending (stored transactions are updated once after the update).
+- 50/30/20, `Needs vs wants` and `Money flows` never count transfers between your own accounts, even with the internal-transfer filter off.
+- A refund lowers the kind of spending it belongs to: an energy settlement lowers needs, a Tikkie for dinner lowers wants (stored transactions are updated once after the update).
 - A salary that lands just across a month boundary (weekend) counts for the month it belongs to, so no month shows two salaries and the next none.
-- The budget chart scales beyond 100% when a month's spending exceeds its income; uncategorised spending (`Overig`) is shown per month.
+- The budget chart scales beyond 100% when a month's spending exceeds its income; uncategorised spending (`Other`) is shown per month.
 
-### Cashflow
-- Refunds (card reversals, Tikkie for a shared dinner) lower spending instead of counting as income, in the tiles, `Spaarquote`, the cashflow timeline, the popups and `Geldstromen` (a separate "Terugbetalingen" flow into discretionary spending).
-- `Cashflow (tijdslijn)` shows income and spending bars per day (up to 3 months), week (up to a year) or month, and the cumulative net since the start of the period; it always covers the whole selected period.
+### Cash flow
+- Refunds (card reversals, Tikkie for a shared dinner) lower spending instead of counting as income, in the tiles, `Savings rate`, the cash flow timeline, the popups and `Money flows` (a separate "Refunds" flow into wants).
+- `Cash flow (timeline)` shows income and spending bars per day (up to 3 months), week (up to a year) or month, and the cumulative net since the start of the period; it always covers the whole selected period.
 - Tile trends compare the last complete month with the months before it for periods of 60+ days (no more jumps from one vs two salaries in a half-period).
-- The period starts at midnight Dutch time, so its first day is complete.
+- The period starts at midnight Amsterdam time, so its first day is complete.
 
 ### Savings
-- Balance history (`Spaarrekeningen (totaal)`, `Betaalrekeningen`) is rebuilt from the stored transactions for every day of the period, instead of snapshots from days the dashboard happened to be opened (no more dips to €0, no more "since first use" trends). Balance trends show `n.v.t.` without a start balance, and a +/− sign and colour.
-- `Sparen` also counts transfers into savings accounts that are not selected, and recognises moves between savings accounts by account, IBAN or name. `Savings Rate` is now `Spaarquote`. Investment accounts are not counted as savings.
-- 50/30/20 and the action plan call income minus spending "overgehouden" (it includes money left on the checking account), so it is no longer confused with `Sparen`.
-- Account names like "Shared household" or "Stockholm reis" are no longer classified as investments.
+- Balance history (`Savings accounts (total)`, `Current accounts`) is rebuilt from the stored transactions for every day of the period, instead of snapshots from days the dashboard happened to be opened (no more dips to €0, no more "since first use" trends). Balance trends show `n/a` without a start balance, and a +/− sign and colour.
+- `Savings` also counts transfers into savings accounts that are not selected, and recognises moves between savings accounts by account, IBAN or name. Investment accounts are not counted as savings.
+- 50/30/20 and the action plan call income minus spending "saved" (it includes money left on the current account), separate from the `Savings` tile.
+- Account names that merely contain a short word such as "share" or "stock" (e.g. a holiday or household sub-account) are no longer classified as investments.
 
 ### Categories
-- Keywords match whole words: names and words like "Bart", "lens", "nov", "Gastouder", "Pinterest" or "Disney Plus" no longer land in Horeca, Vervoer, Utilities, Rente or Boodschappen.
-- More card merchant codes recognised (train, parking, fuel, flights, hotels, DIY stores, clothing, opticians, hospitals); new categories `Reizen`, `Sport` and `Kinderopvang`; drugstores are `Zorg` for both card payments and transfers.
+- Keywords match whole words: first names and words like "lens", "nov" or "Disney Plus" no longer land in the wrong category (eating out, transport, utilities, interest or groceries).
+- More card merchant codes recognised (train, parking, fuel, flights, hotels, DIY stores, clothing, opticians, hospitals); new categories `Travel`, `Sports` and `Childcare`; drugstores are `Healthcare` for both card payments and transfers.
 - Incoming money for a purchase (card reversal, a Tikkie for a shared dinner, an energy settlement) counts as a refund instead of income in a spending category; tax allowances and insurance payouts keep their category.
-- Category names are Dutch in the dashboard (`Interne overboeking`, `Terugbetaling`, `Energie & telecom`, `Winkelen`, `Vrije tijd`).
+- Category names are shown consistently in the dashboard (`Internal transfer`, `Refund`, `Utilities & telecom`, `Shopping`, `Leisure`).
 - Stored transactions are recategorised once after an update, so improved rules also apply to history.
 
 ### Insights
-- Month-based where it matters (salary and rent are monthly): trend, income/spending alerts and the `Uitgavenmomentum` popup compare the last complete month with the month(s) before it.
-- `Liquiditeitsrunway`: average monthly net of complete months per calendar day (was: net of the last 30 days divided by days *with* transactions).
-- `Verwacht netto per maand`: month so far plus what usually still comes in and goes out after today's date (was: linear extrapolation, which multiplied an early salary).
-- `Terugkerende kosten`: only fixed monthly items (±1 payment per month, stable amount); supermarkets and restaurants no longer count.
-- `Uitgavenvolatiliteit`: weekly variable spending without fixed costs (was: daily, always "Hoog" because of rent day).
+- Month-based where it matters (salary and rent are monthly): trend, income/spending alerts and the `Spending momentum` popup compare the last complete month with the month(s) before it.
+- `Liquidity runway`: average monthly net of complete months per calendar day (was: net of the last 30 days divided by days *with* transactions).
+- `Expected net this month`: month so far plus what usually still comes in and goes out after today's date (was: linear extrapolation, which multiplied an early salary).
+- `Recurring costs`: only fixed monthly items (±1 payment per month, stable amount); supermarkets and restaurants no longer count.
+- `Spending volatility`: weekly variable spending without fixed costs (was: daily, always "High" because of rent day).
 - Action plan: no "cut this" advice for housing or taxes; savings levers use real monthly averages.
-- `Gemiddelde daguitgaven` per calendar day of the selected period; Dutch labels and `n.v.t.` in cards and data quality; transaction-count warning scales with the period.
+- `Average daily spending` per calendar day of the selected period; `n/a` in cards and data quality; the transaction-count warning scales with the period.
 
-### Tooling
+### Development
 - Test suite (`tests/`, pytest) and GitHub Actions CI; dev tools moved to `requirements_dev.txt`.
 
 ## 2026-03-07

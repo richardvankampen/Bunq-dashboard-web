@@ -14,19 +14,21 @@ Every document has an English (`*.md`) and a Dutch (`*-NL.md`) version with the 
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) / [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
 - [RELEASE_NOTES.md](RELEASE_NOTES.md) / [RELEASE_NOTES-NL.md](RELEASE_NOTES-NL.md)
 
-⚠️ **IMPORTANT:** Access ONLY via VPN. NEVER forward ports to the internet.
+The dashboard itself is available in English and Dutch: use the **NL/EN** switch in the header. This document uses the English names you see in the dashboard.
+
+⚠️ **IMPORTANT:** access the dashboard ONLY from your home network, through a VPN or through Tailscale. NEVER forward ports to the internet.
 
 ---
 
 ## ✨ Key Features
 
 - Single-port dashboard (frontend + API) on port 5000
-- Dashboard in Dutch or English: the NL/EN switch in the header changes every text, chart label and number/date format (the choice is remembered per browser)
+- Dashboard in English or Dutch: the NL/EN switch in the header changes every text, chart label and number/date format (the choice is remembered per browser)
 - Read-only Bunq API access (payments and, where available, card payments; SDK-first account retrieval incl. savings)
 - Local transaction store (SQLite): loads come from the store with an incremental background sync; a monthly reconcile keeps it in line with Bunq and keeps history Bunq no longer serves
 - Balance history rebuilt from stored transactions (falls back to daily snapshots)
 - Automatic categorisation (internal transfers, merchant category codes, text rules, sub-account names) plus your own rules in `config/category_rules.json`; refunds lower the spending of the original category
-- Internal transfers between own accounts are filtered out; transfers to/from own linked external accounts count as neither income nor spending
+- Internal transfers between own accounts are filtered out; transfers to/from your own linked accounts at other banks count as neither income nor spending
 - EUR totals for non-EUR accounts (FX conversion with caching)
 - Monthly trends, budget discipline (50/30/20), insight cards and a data quality check, with explanations in tooltips
 - Vaultwarden-first key management (recommended), with an optional direct fallback
@@ -35,37 +37,37 @@ Every document has an English (`*.md`) and a Dutch (`*-NL.md`) version with the 
   - ARM64: pinned `@bitwarden/cli` npm fallback
 - Production runtime via Gunicorn (no Flask development server in the container)
 - Synology-ready deployment with install/update, quick-redeploy and IP-whitelist scripts
-- Admin maintenance in Settings (status, egress IP, whitelist update, Bunq context re-init, full maintenance run, copy-ready terminal commands)
+- Admin maintenance in Settings, with a guide per problem (status with advice, egress IP, whitelist update, Bunq context re-init, full maintenance run, reconcile with Bunq, terminal commands with explanations)
 
-**Dashboard widgets** (Dutch names; in English: Current accounts, Savings accounts, Income, Expenses, Savings, Savings rate, Cash flow, Money flows, Breakdown by category, Budget discipline, Daily pattern, Top counterparties, Spending spread, Category race):
-- Balance tiles: Betaalrekeningen (totaal), Spaarrekeningen (totaal)
-- KPI tiles with trend vs previous months: Inkomsten, Uitgaven, Sparen, Spaarquote
-- Cashflow (tijdslijn): income/expenses per day, week or month plus cumulative net
-- Geldstromen: Sankey from income sources via needs/wants to spending categories, plus what was saved
-- Verdeling in categorieën: sunburst by category and counterparty
-- Budgetdiscipline (50/30/20)
-- Dagpatroon: heatmap of variable spending by weekday and time of day
-- Top tegenrekeningen: largest counterparties after refunds
-- Maandverdeling: spread of spending amounts per category
-- Categorie-race: animated category race over the period
-- Insight cards: grootste categorie, gemiddelde daguitgaven, uitgavenvolatiliteit, duurste dag, trend, liquiditeitsrunway, noodzaak vs wens, 50/30/20-fit, aandeel top-tegenrekening, terugkerende kosten, volgende beste actie, verwacht netto per maand, datakwaliteit
-- Per-account balance detail with transactions
+**Dashboard widgets:**
+- Balance tiles: Current accounts (total), Savings accounts (total)
+- KPI tiles with trend vs previous months: Income, Expenses, Savings, Savings rate
+- Cash flow (timeline): income/expenses per day, week or month plus cumulative net
+- Money flows: Sankey from income sources via needs/wants to spending categories, plus what was saved
+- Breakdown by category: sunburst by category and counterparty
+- Budget discipline (50/30/20)
+- Daily pattern: heatmap of variable spending by weekday and time of day
+- Top counterparties: largest counterparties after refunds
+- Spending spread: spread of spending amounts per category
+- Category race: animated category race over the period
+- Insight cards: largest category, average daily spending, spending volatility, most expensive day, trend, liquidity runway, needs vs wants, 50/30/20 fit, top counterparty share, recurring costs, next best action, expected net this month, data quality
+- Per-account balance details with transactions
 
 ## 🔒 Security (Short)
 
 - Session-based auth with HttpOnly cookies and CSRF protection
 - `SESSION_COOKIE_SECURE=true` as secure default (set to `false` only for local HTTP)
 - Secrets via Vaultwarden + Docker Swarm secrets (Vaultwarden preferred; `VAULTWARDEN_ACCESS_METHOD=cli`)
-- VPN-only access, no public exposure
+- Access only via your home network, a VPN or Tailscale; no public exposure
 - Rate limiting for login and API
 
-More details: [SECURITY.md](SECURITY.md)  
+More details: [SECURITY.md](SECURITY.md)
 Dutch version: [SECURITY-NL.md](SECURITY-NL.md)
 
 ## 🚀 Quick Start (Synology)
 
 1. Install **Container Manager** (Package Center)
-2. Ensure **VPN-only access** (no public exposure)
+2. Arrange **private remote access**: Tailscale (Package Center, no open router port) or a VPN; no public exposure (see [SECURITY.md](SECURITY.md))
 3. Follow the full installation guide: [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md)
 4. Use **Vaultwarden as the primary Bunq API key source** (`USE_VAULTWARDEN=true`)
 5. Use `VAULTWARDEN_ACCESS_METHOD=cli` + secret `bunq_vaultwarden_master_password`
@@ -96,6 +98,7 @@ Health endpoints:
 Public IP note:
 - Bunq API access is tied to your current public egress IP.
 - If your ISP changes that IP, Bunq may reject requests until you re-run `scripts/register_bunq_ip.sh`.
+- With Tailscale, don't let the NAS use an exit node: Bunq would then see the exit node's IP.
 - See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) section `Public IP strategy (fixed vs sticky)` for details.
 
 Transaction diagnostics:
@@ -172,20 +175,45 @@ When to use `NO_CACHE=true`:
 
 ## 🏷️ Personal category rules
 
-Transactions are categorised automatically. An outgoing payment from an own sub-account named after what it pays for (e.g. "Alimentatie", "Boodschappen") gets that category when nothing else matches. For anything else, add your own rules in `config/category_rules.json` on the NAS (`/volume1/docker/bunq-dashboard/config/`, not in git):
+Transactions are categorised automatically. An outgoing payment from an own sub-account whose name contains a Dutch purpose word (such as `boodschappen` → Groceries, `huur` → Housing, `vakantie` → Travel, `zorg` → Healthcare) gets that category when nothing else matches; for other account names, use a rule with `account` below. For anything else, add your own rules in `config/category_rules.json` on the NAS (`/volume1/docker/bunq-dashboard/config/`, not in git):
 
 ```json
 {
   "rules": [
-    {"category": "Alimentatie", "account": "Alimentatie"},
-    {"category": "Sport", "counterparty": "Tennisclub"},
+    {"category": "Wonen", "account": "Rent"},
+    {"category": "Sport", "counterparty": "Tennis club"},
     {"category": "Wonen", "iban": "NL00BANK0123456789"},
-    {"category": "Zorg", "account": "Gezamenlijk", "description": "fysio"}
+    {"category": "Zorg", "account": "Household", "description": "physio"}
   ]
 }
 ```
 
-All fields in a rule must match (text: case-insensitive, contained in the account name / counterparty / description; IBAN: exact). Personal rules win over the built-in ones. After editing the file run `sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false`; stored transactions are recategorised once on startup.
+- **Fields:** `account` (name of your own account), `counterparty`, `description` and `iban`. All fields in a rule must match (text: case-insensitive, contained in the text; IBAN: exact). Personal rules win over the built-in ones.
+- **Category names** in the file are the internal names; the dashboard shows them in the chosen language:
+
+| Internal name | Shown in English |
+|---|---|
+| `Boodschappen` | Groceries |
+| `Horeca` | Eating out |
+| `Vervoer` | Transport |
+| `Wonen` | Housing |
+| `Utilities` | Utilities & telecom |
+| `Abonnementen` | Subscriptions |
+| `Verzekering` | Insurance |
+| `Belastingen` | Taxes |
+| `Kinderopvang` | Childcare |
+| `Alimentatie` | Alimony |
+| `Shopping` | Shopping |
+| `Entertainment` | Leisure |
+| `Sport` | Sports |
+| `Reizen` | Travel |
+| `Zorg` | Healthcare |
+| `Salaris` | Salary |
+| `Uitkeringen` | Benefits & allowances |
+| `Rente` | Interest |
+| `Overig` | Other |
+
+After editing the file run `sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false`; stored transactions are recategorised once on startup.
 
 ## 🧪 Tests (development)
 

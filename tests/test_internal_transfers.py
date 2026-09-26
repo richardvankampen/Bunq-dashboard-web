@@ -11,7 +11,7 @@ class MonetaryAccountSavings(SimpleNamespace):
 
 
 class MonetaryAccountExternal(SimpleNamespace):
-    """Linked external bank account (e.g. Triodos) — must NOT count as internal."""
+    """Linked external bank account (e.g. an account at another bank) — must NOT count as internal."""
 
 
 class MonetaryAccountExternalSavings(SimpleNamespace):

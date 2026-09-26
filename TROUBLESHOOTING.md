@@ -42,6 +42,7 @@ Interpretation:
 
 For this dashboard, Bunq API access is effectively tied to your **current public egress IP**.
 If that IP changes, Bunq can reject requests with `Incorrect API key or IP address` until you update the whitelist.
+With Tailscale: if the NAS uses an **exit node**, Bunq sees the exit node's public IP instead; turn the exit node off on the NAS (or whitelist that IP).
 
 Definitions:
 - **Fixed/static public IP**: your public IP does not change unless your provider reassigns it.
@@ -265,7 +266,7 @@ Actions:
 grep '^ALLOWED_ORIGINS=' /volume1/docker/bunq-dashboard/.env
 ```
 
-`ALLOWED_ORIGINS` must match the URL in your browser exactly (scheme, host and port). After a change: full deploy.
+`ALLOWED_ORIGINS` must match the URL in your browser exactly (scheme, host and port), e.g. `https://nas.<your-tailnet>.ts.net` when you use `tailscale serve`. Several origins: separate them with commas. After a change: full deploy.
 
 ### 11. Session expires too quickly or login does not stick
 
@@ -286,6 +287,15 @@ Usually the browser cache.
    sudo docker service inspect bunq_bunq-dashboard --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
    ```
 3. Run a code-only redeploy.
+
+### 13. Dashboard not reachable via Tailscale
+
+Check:
+- the device and the NAS are both **connected** in the Tailscale app (same tailnet) and the NAS key has not expired (admin console → Machines)
+- `http://<Tailscale IP of the NAS>:5000` works; if it doesn't, allow `100.64.0.0/10` for port 5000 in the Synology firewall
+- with `tailscale serve`: MagicDNS and HTTPS certificates are enabled in the admin console, and `sudo tailscale serve status` shows port 5000
+- login works but the session doesn't stick: `ALLOWED_ORIGINS` must contain the exact `https://…ts.net` URL and `SESSION_COOKIE_SECURE=true` (full deploy after changing `.env`)
+- never use `tailscale funnel`: it makes the dashboard reachable from the internet
 
 ---
 
