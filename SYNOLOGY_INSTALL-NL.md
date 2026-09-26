@@ -470,6 +470,8 @@ Zet poort 5000 nooit open op je router. Wil je het dashboard buitenshuis gebruik
    SESSION_COOKIE_SECURE=true
    ```
    Doe daarna een volledige deploy (configwijziging).
+   - Alleen de eerste keer: antwoordt Tailscale met `Serve is not enabled on your tailnet` en een link, open die link als beheerder van het tailnet, bevestig, en voer `sudo tailscale serve --bg 5000` opnieuw uit.
+   - Controleer met `sudo tailscale serve status`: er moet "(tailnet only)" staan, nooit "Funnel on".
 5. Gebruik nooit `tailscale funnel` (dat zet het dashboard op internet) en laat de NAS geen exit node gebruiken (Bunq ziet dan een ander publiek IP).
 
 **VPN:** Synology VPN Server (OpenVPN); zie [SECURITY-NL.md](SECURITY-NL.md), optie B.

@@ -66,7 +66,10 @@ Tailscale maakt een privénetwerk (een "tailnet") tussen je eigen apparaten, geb
 ```bash
 sudo tailscale serve --bg 5000
 # Het dashboard staat nu op https://nas.<jouw-tailnet>.ts.net (alleen binnen je tailnet)
+sudo tailscale serve status
+# Moet "(tailnet only)" en "proxy http://127.0.0.1:5000" tonen; nooit "Funnel on"
 ```
+De eerste keer kan Tailscale antwoorden met `Serve is not enabled on your tailnet` en een link (`https://login.tailscale.com/f/serve?node=…`). Dat is een eenmalige toestemming: open de link terwijl je bent ingelogd als beheerder van het tailnet, bevestig, en voer het commando opnieuw uit. Het eerste bezoek aan het `https://`-adres kan even duren, omdat het certificaat dan wordt aangevraagd.
 Zet in `.env` en doe een volledige deploy (configwijziging):
 ```bash
 ALLOWED_ORIGINS=https://nas.<jouw-tailnet>.ts.net

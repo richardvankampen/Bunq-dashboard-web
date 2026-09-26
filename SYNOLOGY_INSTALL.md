@@ -470,6 +470,8 @@ Never forward port 5000 on your router. To use the dashboard away from home, pic
    SESSION_COOKIE_SECURE=true
    ```
    Then do a full deploy (config change).
+   - First time only: if Tailscale answers `Serve is not enabled on your tailnet` with a link, open that link as the tailnet admin, confirm, and run `sudo tailscale serve --bg 5000` again.
+   - Check with `sudo tailscale serve status`: it must say "(tailnet only)", never "Funnel on".
 5. Never use `tailscale funnel` (that publishes the dashboard on the internet), and don't let the NAS use an exit node (Bunq would see another public IP).
 
 **VPN:** Synology VPN Server (OpenVPN); see [SECURITY.md](SECURITY.md), option B.

@@ -294,6 +294,7 @@ Check:
 - the device and the NAS are both **connected** in the Tailscale app (same tailnet) and the NAS key has not expired (admin console → Machines)
 - `http://<Tailscale IP of the NAS>:5000` works; if it doesn't, allow `100.64.0.0/10` for port 5000 in the Synology firewall
 - with `tailscale serve`: MagicDNS and HTTPS certificates are enabled in the admin console, and `sudo tailscale serve status` shows port 5000
+- `Serve is not enabled on your tailnet` (with a link): one-time approval; open the link as the tailnet admin, confirm, and run `sudo tailscale serve --bg 5000` again
 - login works but the session doesn't stick: `ALLOWED_ORIGINS` must contain the exact `https://…ts.net` URL and `SESSION_COOKIE_SECURE=true` (full deploy after changing `.env`)
 - never use `tailscale funnel`: it makes the dashboard reachable from the internet
 

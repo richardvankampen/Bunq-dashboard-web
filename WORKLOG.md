@@ -4,6 +4,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — docs: eenmalige toestemming voor Tailscale Serve
+
+- Aanleiding: `sudo tailscale serve --bg 5000` gaf "Serve is not enabled on your tailnet" met een toestemmingslink.
+- Wat: SECURITY, SYNOLOGY_INSTALL en TROUBLESHOOTING (EN+NL) noemen deze eenmalige stap (link openen als tailnet-beheerder, bevestigen, opnieuw uitvoeren) en de controle met `tailscale serve status` ("tailnet only", nooit "Funnel on").
+- Resultaat: alleen documentatie; EN en NL gelijk.
+
 ### Opgeleverd — beveiliging gecontroleerd en aangescherpt
 
 - Bevindingen en oplossingen:
