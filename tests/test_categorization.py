@@ -233,3 +233,50 @@ def test_classify_explicit_type_fields(ap):
 ])
 def test_account_name_hints_match_whole_words(ap, description, expected):
     assert ap.classify_account_type(MonetaryAccountBank(description=description)) == expected
+
+
+# --- alimony, account-name hints, personal rules -----------------------------------
+
+@pytest.mark.parametrize('description, amount, expected', [
+    ('Alimentatie september', -800, 'Alimentatie'),
+    ('Partneralimentatie', -500, 'Alimentatie'),
+    ('Kinderalimentatie okt', -300, 'Alimentatie'),
+    ('Alimentatie', 800, 'Alimentatie'),          # received alimony is income, not a refund
+])
+def test_alimony_keywords(ap, description, amount, expected):
+    assert ap.categorize_transaction(description, 'Iemand', amount=amount) == expected
+
+
+def test_outgoing_payment_takes_the_own_account_name_as_hint(ap):
+    # Paid from the own sub-account "Alimentatie" to a person, without a keyword.
+    assert ap.categorize_transaction('Overboeking', 'Iemand', amount=-800, account_name='Alimentatie') == 'Alimentatie'
+    assert ap.categorize_transaction('Betaling', 'Iemand', amount=-50, account_name='Boodschappen') == 'Boodschappen'
+    # Text rules still win; generic account names give no hint; incoming money is not hinted.
+    assert ap.categorize_transaction('AH 1234', 'Albert Heijn', amount=-20, account_name='Alimentatie') == 'Boodschappen'
+    assert ap.categorize_transaction('Betaling', 'Iemand', amount=-50, account_name='Spaar plus') == 'Overig'
+    assert ap.categorize_transaction('Van Iemand', 'Iemand', amount=50, account_name='Alimentatie') == 'Overig'
+
+
+def test_personal_rules_file(ap, tmp_path, monkeypatch):
+    rules_file = tmp_path / 'category_rules.json'
+    rules_file.write_text(ap.json.dumps({'rules': [
+        {'category': 'Sport', 'counterparty': 'Tennisclub'},
+        {'category': 'Wonen', 'iban': 'NL91 ABNA 0417 1643 00'},
+        {'category': 'Zorg', 'account': 'Gezamenlijk', 'description': 'fysio'},
+        {'category': 'Leeg'},                               # no condition: ignored
+    ]}))
+    rules = ap.load_user_category_rules(str(rules_file))
+    assert len(rules) == 3
+    monkeypatch.setattr(ap, '_USER_CATEGORY_RULES', rules)
+    assert ap.categorize_transaction('Contributie', 'Tennisclub De Bal', amount=-40) == 'Sport'
+    assert ap.categorize_transaction('Maand', 'VvE', amount=-200, counterparty_iban='NL91ABNA0417164300') == 'Wonen'
+    assert ap.categorize_transaction('Fysio sessie', 'Praktijk', amount=-60, account_name='Gezamenlijk') == 'Zorg'
+    assert ap.categorize_transaction('Fysio sessie', 'Praktijk', amount=-60, account_name='Hoofd') == 'Zorg'  # built-in 'fysio'
+    # Personal rules win over the built-in ones.
+    assert ap.categorize_transaction('Albert Heijn', 'Tennisclub', amount=-10) == 'Sport'
+    # Editing the rules changes the recategorisation version.
+    assert ap.categorization_state_version() != ap.CATEGORIZATION_VERSION
+
+
+def test_missing_rules_file_means_no_rules(ap, tmp_path):
+    assert ap.load_user_category_rules(str(tmp_path / 'absent.json')) == []

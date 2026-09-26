@@ -168,6 +168,23 @@ When to use `NO_CACHE=true`:
 
 ---
 
+## 🏷️ Personal category rules
+
+Transactions are categorised automatically. An outgoing payment from an own sub-account named after what it pays for (e.g. "Alimentatie", "Boodschappen") gets that category when nothing else matches. For anything else, add your own rules in `config/category_rules.json` on the NAS (`/volume1/docker/bunq-dashboard/config/`, not in git):
+
+```json
+{
+  "rules": [
+    {"category": "Alimentatie", "account": "Alimentatie"},
+    {"category": "Sport", "counterparty": "Tennisclub"},
+    {"category": "Wonen", "iban": "NL00BANK0123456789"},
+    {"category": "Zorg", "account": "Gezamenlijk", "description": "fysio"}
+  ]
+}
+```
+
+All fields in a rule must match (text: case-insensitive, contained in the account name / counterparty / description; IBAN: exact). Personal rules win over the built-in ones. After editing the file run `sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false`; stored transactions are recategorised once on startup.
+
 ## 🧪 Tests (development)
 
 Backend unit/route tests live in `tests/` and run without Bunq, Vaultwarden, or Docker (all external access is disabled via environment variables in `tests/conftest.py`):

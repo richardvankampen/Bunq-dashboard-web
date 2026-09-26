@@ -5903,7 +5903,9 @@ def normalize_bunq_payment(source_name, payment, account_id, account_name=None,
         counterparty_name,
         is_internal_transfer,
         merchant_category_code=merchant_category_code,
-        amount=amount_value
+        amount=amount_value,
+        account_name=account_name,
+        counterparty_iban=next(iter(counterparty_account_ibans), None),
     )
     merchant_candidates = [counterparty_account_name, counterparty_name, description, merchant_reference]
     merchant_label = next(
@@ -5937,7 +5939,8 @@ def normalize_bunq_payment(source_name, payment, account_id, account_name=None,
         'merchant': merchant_label,
         'category': category,
         'refund_category': (
-            refund_source_category(description, counterparty_name, merchant_category_code=merchant_category_code)
+            refund_source_category(description, counterparty_name, merchant_category_code=merchant_category_code,
+                                   account_name=account_name, counterparty_iban=next(iter(counterparty_account_ibans), None))
             if category == 'Refund' else None
         ),
         'merchant_category_code': str(merchant_category_code).strip() if merchant_category_code else None,
@@ -6020,7 +6023,7 @@ def get_account_transactions(
 
 # Bump when the rules below change: stored transactions are recategorised once
 # at startup (migrate_stored_categories), so a rule fix also applies to history.
-CATEGORIZATION_VERSION = '4'
+CATEGORIZATION_VERSION = '5'
 
 
 def _mcc_codes(*items):
@@ -6073,6 +6076,10 @@ _INTEREST_STEMS = ('rente',)
 # Order matters: specific merchants before generic words ('Disney Plus' is a
 # subscription, not the Plus supermarket).
 _TEXT_RULES = (
+    ('Alimentatie', {
+        'words': ['alimentatie'],
+        'stems': ['partneralimentatie', 'kinderalimentatie', 'alimentatie', 'kinderbijdrage'],
+    }),
     ('Abonnementen', {
         'words': ['netflix', 'spotify', 'disney', 'disney+', 'videoland', 'amazon prime', 'prime video',
                   'youtube premium', 'adobe', 'microsoft 365', 'office 365', 'icloud', 'google one',
@@ -6155,7 +6162,88 @@ _TEXT_RULES = (
 # Incoming money keeps these categories (tax refunds/allowances, insurance payouts,
 # rent received). Incoming money in any other spending category is money back
 # for a purchase (card reversal, Tikkie for a shared dinner) and becomes Refund.
-_INCOMING_KEEP_CATEGORIES = frozenset({'Belastingen', 'Verzekering', 'Wonen', 'Rente', 'Salaris', 'Uitkeringen', 'Overig'})
+_INCOMING_KEEP_CATEGORIES = frozenset({
+    'Belastingen', 'Verzekering', 'Wonen', 'Rente', 'Salaris', 'Uitkeringen', 'Alimentatie', 'Overig',
+})
+
+# Own sub-accounts named after what they pay for (e.g. "Alimentatie", "Boodschappen"): used
+# for outgoing payments the other rules can't place. Stems, matched in the account name only.
+_ACCOUNT_NAME_HINTS = (
+    ('Alimentatie', ('alimentatie',)),
+    ('Boodschappen', ('boodschappen',)),
+    ('Wonen', ('wonen', 'huur', 'hypotheek')),
+    ('Verzekering', ('verzekering',)),
+    ('Belastingen', ('belasting',)),
+    ('Zorg', ('zorg',)),
+    ('Kinderopvang', ('kinderopvang', 'opvang')),
+    ('Abonnementen', ('abonnement',)),
+    ('Utilities', ('energie',)),
+    ('Vervoer', ('vervoer', 'auto')),
+    ('Sport', ('sport',)),
+    ('Reizen', ('reizen', 'vakantie')),
+)
+
+# Personal rules (not in git): config/category_rules.json, e.g.
+# {"rules": [{"category": "Alimentatie", "account": "Alimentatie"},
+#            {"category": "Sport", "counterparty": "Tennisclub"},
+#            {"category": "Wonen", "iban": "NL00BANK0123456789"},
+#            {"category": "Zorg", "description": "fysio"}]}
+# All fields given in a rule must match (text case-insensitive, contained; IBAN exact).
+# They win over the built-in rules. After editing the file, restart the service.
+CATEGORY_RULES_PATH = os.getenv('CATEGORY_RULES_PATH', os.path.join('config', 'category_rules.json'))
+
+
+def load_user_category_rules(path=None):
+    path = path or CATEGORY_RULES_PATH
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            raw = json.load(handle)
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        logger.warning(f"⚠️ Could not read category rules {path}: {exc}")
+        return []
+    rules = []
+    for item in (raw.get('rules') if isinstance(raw, dict) else raw) or []:
+        if not isinstance(item, dict) or not str(item.get('category') or '').strip():
+            continue
+        rule = {'category': str(item['category']).strip()}
+        for field in ('account', 'counterparty', 'description'):
+            if str(item.get(field) or '').strip():
+                rule[field] = _normalize_category_text(item[field]).strip()
+        if item.get('iban'):
+            rule['iban'] = normalize_iban(item['iban'])
+        if len(rule) > 1:
+            rules.append(rule)
+    return rules
+
+
+_USER_CATEGORY_RULES = []
+
+
+def _match_user_rule(description, counterparty_name, account_name, iban):
+    fields = {
+        'account': _normalize_category_text(account_name),
+        'counterparty': _normalize_category_text(counterparty_name),
+        'description': _normalize_category_text(description),
+    }
+    for rule in _USER_CATEGORY_RULES:
+        if 'iban' in rule and rule['iban'] != normalize_iban(iban):
+            continue
+        if any(field in rule and rule[field] not in fields[field] for field in fields):
+            continue
+        return rule['category']
+    return None
+
+
+def _category_from_account_name(account_name):
+    name = _normalize_category_text(account_name)
+    if not name:
+        return None
+    for category, stems in _ACCOUNT_NAME_HINTS:
+        if any(stem in name for stem in stems):
+            return category
+    return None
 
 
 def _normalize_category_text(value):
@@ -6214,10 +6302,18 @@ def _categorize_by_text(text):
     return 'Overig'
 
 
-def categorize_transaction(description, counterparty_name, is_internal=False, merchant_category_code=None, amount=None):
-    """Rule-based categorization: merchant category code first, then text rules."""
+def categorize_transaction(description, counterparty_name, is_internal=False, merchant_category_code=None, amount=None,
+                           account_name=None, counterparty_iban=None):
+    """
+    Rule-based categorization: personal rules (config/category_rules.json) first, then the
+    merchant category code, then text rules; an outgoing payment nothing places falls back
+    to the name of the own account it comes from (e.g. sub-account "Alimentatie").
+    """
     if is_internal:
         return 'Internal Transfer'
+    user_category = _match_user_rule(description, counterparty_name, account_name, counterparty_iban)
+    if user_category:
+        return user_category
 
     combined = f"{_normalize_category_text(description)} {_normalize_category_text(counterparty_name)}".strip()
     try:
@@ -6236,16 +6332,22 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
             return 'Uitkeringen'
 
     category = _categorize_by_mcc(merchant_category_code) or _categorize_by_text(combined)
+    if category == 'Overig' and amount_value < 0:
+        category = _category_from_account_name(account_name) or category
     if amount_value > 0 and category not in _INCOMING_KEEP_CATEGORIES:
         return 'Refund'
     return category
 
 
-def refund_source_category(description, counterparty_name, merchant_category_code=None):
+def refund_source_category(description, counterparty_name, merchant_category_code=None, account_name=None,
+                           counterparty_iban=None):
     """
     Spending category a refund belongs to (e.g. 'Utilities' for an energy settlement),
     so the budget can lower the right bucket. None when unknown.
     """
+    user_category = _match_user_rule(description, counterparty_name, account_name, counterparty_iban)
+    if user_category:
+        return None if user_category in _INCOMING_KEEP_CATEGORIES else user_category
     combined = f"{_normalize_category_text(description)} {_normalize_category_text(counterparty_name)}".strip()
     category = _categorize_by_mcc(merchant_category_code) or _categorize_by_text(combined)
     return None if category in _INCOMING_KEEP_CATEGORIES else category
@@ -6267,9 +6369,12 @@ def recategorize_stored_transaction(tx):
         return 'Internal Transfer', None
     counterparty = tx.get('counterparty_name') or tx.get('counterparty')
     mcc = tx.get('merchant_category_code')
-    new_category = categorize_transaction(tx.get('description'), counterparty, merchant_category_code=mcc, amount=tx.get('amount'))
+    context = {'account_name': tx.get('account_name'), 'counterparty_iban': tx.get('counterparty_iban')}
+    new_category = categorize_transaction(
+        tx.get('description'), counterparty, merchant_category_code=mcc, amount=tx.get('amount'), **context
+    )
     refund_category = (
-        refund_source_category(tx.get('description'), counterparty, merchant_category_code=mcc)
+        refund_source_category(tx.get('description'), counterparty, merchant_category_code=mcc, **context)
         if new_category == 'Refund' else None
     )
     legacy_row = 'merchant_category_code' not in tx
@@ -6289,6 +6394,14 @@ def recategorize_stored_transaction(tx):
     return new_category, refund_category
 
 
+def categorization_state_version():
+    """Rules version incl. the personal rules file: editing it recategorises history once."""
+    if not _USER_CATEGORY_RULES:
+        return CATEGORIZATION_VERSION
+    digest = hashlib.sha256(json.dumps(_USER_CATEGORY_RULES, sort_keys=True).encode('utf-8')).hexdigest()[:8]
+    return f"{CATEGORIZATION_VERSION}+{digest}"
+
+
 def migrate_stored_categories():
     """
     Recategorise all stored transactions once per CATEGORIZATION_VERSION, so rule
@@ -6297,7 +6410,8 @@ def migrate_stored_categories():
     if not DATA_DB_ENABLED:
         return 0
     try:
-        if _app_state_get('categorization_version') == CATEGORIZATION_VERSION:
+        version = categorization_state_version()
+        if _app_state_get('categorization_version') == version:
             return 0
         connection = get_data_db_connection()
         changed = 0
@@ -6327,14 +6441,17 @@ def migrate_stored_categories():
                     changed += 1
         finally:
             connection.close()
-        _app_state_set('categorization_version', CATEGORIZATION_VERSION)
-        logger.info("🏷️ Recategorised %d stored transaction(s) (rules v%s)", changed, CATEGORIZATION_VERSION)
+        _app_state_set('categorization_version', version)
+        logger.info("🏷️ Recategorised %d stored transaction(s) (rules v%s)", changed, version)
         return changed
     except Exception as exc:
         logger.warning(f"⚠️ Recategorising stored transactions failed: {exc}")
         return 0
 
 
+_USER_CATEGORY_RULES = load_user_category_rules()
+if _USER_CATEGORY_RULES:
+    logger.info("🏷️ Loaded %d personal category rule(s) from %s", len(_USER_CATEGORY_RULES), CATEGORY_RULES_PATH)
 migrate_stored_categories()
 
 

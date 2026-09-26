@@ -22,6 +22,12 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Insights and categories
+- New category `Alimentatie` (essential, fixed cost, no cut-back advice). An outgoing payment from an own sub-account named after its purpose (e.g. "Alimentatie") gets that category; personal rules can be added in `config/category_rules.json` (see README).
+- Fixed: payments whose category matched the name of an own account (e.g. alimony from sub-account "Alimentatie") were treated as internal transfers and left out of all figures.
+- `Duurste dag` looks at variable spending only; `Aandeel top-tegenrekening` leaves out rent, taxes and alimony; `Grootste categorie` also shows the biggest variable category.
+- `Liquiditeitsrunway` uses the spending of all accounts, like the balance; the month forecast ignores own transfers; the next best action shows its certainty ("zekerheid"); "Laatst bijgewerkt" in Dutch.
+
 ### Trends
 - Tile trends for `Inkomsten` and `Uitgaven` use the same monthly figures as the insights (including the salary-month correction) and compare the last complete month with up to three months before it.
 - Arrows follow the direction of the change (no more fixed up/down arrows); colour shows whether that's good.

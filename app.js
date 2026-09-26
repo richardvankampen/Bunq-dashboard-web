@@ -1378,6 +1378,7 @@ function getCategoryColor(category) {
         'Verzekering': '#a855f7',
         'Belastingen': '#f97316',
         'Kinderopvang': '#fb7185',
+        'Alimentatie': '#e879f9',
         'Winkelen': '#10b981',
         'Vrije tijd': '#06b6d4',
         'Sport': '#84cc16',
@@ -2877,7 +2878,6 @@ function isInternalOwnTransfer(transaction, ownIdentity) {
         if (isOwnAccountNameMatch(transaction?.counterparty_account_name, ownNames)) return true;
         if (isOwnAccountNameMatch(transaction?.counterparty, ownNames)) return true;
         if (isOwnAccountNameMatch(transaction?.merchant, ownNames)) return true;
-        if (isOwnAccountNameMatch(transaction?.category, ownNames)) return true;
     }
 
     return false;
@@ -3457,7 +3457,7 @@ function showTransactionDetail(detailType) {
 
     if (detailType === 'action-plan') {
         const localKpis = calculateKPIs(transactions);
-        const dailyBurn = computeDailyBurn(transactions);
+        const dailyBurn = computeDailyBurn(allAccountsTransactions(transactions));
         const liquidBalance = balanceMetrics
             ? (Number(balanceMetrics.totals.checking) || 0) + (Number(balanceMetrics.totals.savings) || 0)
             : null;
@@ -4602,6 +4602,7 @@ const ESSENTIAL_CATEGORIES = new Set([
     'Wonen',
     'Energie & telecom',
     'Kinderopvang',
+    'Alimentatie',
     'Verzekering',
     'Belastingen',
     'Vervoer',
@@ -4870,9 +4871,15 @@ function latestCompleteBudgetMonth(monthly) {
 const AVG_DAYS_PER_MONTH = 30.44;
 // Never suggested as "cut this" in the action plan (not changeable short-term).
 // They still count in totals and in the 50/30/20 figures.
-const NON_ACTIONABLE_CATEGORIES = new Set(['Wonen', 'Belastingen']);
+const NON_ACTIONABLE_CATEGORIES = new Set(['Wonen', 'Belastingen', 'Alimentatie']);
 // Fixed costs: left out of the spending-volatility measure.
-const FIXED_COST_CATEGORIES = new Set(['Wonen', 'Verzekering', 'Belastingen', 'Energie & telecom', 'Abonnementen', 'Kinderopvang']);
+const FIXED_COST_CATEGORIES = new Set(['Wonen', 'Verzekering', 'Belastingen', 'Energie & telecom', 'Abonnementen', 'Kinderopvang', 'Alimentatie']);
+
+// Variable spending (no fixed costs); a refund counts with the category of its purchase.
+function isVariableSpending(transaction) {
+    const category = isRefundTransaction(transaction) ? transaction.refund_category : transaction.category;
+    return !FIXED_COST_CATEGORIES.has(category);
+}
 
 function monthKeyOf(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -4942,7 +4949,7 @@ function estimateMonthlyNet(transactions) {
             basis: `${months.length} volledige ${months.length === 1 ? 'maand' : 'maanden'}`
         };
     }
-    const net = (transactions || []).reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
+    const net = excludeOwnTransfersForBudget(transactions).reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
     return {
         monthlyNet: (net / periodDaysCovered(transactions)) * AVG_DAYS_PER_MONTH,
         months: 0,
@@ -4957,7 +4964,14 @@ function computeDailyBurn(transactions) {
 
 // Result for the running month: what happened so far plus what, in recent complete months,
 // still came in and went out after today's day of the month (salary, rent, ...).
-function projectCurrentMonthNet(transactions, now = new Date()) {
+// All accounts regardless of the account selection (household metrics such as the runway).
+function allAccountsTransactions(fallback) {
+    return Array.isArray(transactionsData) && transactionsData.length ? normalizeTransactions(transactionsData) : fallback;
+}
+
+function projectCurrentMonthNet(allTransactions, now = new Date()) {
+    // Own transfers are no income or cost (as in the monthly budget figures it builds on).
+    const transactions = excludeOwnTransfersForBudget(allTransactions);
     const currentKey = monthKeyOf(now);
     const monthToDate = (transactions || [])
         .filter((transaction) => isValidTransactionDate(transaction) && monthKeyOf(transaction.date) === currentKey)
@@ -5603,8 +5617,17 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const NA = 'n.v.t.';
     const expenseByCategory = buildExpenseByCategory(data);
     const biggest = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1])[0];
+    // Next to the (usually fixed) biggest category, the biggest variable one.
+    const biggestVariable = Object.entries(expenseByCategory)
+        .filter(([category]) => !FIXED_COST_CATEGORIES.has(category))
+        .sort((a, b) => b[1] - a[1])[0];
     if (biggestCategory) {
-        biggestCategory.textContent = biggest ? `${biggest[0]} (${formatCurrency(biggest[1])})` : NA;
+        biggestCategory.textContent = !biggest
+            ? NA
+            : `${biggest[0]} (${formatCurrency(biggest[1])})`
+                + (biggestVariable && biggestVariable[0] !== biggest[0]
+                    ? ` · variabel: ${biggestVariable[0]} (${formatCurrency(biggestVariable[1])})`
+                    : '');
     }
 
     // Per calendar day over the selected period (from the first transaction if later).
@@ -5618,10 +5641,13 @@ function renderInsights(data, kpis, qualitySummary = null) {
             : `${volatility.label} (${(volatility.cv * 100).toFixed(0)}%)`;
     }
 
-    const daily = buildDailyTotals(data);
+    // Variable spending only: with fixed costs it is nearly always rent (or alimony) day.
+    const daily = buildDailyTotals(data.filter(isVariableSpending));
     const expensive = [...daily].sort((a, b) => b.expenses - a.expenses)[0];
     if (expensiveDay) {
-        expensiveDay.textContent = expensive ? `${expensive.date.toLocaleDateString('nl-NL')} (${formatCurrency(expensive.expenses)})` : NA;
+        expensiveDay.textContent = expensive && expensive.expenses > 0.004
+            ? `${expensive.date.toLocaleDateString('nl-NL')} (${formatCurrency(expensive.expenses)})`
+            : NA;
     }
 
     // Latest complete month vs the complete month(s) before it.
@@ -5647,7 +5673,8 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const liquidBalance = balanceMetrics
         ? (Number(balanceMetrics.totals.checking) || 0) + (Number(balanceMetrics.totals.savings) || 0)
         : null;
-    const dailyBurn = computeDailyBurn(data);
+    // The balance covers all accounts, so the burn rate must too (not just the selection).
+    const dailyBurn = computeDailyBurn(allAccountsTransactions(data));
 
     if (liquidityRunway) {
         if (liquidBalance === null) {
@@ -5656,8 +5683,8 @@ function renderInsights(data, kpis, qualitySummary = null) {
             liquidityRunway.textContent = '∞ (positieve cashflow)';
         } else {
             const runwayDays = liquidBalance / dailyBurn;
-            const runwayMonths = runwayDays / 30;
-            liquidityRunway.textContent = `${Math.round(runwayDays)} dagen (${runwayMonths.toFixed(1)} mnd)`;
+            const runwayMonths = runwayDays / AVG_DAYS_PER_MONTH;
+            liquidityRunway.textContent = `${Math.round(runwayDays).toLocaleString('nl-NL')} dagen (${runwayMonths.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mnd)`;
         }
     }
 
@@ -5683,13 +5710,16 @@ function renderInsights(data, kpis, qualitySummary = null) {
         }
     }
 
-    const merchantsSorted = netSpendingByMerchant(data).map((row) => [row.label, row.amount]);
+    // Like the action plan: rent, taxes and alimony are no concentration you can act on.
+    const isActionableEntry = (entry) => !NON_ACTIONABLE_CATEGORIES.has(entry.category);
+    const merchantsSorted = netSpendingByMerchant(data, isActionableEntry).map((row) => [row.label, row.amount]);
+    const actionableSpending = spendingEntries(data).filter(isActionableEntry).reduce((sum, entry) => sum + entry.amount, 0);
     if (topMerchantShare) {
-        if (!merchantsSorted.length || kpis.expenses <= 0) {
+        if (!merchantsSorted.length || actionableSpending <= 0.01) {
             topMerchantShare.textContent = NA;
         } else {
             const [merchantName, merchantTotal] = merchantsSorted[0];
-            const share = (merchantTotal / kpis.expenses) * 100;
+            const share = (merchantTotal / actionableSpending) * 100;
             topMerchantShare.textContent = `${merchantName} (${formatPercent(share)})`;
         }
     }
@@ -5722,8 +5752,9 @@ function renderInsights(data, kpis, qualitySummary = null) {
         } else {
             const confidencePct = Math.round((Number(topAction.confidence) || 0.75) * 100);
             nextBestAction.textContent = topAction.impact > 0.01
-                ? `P${topAction.priority} · ${topAction.title} (${formatCurrency(topAction.impact)}) · ${confidencePct}%`
-                : `P${topAction.priority} · ${topAction.title} · ${confidencePct}%`;
+                ? `P${topAction.priority} · ${topAction.title} (${formatCurrency(topAction.impact)}) · zekerheid ${confidencePct}%`
+                : `P${topAction.priority} · ${topAction.title} · zekerheid ${confidencePct}%`;
+            nextBestAction.title = 'Zekerheid: hoe betrouwbaar het advies is, op basis van het aantal volledige maanden en de datakwaliteit. Bedrag: geschatte impact per maand.';
         }
     }
 
@@ -5775,7 +5806,7 @@ function updateLastUpdateTime() {
     const now = new Date();
     const lastUpdate = document.getElementById('lastUpdate');
     if (lastUpdate) {
-        lastUpdate.textContent = `Last updated: ${now.toLocaleTimeString('nl-NL')}`;
+        lastUpdate.textContent = `Laatst bijgewerkt: ${now.toLocaleTimeString('nl-NL')}`;
     }
 }
 
