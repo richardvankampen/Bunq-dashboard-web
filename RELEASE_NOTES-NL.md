@@ -7,6 +7,14 @@
 
 ## 2026-09-26
 
+### Instellingen
+- De rekeningselectie wordt toegepast bij Opslaan (sluiten zonder opslaan laat hem ongewijzigd) en haalt geen nieuwe gegevens meer op: alle rekeningen worden altijd geladen en de selectie wordt in de browser toegepast. Dat lost ook op dat huishoudcijfers (runway, sparen via overboekingen) alleen de geselecteerde rekeningen zagen.
+- "Alle rekeningen" wordt als alle opgeslagen, zodat later geopende rekeningen vanzelf meetellen; rekeningen die niet meer bestaan verdwijnen uit de selectie.
+- Het interval voor automatisch vernieuwen werkt direct na opslaan (0 zet het uit), vernieuwt op de achtergrond zonder laadscherm en pauzeert als het tabblad verborgen is. Waarden zijn hele minuten, tot 1440.
+- Het API-endpoint wordt bij opslaan gecontroleerd; een leeg veld zet de standaard terug.
+- Het filter voor interne overboekingen en de rekeningselectie tekenen het dashboard opnieuw zonder gegevens opnieuw op te halen.
+- De gekozen periode wordt onthouden.
+
 ### Taalkeuze
 - Nieuwe NL/EN-knop in de header: het hele dashboard (tegels, grafieken, tooltips, detailvensters, inzichten, actieplan, instellingen en beheeronderhoud) wisselt tussen Nederlands en Engels, inclusief getal- en datumnotatie. De keuze wordt in de browser onthouden; standaard is Nederlands.
 - Nederlandse teksten die nog deels Engels waren (beheermeldingen, actieplan) zijn nu volledig Nederlands.

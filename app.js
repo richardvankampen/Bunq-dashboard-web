@@ -16,15 +16,44 @@ const DEFAULT_ADMIN_MAINTENANCE_OPTIONS = {
     clear_runtime_cache: true,
     load_status_after: true
 };
+// Auto-refresh in whole minutes: 0 = off, at most one day. A refresh makes several Bunq calls,
+// so less than a minute is never used (Bunq allows 30 requests/min).
+const MAX_REFRESH_INTERVAL_MINUTES = 1440;
+const TIME_RANGE_OPTIONS = ['7', '30', '90', '180', '365', 'all'];
+// Backend MAX_DAYS is 3650; 'all' uses that as the upper bound.
+const ALL_TIME_DAYS = 3650;
+
+function normalizeRefreshInterval(value) {
+    const minutes = parseInt(value, 10);
+    if (!Number.isFinite(minutes) || minutes <= 0) return 0;
+    return Math.min(minutes, MAX_REFRESH_INTERVAL_MINUTES);
+}
+
+// '' = default (same origin). Otherwise an http(s) URL or a path, without a trailing slash;
+// null when invalid.
+function normalizeApiEndpoint(value) {
+    const text = String(value || '').trim().replace(/\/+$/, '');
+    if (!text) return DEFAULT_API_ENDPOINT;
+    if (/^https?:\/\/[^\s/]+(\/\S*)?$/i.test(text) || /^\/\S*$/.test(text)) return text;
+    return null;
+}
+
+function timeRangeToDays(value) {
+    return value === 'all' ? ALL_TIME_DAYS : (parseInt(value, 10) || 90);
+}
+
+function loadStoredTimeRange() {
+    const stored = localStorage.getItem('timeRange');
+    return TIME_RANGE_OPTIONS.includes(stored) ? stored : '90';
+}
+
 const CONFIG = {
-    apiEndpoint: localStorage.getItem('apiEndpoint') || DEFAULT_API_ENDPOINT,
-    // Minimum 60 seconds to stay well within Bunq API rate limits (30 req/min).
-    // Values below 60 will be silently raised to 60 at runtime.
-    refreshInterval: parseInt(localStorage.getItem('refreshInterval')) || 0,
+    apiEndpoint: normalizeApiEndpoint(localStorage.getItem('apiEndpoint')) || DEFAULT_API_ENDPOINT,
+    refreshInterval: normalizeRefreshInterval(localStorage.getItem('refreshInterval')),
     enableAnimations: localStorage.getItem('enableAnimations') !== 'false',
     enableParticles: localStorage.getItem('enableParticles') !== 'false',
     excludeInternalTransfers: localStorage.getItem('excludeInternalTransfers') !== 'false',
-    timeRange: 90,
+    timeRange: timeRangeToDays(loadStoredTimeRange()),
     useRealData: localStorage.getItem('useRealData') === 'true'
 };
 
@@ -479,6 +508,11 @@ async function loadAccounts() {
     const response = await authenticatedFetch(`${CONFIG.apiEndpoint}/accounts`);
     if (response && response.success) {
         accountsList = response.data || [];
+        const normalizedSelection = normalizeAccountSelection(selectedAccountIds, accountsList);
+        if (normalizedSelection.size !== selectedAccountIds.size) {
+            selectedAccountIds = normalizedSelection;
+            persistSelectedAccounts();
+        }
         renderAccountsFilter(accountsList);
         await loadBalanceHistory(CONFIG.timeRange);
     } else {
@@ -536,6 +570,19 @@ function persistSelectedAccounts() {
     localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(Array.from(selectedAccountIds)));
 }
 
+// Selection rules: an empty selection means all accounts, so accounts opened later are included
+// automatically. Ids of accounts that no longer exist are dropped; selecting every account is
+// stored as empty (= all).
+function normalizeAccountSelection(ids, accounts) {
+    const known = new Set((accounts || []).map((account) => String(account.id)));
+    if (!known.size) return new Set(Array.from(ids || []).map(String));
+    const kept = new Set(Array.from(ids || []).map(String).filter((id) => known.has(id)));
+    return kept.size === known.size ? new Set() : kept;
+}
+
+// Checkbox state in the settings panel; applied on "Save Settings", dropped on close.
+let accountSelectionDraft = null;
+
 function renderAccountsFilter(accounts) {
     const container = document.getElementById('accountsFilter');
     if (!container) return;
@@ -558,10 +605,10 @@ function renderAccountsFilter(accounts) {
         return;
     }
     
-    if (selectedAccountIds.size === 0) {
-        accounts.forEach(account => selectedAccountIds.add(String(account.id)));
-        persistSelectedAccounts();
-    }
+    if (!accountSelectionDraft) accountSelectionDraft = new Set(selectedAccountIds);
+    const draft = accountSelectionDraft;
+    // Empty = all accounts.
+    const isChecked = (id) => draft.size === 0 || draft.has(id);
     
     const actions = document.createElement('div');
     actions.className = 'accounts-actions';
@@ -570,8 +617,7 @@ function renderAccountsFilter(accounts) {
     selectAllBtn.type = 'button';
     selectAllBtn.textContent = 'Select all';
     selectAllBtn.addEventListener('click', () => {
-        selectedAccountIds = new Set(accounts.map(a => String(a.id)));
-        persistSelectedAccounts();
+        accountSelectionDraft = new Set();
         renderAccountsFilter(accounts);
     });
     
@@ -584,14 +630,12 @@ function renderAccountsFilter(accounts) {
         
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.checked = selectedAccountIds.has(String(account.id));
+        const accountId = String(account.id);
+        checkbox.checked = isChecked(accountId);
         checkbox.addEventListener('change', () => {
-            if (checkbox.checked) {
-                selectedAccountIds.add(String(account.id));
-            } else {
-                selectedAccountIds.delete(String(account.id));
-            }
-            persistSelectedAccounts();
+            if (draft.size === 0) accounts.forEach((item) => draft.add(String(item.id)));
+            if (checkbox.checked) draft.add(accountId);
+            else draft.delete(accountId);
         });
         
         const text = document.createElement('span');
@@ -731,9 +775,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         
         // Auto-refresh if enabled
-        if (CONFIG.refreshInterval > 0) {
-            startAutoRefresh();
-        }
+        startAutoRefresh();
     } catch (error) {
         console.error('❌ Fatal startup error:', error);
         hideLoading();
@@ -836,24 +878,24 @@ function setupEventListeners() {
     });
     
     // Time range
-    document.getElementById('timeRange')?.addEventListener('change', (e) => {
-        // Backend MAX_DAYS is 3650; use that as the upper bound for 'all'.
-        CONFIG.timeRange = e.target.value === 'all' ? 3650 : parseInt(e.target.value);
+    const timeRangeSelect = document.getElementById('timeRange');
+    if (timeRangeSelect) timeRangeSelect.value = loadStoredTimeRange();
+    timeRangeSelect?.addEventListener('change', (e) => {
+        CONFIG.timeRange = timeRangeToDays(e.target.value);
+        localStorage.setItem('timeRange', e.target.value);
         refreshData();
     });
     
     // Real data toggle
     document.getElementById('useRealData')?.addEventListener('change', async (e) => {
-        CONFIG.useRealData = e.target.checked;
-        localStorage.setItem('useRealData', CONFIG.useRealData);
-        
-        if (CONFIG.useRealData && !isAuthenticated) {
-            showLoginModal();
+        if (e.target.checked && !isAuthenticated) {
             e.target.checked = false;
-            CONFIG.useRealData = false;
-        } else {
-            await refreshData();
+            showLoginModal();
+            return;
         }
+        CONFIG.useRealData = e.target.checked;
+        localStorage.setItem('useRealData', String(CONFIG.useRealData));
+        await refreshData();
     });
     
     // Animation controls
@@ -1232,14 +1274,16 @@ function resizeAllCharts() {
 // DATA LOADING
 // ============================================
 
-async function loadRealData() {
+async function loadRealData({ silent = false } = {}) {
     if (!isAuthenticated) {
         console.warn('⚠️ Not authenticated - cannot load real data');
         showLoginModal();
         return;
     }
     
-    showLoading();
+    // Auto-refresh updates in place: no loading screen (it hides the dashboard and loses the
+    // scroll position).
+    if (!silent) showLoading();
     
     try {
         console.log('📡 Fetching real data from Bunq API...');
@@ -1262,11 +1306,12 @@ async function loadRealData() {
         let backendMissingEurCount = 0;
         const truncatedAccounts = new Map();
         
-        const accountParam = buildAccountFilterParam();
+        // Always all accounts: the account selection is applied client-side, and household
+        // figures (runway, savings via transfers, internal-transfer pairs) need every account.
         const excludeParam = '&exclude_internal=false';
         
         while (page <= hardPageCap) {
-            const url = `${CONFIG.apiEndpoint}/transactions?days=${CONFIG.timeRange}&page=${page}&page_size=${pageSize}${accountParam}${excludeParam}`;
+            const url = `${CONFIG.apiEndpoint}/transactions?days=${CONFIG.timeRange}&page=${page}&page_size=${pageSize}${excludeParam}`;
             const response = await authenticatedFetch(url);
             lastResponse = response;
             
@@ -1348,7 +1393,7 @@ async function loadRealData() {
         console.error('❌ Error loading real data:', error);
         loadDemoData();
     } finally {
-        hideLoading();
+        if (!silent) hideLoading();
         updateLastUpdateTime();
     }
 }
@@ -1693,15 +1738,6 @@ function processAndRenderData(data) {
     renderInsights(normalized, kpis, latestDataQualitySummary);
     
     console.log('✅ All visualizations rendered!');
-}
-
-function buildAccountFilterParam() {
-    if (!accountsList.length) return '';
-    if (selectedAccountIds.size === 0 || selectedAccountIds.size === accountsList.length) {
-        return '';
-    }
-    const ids = Array.from(selectedAccountIds).join(',');
-    return `&account_ids=${encodeURIComponent(ids)}`;
 }
 
 function applyClientFilters(data, options = {}) {
@@ -5893,13 +5929,14 @@ function hideLoading() {
     if (mainContent) mainContent.style.display = 'block';
 }
 
-async function refreshData() {
+async function refreshData({ silent = false } = {}) {
     const btn = document.getElementById('refreshBtn');
     if (btn) btn.classList.add('loading');
     
     if (CONFIG.useRealData && isAuthenticated) {
-        await loadRealData();
-    } else {
+        await loadRealData({ silent });
+    } else if (!silent) {
+        // Demo data is random: an automatic refresh would only reshuffle it.
         loadDemoData();
     }
     
@@ -5934,15 +5971,16 @@ function handleUiLanguageChange() {
     }
 }
 
+// (Re)starts or stops auto-refresh for the current CONFIG.refreshInterval (whole minutes).
+// Skipped while the tab is hidden or a load is already running.
 function startAutoRefresh() {
     if (refreshIntervalId) clearInterval(refreshIntervalId);
+    refreshIntervalId = null;
     if (CONFIG.refreshInterval > 0) {
-        // Enforce a minimum of 1 minute to stay within Bunq's API rate limit (30 req/min).
-        // A full data refresh issues several API calls, so anything below 60s is unsafe.
-        const intervalMinutes = Math.max(CONFIG.refreshInterval, 1);
         refreshIntervalId = setInterval(() => {
-            refreshData();
-        }, intervalMinutes * 60 * 1000);
+            if (document.hidden || isLoading) return;
+            refreshData({ silent: true });
+        }, CONFIG.refreshInterval * 60 * 1000);
     }
 }
 
@@ -5960,6 +5998,7 @@ function openSettings() {
     document.getElementById('enableParticles').checked = CONFIG.enableParticles;
     document.getElementById('useRealData').checked = CONFIG.useRealData;
     document.getElementById('excludeInternalTransfers').checked = CONFIG.excludeInternalTransfers;
+    accountSelectionDraft = new Set(selectedAccountIds);
     renderAccountsFilter(accountsList);
     applyAdminMaintenanceOptionsToUI();
     renderAdminTerminalPanel(null);
@@ -5972,23 +6011,39 @@ function openSettings() {
     }
 }
 
+// Closing without saving drops unsaved changes (the form is refilled from CONFIG on open).
 function closeSettings() {
     document.getElementById('settingsModal')?.classList.remove('active');
+    accountSelectionDraft = null;
     renderAdminTerminalPanel(null);
 }
 
-function saveSettings() {
-    CONFIG.apiEndpoint = document.getElementById('apiEndpoint').value;
-    CONFIG.refreshInterval = parseInt(document.getElementById('refreshInterval').value);
+async function saveSettings() {
+    const endpointInput = document.getElementById('apiEndpoint');
+    const apiEndpoint = normalizeApiEndpoint(endpointInput?.value);
+    if (!apiEndpoint) {
+        showError(t('Ongeldige API-endpoint-URL. Gebruik bijvoorbeeld {example}, of laat het veld leeg voor de standaard.', { example: DEFAULT_API_ENDPOINT }));
+        endpointInput?.focus();
+        return;
+    }
+    const endpointChanged = apiEndpoint !== CONFIG.apiEndpoint;
+    CONFIG.apiEndpoint = apiEndpoint;
+    CONFIG.refreshInterval = normalizeRefreshInterval(document.getElementById('refreshInterval').value);
     CONFIG.enableAnimations = document.getElementById('enableAnimations').checked;
     CONFIG.enableParticles = document.getElementById('enableParticles').checked;
     CONFIG.excludeInternalTransfers = document.getElementById('excludeInternalTransfers').checked;
+    if (accountSelectionDraft) {
+        selectedAccountIds = normalizeAccountSelection(accountSelectionDraft, accountsList);
+        persistSelectedAccounts();
+    }
     
-    localStorage.setItem('apiEndpoint', CONFIG.apiEndpoint);
-    localStorage.setItem('refreshInterval', CONFIG.refreshInterval);
-    localStorage.setItem('enableAnimations', CONFIG.enableAnimations);
-    localStorage.setItem('enableParticles', CONFIG.enableParticles);
-    localStorage.setItem('excludeInternalTransfers', CONFIG.excludeInternalTransfers);
+    // The default endpoint is not stored, so it follows the page origin.
+    if (apiEndpoint === DEFAULT_API_ENDPOINT) localStorage.removeItem('apiEndpoint');
+    else localStorage.setItem('apiEndpoint', apiEndpoint);
+    localStorage.setItem('refreshInterval', String(CONFIG.refreshInterval));
+    localStorage.setItem('enableAnimations', String(CONFIG.enableAnimations));
+    localStorage.setItem('enableParticles', String(CONFIG.enableParticles));
+    localStorage.setItem('excludeInternalTransfers', String(CONFIG.excludeInternalTransfers));
     
     closeSettings();
     applyVisualPreferences();
@@ -5998,9 +6053,19 @@ function saveSettings() {
     } else {
         destroyParticles();
     }
+    startAutoRefresh();
     
     console.log('✅ Settings saved');
-    refreshData();
+    if (endpointChanged) {
+        // Another backend: check the session there and load its data.
+        await checkAuthStatus();
+        await refreshData();
+    } else if (Array.isArray(transactionsData)) {
+        // Internal-transfer filter and account selection are applied client-side: no refetch.
+        processAndRenderData(transactionsData);
+    } else {
+        await refreshData();
+    }
 }
 
 function escapeHtml(value) {

@@ -15,6 +15,14 @@ Dit bestand is de actuele bron voor overdracht.
 - Session-auth met secure cookies werkt.
 - Dashboard draait via Synology + Docker Swarm + Gunicorn.
 
+## Instellingen (frontend)
+
+- Opslag per browser (`localStorage`): `apiEndpoint` (alleen als afwijkend van de standaard `origin/api`; gevalideerd via `normalizeApiEndpoint`), `refreshInterval` (hele minuten 0–1440, `normalizeRefreshInterval`), `enableAnimations`, `enableParticles`, `excludeInternalTransfers`, `useRealData`, `timeRange` (7/30/90/180/365/all), `selectedAccountIds`, `uiLanguage`, `adminMaintenanceOptions`.
+- Rekeningselectie: leeg = alle rekeningen (ook later geopende); `normalizeAccountSelection` verwijdert onbekende ids en slaat "alles" op als leeg. In het instellingenpaneel wordt een concept (`accountSelectionDraft`) bewerkt; pas bij Opslaan toegepast, sluiten gooit het weg.
+- `/api/transactions` wordt altijd voor alle rekeningen opgehaald (geen `account_ids`); de selectie wordt client-side toegepast (`applyClientFilters`), zodat huishoudcijfers (`allAccountsTransactions`: runway) en sparen via overboekingen alle rekeningen zien.
+- `saveSettings`: endpoint gewijzigd → `checkAuthStatus` + herladen; anders alleen `processAndRenderData` (filter/selectie zijn client-side). `startAutoRefresh()` wordt altijd opnieuw gestart (0 = uit); automatisch vernieuwen is stil (`refreshData({ silent: true })`, geen laadscherm), slaat over bij verborgen tabblad of lopende load, en ververst demodata niet.
+- Echte-data-schakelaar: zonder login blijft hij uit en opent het loginvenster (niets opgeslagen).
+
 ## UI-taal (NL/EN)
 
 - Knop NL/EN in de header (`.lang-toggle`, `data-lang-option`); keuze in `localStorage.uiLanguage`, standaard `nl`. `<html lang>` en `document.title` volgen mee.

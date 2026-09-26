@@ -164,6 +164,7 @@ addTranslations({
     '{count} transactie(s) in vreemde valuta hebben geen omrekening naar EUR en tellen niet mee in totalen en grafieken; inkomsten en uitgaven zijn daardoor mogelijk te laag.':
         '{count} foreign-currency transaction(s) have no EUR conversion and are left out of totals and charts; income and expenses may therefore be too low.',
     'Kon data niet laden: {error}': 'Could not load data: {error}',
+    'Ongeldige API-endpoint-URL. Gebruik bijvoorbeeld {example}, of laat het veld leeg voor de standaard.': 'Invalid API endpoint URL. Use e.g. {example}, or leave the field empty for the default.',
 
     // ---------- Trends and tile tooltips ----------
     '{month} t.o.v. gemiddelde van {months} (volledige maanden).': '{month} vs the average of {months} (complete months).',
@@ -524,7 +525,9 @@ addTranslations({
     'Enable background particles': 'Achtergronddeeltjes aan',
     'Turn the dashboard backdrop into a live animated scene.': 'Maak van de dashboardachtergrond een bewegende animatie.',
     'Exclude internal transfers (recommended)': 'Interne overboekingen uitsluiten (aanbevolen)',
-    'Transfers between your own Bunq accounts won\'t count as income or expense.': 'Overboekingen tussen je eigen Bunq-rekeningen tellen niet als inkomsten of uitgaven.',
+    'Transfers between your own accounts (including linked external accounts such as Triodos) won\'t count as income or expense.': 'Overboekingen tussen je eigen rekeningen (ook gekoppelde externe rekeningen zoals Triodos) tellen niet als inkomsten of uitgaven.',
+    '0 = off. Updates in the background while this tab is visible.': '0 = uit. Vernieuwt op de achtergrond zolang dit tabblad zichtbaar is.',
+    'Applied when you save. All accounts selected (or none) = all accounts, including accounts opened later.': 'Wordt toegepast bij opslaan. Alle rekeningen (of geen) geselecteerd = alle rekeningen, ook rekeningen die later worden geopend.',
     'Use real Bunq data (requires login)': 'Echte Bunq-gegevens gebruiken (inloggen vereist)',
     'If disabled, the dashboard uses built-in demo data.': 'Staat dit uit, dan gebruikt het dashboard ingebouwde demogegevens.',
     'Accounts to include': 'Rekeningen om mee te nemen',

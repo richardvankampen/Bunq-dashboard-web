@@ -4,6 +4,21 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — instellingen gecontroleerd en gecorrigeerd
+
+- Bevindingen en oplossingen:
+  1. Rekeningselectie werd server-side gefilterd (`account_ids`), waardoor "alle rekeningen"-cijfers (runway-burn, sparen via overboekingen) alleen de selectie zagen → altijd alle rekeningen ophalen, selectie client-side.
+  2. Vinkjes werden direct opgeslagen maar pas bij Opslaan toegepast; sluiten liet opslag en scherm uit elkaar lopen → concept, toegepast bij Opslaan.
+  3. "Alles geselecteerd" werd als expliciete ids opgeslagen → later geopende rekeningen vielen stil buiten beeld; verwijderde ids verstoorden de telling → leeg = alles, onbekende ids weg.
+  4. Auto-refresh-interval werd pas na herladen actief (en 0 stopte een lopende niet) → herstart bij opslaan; stil vernieuwen zonder laadscherm (dat de pagina verborg en de scrollpositie wiste), pauze bij verborgen tabblad, geen herschudden van demodata.
+  5. API-endpoint zonder controle (leeg of ongeldig maakte het dashboard onbruikbaar) → validatie, leeg = standaard, standaard niet opgeslagen.
+  6. Interval: NaN/negatief/onbegrensd → hele minuten 0–1440.
+  7. Echte-data-schakelaar sloeg `true` op vóór de logincheck → pas opslaan na geldige keuze.
+  8. Filter/selectie wijzigen haalde alles opnieuw op (en herschudde demodata) → alleen opnieuw tekenen.
+  9. Periode werd niet onthouden → `timeRange` in localStorage.
+  10. Helptekst interne overboekingen noemt nu ook gekoppelde externe rekeningen (Triodos); uitleg bij interval en rekeningselectie.
+- Verificatie: pytest 337 groen; headless Chromium met gemockte API: verouderde id 99 + alles geselecteerd → `[]`, geen `account_ids` in de request, sluiten zonder opslaan verandert niets, opslaan met 2 van 3 rekeningen → uitgaven €1.814 → €1.214 zonder nieuwe request, interval 5 → timer aan, 0 → uit, ongeldig endpoint → melding en paneel blijft open, leeg → standaard, periode 30 na herladen behouden, geen JS-fouten.
+
 ### Opgeleverd — taalkeuze NL/EN in het dashboard
 
 - Vraag: taalswitch NL/EN, met alle getoonde tekst in beide talen.
