@@ -15,6 +15,17 @@ Dit bestand is de actuele bron voor overdracht.
 - Session-auth met secure cookies werkt.
 - Dashboard draait via Synology + Docker Swarm + Gunicorn.
 
+## Beveiliging (backend/frontend)
+
+- Sessie: Flask-cookiesessie (ondertekend met `bunq_flask_secret_key`), `HttpOnly`, `SameSite=Lax`, `Secure` via `SESSION_COOKIE_SECURE`, 24 uur (`expires_at` in de sessie gecontroleerd). Uitloggen wist de cookie; intrekken van alle sessies = secret key roteren.
+- `check_credentials`: alleen strings, vergelijkt UTF-8-bytes met `secrets.compare_digest` (str met niet-ASCII gaf TypeError/500). Login valideert types en lengte (400).
+- `csrf_guard` (before_request): POST/PUT/PATCH/DELETE op `/api/` moeten `application/json` zijn (anders 415) en een Origin uit `ALLOWED_ORIGINS` of gelijk aan de eigen host/`X-Forwarded-Host` hebben (anders 403). Frontend stuurt altijd JSON (ook logout en reconcile).
+- `add_security_headers` (after_request): nosniff, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, `Permissions-Policy`; `/api/*` → `Cache-Control: no-store`; HTML → CSP (`script-src 'self'` + cdnjs + unpkg, geen inline scripts/`unsafe-eval`; `style-src` met `'unsafe-inline'` voor Plotly/inline stijlen; `connect-src 'self'` + `ALLOWED_ORIGINS`). AOS-init staat daarom in `app.js`.
+- `/api/health` is openbaar; `bunq_last_error` alleen voor een ingelogde sessie.
+- `log_safe()` voor gebruikersinvoer in logs (geen stuurtekens, max 64 tekens).
+- Rate limiting: in-memory per worker en per `remote_addr`; achter Swarm-ingress/reverse proxy is dat één IP → limieten gelden voor iedereen samen (gedocumenteerd in SECURITY).
+- Frontend: `showError` gebruikt `textContent`; tabellen/lijsten gebruiken `escapeHtml`.
+
 ## Instellingen (frontend)
 
 - Opslag per browser (`localStorage`): `apiEndpoint` (alleen als afwijkend van de standaard `origin/api`; gevalideerd via `normalizeApiEndpoint`), `refreshInterval` (hele minuten 0–1440, `normalizeRefreshInterval`), `enableAnimations`, `enableParticles`, `excludeInternalTransfers`, `useRealData`, `timeRange` (7/30/90/180/365/all), `selectedAccountIds`, `uiLanguage`, `adminMaintenanceOptions`.

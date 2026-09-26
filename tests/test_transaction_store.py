@@ -415,7 +415,7 @@ def test_statistics_endpoint_uses_store(ap, store, live_api):
 def test_admin_reconcile_endpoints(ap, store, live_api, monkeypatch):
     started = []
     monkeypatch.setattr(ap, 'run_reconcile_exclusive', lambda trigger: started.append(trigger) or {'status': 'success'})
-    response = live_api.post('/api/admin/reconcile')
+    response = live_api.post('/api/admin/reconcile', json={})
     assert response.status_code == 202
     status = live_api.get('/api/admin/reconcile').get_json()
     assert status['success'] is True

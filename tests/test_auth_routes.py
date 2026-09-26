@@ -64,7 +64,7 @@ def test_login_is_rate_limited_after_five_attempts(client):
 
 
 def test_logout_clears_session(auth_client):
-    assert auth_client.post('/api/auth/logout').status_code == 200
+    assert auth_client.post('/api/auth/logout', json={}).status_code == 200
     assert auth_client.get('/api/auth/status').get_json() == {'authenticated': False}
 
 
@@ -150,3 +150,71 @@ def test_health_ready_when_context_initialized(client, ap, monkeypatch):
     response = client.get('/api/health')
     assert response.status_code == 200
     assert response.get_json()['api_status'] == 'initialized'
+
+
+# --- input hardening, CSRF guard, headers --------------------------------------
+
+def test_check_credentials_handles_non_ascii_and_non_strings(ap):
+    assert ap.check_credentials(TEST_USERNAME, 'wachtwoord-é') is False
+    assert ap.check_credentials('ümlaut', TEST_PASSWORD) is False
+    assert ap.check_credentials(123, TEST_PASSWORD) is False
+    assert ap.check_credentials(TEST_USERNAME, None) is False
+
+
+@pytest.mark.parametrize('payload', [
+    {'username': 123, 'password': TEST_PASSWORD},
+    {'username': TEST_USERNAME, 'password': ['x']},
+    {'username': 'a' * 300, 'password': TEST_PASSWORD},
+    ['not', 'an', 'object'],
+])
+def test_login_rejects_malformed_input(client, payload):
+    assert client.post('/api/auth/login', json=payload).status_code == 400
+
+
+def test_login_non_ascii_password_is_401_not_500(client):
+    response = client.post('/api/auth/login', json={'username': TEST_USERNAME, 'password': 'geheim-é'})
+    assert response.status_code == 401
+
+
+def test_log_safe_strips_control_characters(ap):
+    assert ap.log_safe('admin\nFAKE LOG LINE') == 'admin?FAKE LOG LINE'
+    assert ap.log_safe('x' * 100).endswith('…')
+
+
+def test_post_without_json_content_type_is_rejected(auth_client):
+    response = auth_client.post('/api/auth/logout', data='x', content_type='text/plain')
+    assert response.status_code == 415
+    # Still logged in: the request was blocked before the handler ran.
+    assert auth_client.get('/api/auth/status').get_json()['authenticated'] is True
+
+
+def test_post_from_foreign_origin_is_rejected(auth_client):
+    response = auth_client.post('/api/admin/reconcile', json={}, headers={'Origin': 'https://evil.example'})
+    assert response.status_code == 403
+
+
+def test_post_from_same_host_origin_is_allowed(client):
+    response = client.post(
+        '/api/auth/login',
+        json={'username': TEST_USERNAME, 'password': TEST_PASSWORD},
+        headers={'Origin': 'http://localhost'},
+    )
+    assert response.status_code == 200
+
+
+def test_security_headers(client):
+    page = client.get('/')
+    assert page.headers['X-Content-Type-Options'] == 'nosniff'
+    assert page.headers['X-Frame-Options'] == 'DENY'
+    csp = page.headers['Content-Security-Policy']
+    assert "frame-ancestors 'none'" in csp and "object-src 'none'" in csp
+    assert "'unsafe-eval'" not in csp and "script-src 'self' https://cdnjs.cloudflare.com" in csp
+    api = client.get('/api/auth/status')
+    assert api.headers['Cache-Control'] == 'no-store'
+
+
+def test_health_hides_error_details_without_login(auth_client, ap, monkeypatch):
+    monkeypatch.setattr(ap, '_BUNQ_INIT_LAST_ERROR', 'Incorrect API key or IP address')
+    with ap.app.test_client() as anonymous:
+        assert anonymous.get('/api/health').get_json()['bunq_last_error'] is None
+    assert auth_client.get('/api/health').get_json()['bunq_last_error'] == 'Incorrect API key or IP address'

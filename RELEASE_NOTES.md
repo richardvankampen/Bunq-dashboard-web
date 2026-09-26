@@ -7,6 +7,14 @@
 
 ## 2026-09-26
 
+### Security
+- Every POST to the API must be JSON and come from an allowed origin (`ALLOWED_ORIGINS` or the dashboard's own host): extra CSRF protection next to `SameSite=Lax`, also against other sites on the same domain.
+- New response headers: Content-Security-Policy (scripts only from the dashboard and cdnjs/unpkg; the inline script moved into `app.js`), `X-Frame-Options: DENY`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and `Cache-Control: no-store` on all API responses.
+- Login: a password with accented characters or a malformed request no longer causes a server error (500); usernames are sanitised in log lines.
+- `/api/health` (public) only shows the last Bunq error to a logged-in session.
+- Error notifications are shown as plain text (no HTML from messages).
+- SECURITY describes how rate limiting behaves behind Docker Swarm or a reverse proxy.
+
 ### Admin maintenance
 - New **What problem do you have?** guide in Settings → Admin maintenance: eight situations (no Bunq data / IP or key error, IP change, new API key, Vaultwarden error, missing or deleted transactions, outdated figures, new version, slow or restarting), each with numbered steps and buttons that run the right action (e.g. "Full maintenance with automatic IP") or show the right terminal commands.
 - Every button says what it does and whether it changes anything; every option says what it does and which buttons use it.
