@@ -22,6 +22,12 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Cashflow
+- Terugbetalingen (kaartretour, Tikkie voor een gedeeld etentje) verlagen de uitgaven in plaats van als inkomen te tellen, in de tegels, `Spaarquote`, de cashflow-tijdslijn, de detailvensters en `Geldstromen` (aparte stroom "Terugbetalingen" naar vrij besteedbaar).
+- `Cashflow (tijdslijn)` toont staven voor inkomsten en uitgaven per dag (tot 3 maanden), week (tot een jaar) of maand, en het cumulatieve netto sinds het begin van de periode; de grafiek beslaat altijd de hele gekozen periode.
+- Tegeltrends vergelijken bij periodes van 60+ dagen de laatste volledige maand met de maanden daarvoor (geen sprongen meer door één vs twee salarissen in een halve periode).
+- De periode begint om middernacht Nederlandse tijd, zodat de eerste dag compleet is.
+
 ### Sparen
 - Saldohistorie (`Spaarrekeningen (totaal)`, `Betaalrekeningen`) wordt voor elke dag van de periode opgebouwd uit de opgeslagen transacties, in plaats van snapshots van dagen waarop het dashboard toevallig open was (geen dips naar €0 meer, geen trends "sinds eerste gebruik"). Saldotrends tonen `n.v.t.` zonder beginsaldo, en een +/−-teken en kleur.
 - `Sparen` telt ook overboekingen naar spaarrekeningen die niet geselecteerd zijn, en herkent verplaatsingen tussen spaarrekeningen op rekening, IBAN of naam. `Savings Rate` heet nu `Spaarquote`. Beleggingsrekeningen tellen niet als sparen.

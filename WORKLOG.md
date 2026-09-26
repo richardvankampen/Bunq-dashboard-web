@@ -2,6 +2,19 @@
 
 Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies geen impact heeft.
 
+## 2026-09-26
+
+### Opgeleverd — cashflowlogica gecontroleerd en gecorrigeerd
+
+- Review van `Inkomsten`/`Uitgaven`, `Cashflow (tijdslijn)`, `Geldstromen`; 6 bevindingen, allemaal opgelost:
+  1. Terugbetalingen telden als inkomen (Inkomsten én Uitgaven te hoog, Spaarquote te laag, anders dan 50/30/20) → verlagen nu uitgaven in tegels, cashflow, popups, gem. daguitgaven en Geldstromen (knoop `Terugbetalingen` → `Vrij besteedbaar`).
+  2. Tijdslijn/sparklines/trends liepen van eerste tot laatste transactie → altijd periodebegin t/m vandaag.
+  3. Tegeltrends (halve periodes) sprongen door 1 vs 2 salarissen → ≥60 dagen: laatste volledige maand vs eerdere volledige maanden.
+  4. Tijdslijn met dagelijkse netto-pieken → staven per dag/week/maand + cumulatief netto op rechteras (nullijnen uitgelijnd).
+  5. Backend-periode begon op "nu − N dagen" (UTC) → `period_cutoff`: middernacht Nederlandse tijd.
+  6. Tegel en detail hadden elk eigen grafiekcode → `buildCashflowFigure`.
+- Verificatie: pytest 274 groen, pyflakes schoon; headless Chromium (gemockte API, 90 dagen): inkomsten €9.000 excl. €90 terugbetalingen, uitgaven €4.323 netto, 91 dagpunten vanaf periodebegin, dagstaven bij 90 / week bij 365 / maand bij 1000 dagen, cumulatief eindigt op netto €4.677, Geldstromen met knoop Terugbetalingen, trend-tooltip "aug 26 t.o.v. gemiddelde van jul 26", geen JS-fouten.
+
 ## 2026-09-25
 
 ### Opgeleverd — spaarlogica gecontroleerd en gecorrigeerd

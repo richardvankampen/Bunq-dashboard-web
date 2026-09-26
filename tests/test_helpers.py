@@ -258,3 +258,13 @@ def test_rate_limiter_sweep_removes_stale_clients(ap, monkeypatch):
     limiter.is_allowed('fresh-b')  # 3rd request triggers the sweep
     assert 'stale-client' not in limiter.requests
     assert set(limiter.requests) == {'fresh-a', 'fresh-b'}
+
+
+def test_period_cutoff_starts_at_dutch_midnight(ap):
+    from datetime import datetime, timezone
+    # 26 Sep 2026 10:00 UTC (12:00 in Amsterdam, summer time): 90 days back = 28 Jun 00:00 local = 27 Jun 22:00 UTC.
+    now = datetime(2026, 9, 26, 10, 0, tzinfo=timezone.utc)
+    assert ap.period_cutoff(90, now=now) == datetime(2026, 6, 27, 22, 0, tzinfo=timezone.utc)
+    # 00:30 local on 1 Jan (23:30 UTC on 31 Dec, winter time) already counts as 1 Jan: 1 day back = 31 Dec local.
+    now = datetime(2026, 12, 31, 23, 30, tzinfo=timezone.utc)
+    assert ap.period_cutoff(1, now=now) == datetime(2026, 12, 30, 23, 0, tzinfo=timezone.utc)

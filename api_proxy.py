@@ -4710,7 +4710,7 @@ def build_data_quality_summary(days=90):
         return summary
 
     summary['db_available'] = True
-    cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cutoff_iso = period_cutoff(days).isoformat()
 
     try:
         tx_row = connection.execute(
@@ -5737,7 +5737,7 @@ def get_transactions():
         days = clamp_days(request.args.get('days', 90))
         limit, offset, page, sort = parse_pagination()
         sort_desc = sort == 'desc'
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_date = period_cutoff(days)
         exclude_internal = parse_bool(request.args.get('exclude_internal'), default=False)
         
         cache_key = make_cache_key('transactions')
@@ -6313,7 +6313,7 @@ def get_statistics():
         
     try:
         days = clamp_days(request.args.get('days', 90))
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_date = period_cutoff(days)
         exclude_internal = parse_bool(request.args.get('exclude_internal'), default=False)
         
         cache_key = make_cache_key('statistics')
@@ -6386,6 +6386,18 @@ def get_statistics():
             'success': False,
             'error': str(e)
         }), 500
+
+def period_cutoff(days, now=None):
+    """
+    Start of the selected period: midnight (Dutch time) `days` days ago, like the
+    frontend's getSelectedPeriodStart. 'now - days' would cut off the first day halfway.
+    """
+    from zoneinfo import ZoneInfo
+    zone = ZoneInfo(RECONCILE_TIMEZONE)
+    local_now = (now or datetime.now(timezone.utc)).astimezone(zone)
+    start_day = local_now.date() - timedelta(days=days)
+    return datetime(start_day.year, start_day.month, start_day.day, tzinfo=zone).astimezone(timezone.utc)
+
 
 def _local_day(value):
     """Calendar day in the dashboard's time zone (Dutch time), not UTC."""
