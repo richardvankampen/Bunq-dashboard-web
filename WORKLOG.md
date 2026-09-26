@@ -4,6 +4,13 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — opgeslagen gegevens volgen de actuele logica
+
+- Controle: categorieën en `refund_category` worden al per regelversie herberekend; weergavelogica is live en hoeft niet in de database. Twee gaten gedicht:
+  1. `is_internal_transfer` werd alleen bij ophalen bepaald (met de toen bekende eigen rekeningen/IBAN's; koppeling van tegengestelde boekingen alleen in het geheugen) → bij elke load opnieuw bepaald en nieuw herkende interne overboekingen teruggeschreven; een refetch haalt de vlag niet meer weg.
+  2. Snapshot-fallback van de saldohistorie gebruikte het rekeningtype van die dag → type uit de meest recente snapshot.
+- Verificatie: pytest 310 groen (nieuw: vlag via nieuw bekende eigen IBAN teruggeschreven; koppeling tegengestelde boekingen opgeslagen en blijft na reconcile; snapshot-historie met gecorrigeerd type).
+
 ### Opgeleverd — categorieëngrafiek gecontroleerd en gecorrigeerd
 
 - 5 bevindingen opgelost: filialen apart binnen categorieën → gegroepeerd zoals Top tegenrekeningen; terugbetaling verlaagde alle winkels in de categorie → gaat af van de eigen winkel; betekenisloze "% van bovenliggend" op het hoogste niveau → % van inkomsten/uitgaven/categorie; labels ("Overig categorieen", "Overig winkels", "Alles") → "Kleinere categorieën", "Overige tegenrekeningen", "Totaal"; geen detailvenster → knop met tabel (bedrag, aandeel, top 3 tegenrekeningen) en transacties.

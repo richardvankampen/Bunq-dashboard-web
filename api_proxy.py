@@ -3555,11 +3555,14 @@ def upsert_stored_transactions(connection, transactions, now_iso):
     existing = {}
     for account_id, source in groups:
         rows = connection.execute(
-            "SELECT bunq_id, content_hash, deleted_at FROM bunq_transactions WHERE account_id = ? AND source = ?",
+            "SELECT bunq_id, content_hash, deleted_at, is_internal_transfer FROM bunq_transactions "
+            "WHERE account_id = ? AND source = ?",
             (account_id, source),
         )
         for row in rows:
-            existing[(account_id, source, row['bunq_id'])] = (row['content_hash'], row['deleted_at'])
+            existing[(account_id, source, row['bunq_id'])] = (
+                row['content_hash'], row['deleted_at'], bool(row['is_internal_transfer'])
+            )
 
     inserts, updates, touches = [], [], []
     seen = set()
@@ -3568,6 +3571,11 @@ def upsert_stored_transactions(connection, transactions, now_iso):
         if key in seen:
             continue
         seen.add(key)
+        previous = existing.get(key)
+        if previous is not None and previous[2] and not tx.get('is_internal_transfer'):
+            # Once recognised as internal (e.g. by the cross-account pair match on load), a
+            # transfer stays internal: a single-account refetch can't see the other side.
+            _mark_stored_internal(tx)
         content_hash = transaction_content_hash(tx)
         amount_eur = tx.get('amount_eur')
         values = (
@@ -3583,7 +3591,6 @@ def upsert_stored_transactions(connection, transactions, now_iso):
             json.dumps(tx, default=str),
             content_hash,
         )
-        previous = existing.get(key)
         if previous is None:
             inserts.append(key + values + (now_iso, now_iso, now_iso))
             counts['inserted'] += 1
@@ -3812,6 +3819,64 @@ def read_stored_transactions(account_ids, cutoff_date):
     return transactions
 
 
+def _mark_stored_internal(tx):
+    tx['is_internal_transfer'] = True
+    tx['category'] = 'Internal Transfer'
+    tx['refund_category'] = None
+
+
+def refresh_internal_flags(transactions, own_account_ids, own_ibans):
+    """
+    The internal-transfer flag is set when a transaction is fetched, with the own accounts and
+    IBANs known at that moment. Re-derive it for stored transactions with the current ones
+    (counterparty account id / IBAN) plus the cross-account pair match, and return the
+    transactions that became internal (to write back). A flag is never removed.
+    """
+    own_ids = {str(account_id) for account_id in (own_account_ids or set())}
+    ibans = {normalize_iban(iban) for iban in (own_ibans or set())} - {None}
+    newly = []
+    for tx in transactions:
+        if tx.get('is_internal_transfer'):
+            continue
+        counterparty_id = str(tx.get('counterparty_account_id') or '')
+        by_id = counterparty_id in own_ids and counterparty_id != str(tx.get('account_id') or '')
+        by_iban = normalize_iban(tx.get('counterparty_iban')) in ibans
+        if by_id or by_iban:
+            _mark_stored_internal(tx)
+            newly.append(tx)
+    before = {id(tx) for tx in transactions if tx.get('is_internal_transfer')}
+    reconcile_internal_transfers(transactions, own_ids)
+    for tx in transactions:
+        if tx.get('is_internal_transfer') and id(tx) not in before:
+            tx['refund_category'] = None
+            newly.append(tx)
+    return newly
+
+
+def write_back_internal_flags(transactions):
+    """Store re-derived internal flags, so backend figures (data quality, statistics) agree."""
+    if not transactions or not DATA_DB_ENABLED:
+        return 0
+    connection = get_data_db_connection()
+    try:
+        with connection:
+            for tx in transactions:
+                account_id, source, bunq_id = _tx_store_key(tx)
+                connection.execute(
+                    """
+                    UPDATE bunq_transactions
+                    SET is_internal_transfer = 1, category = ?, payload_json = ?, content_hash = ?
+                    WHERE account_id = ? AND source = ? AND bunq_id = ?
+                    """,
+                    (tx.get('category'), json.dumps(tx, default=str), transaction_content_hash(tx),
+                     account_id, source, bunq_id),
+                )
+    finally:
+        connection.close()
+    logger.info("🔁 Marked %d stored transaction(s) as internal transfer", len(transactions))
+    return len(transactions)
+
+
 def load_transactions(accounts, own_account_ids, own_ibans, cutoff_date):
     """
     Transactions for the given accounts since cutoff_date.
@@ -3852,6 +3917,10 @@ def load_transactions(accounts, own_account_ids, own_ibans, cutoff_date):
         truncated_accounts, errors = sync_transactions(accounts, own_account_ids, own_ibans, cutoff_date)
     account_ids = [get_obj_field(account, 'id_', 'id') for account in accounts]
     transactions = read_stored_transactions(account_ids, cutoff_date)
+    try:
+        write_back_internal_flags(refresh_internal_flags(transactions, own_account_ids, own_ibans))
+    except Exception as exc:
+        logger.warning(f"⚠️ Refreshing stored internal-transfer flags failed: {exc}")
     if errors and not transactions:
         raise RuntimeError(errors[0])
     return transactions, truncated_accounts, errors
@@ -6745,18 +6814,29 @@ def get_balance_history():
     try:
         rows = connection.execute(
             """
-            SELECT snapshot_date, account_type,
+            SELECT s.snapshot_date,
+                   -- Current classification (from each account's latest snapshot), not the one
+                   -- stored on that day: classification fixes also apply to old snapshots.
+                   COALESCE(latest.account_type, s.account_type) AS account_type,
                    SUM(
                        CASE
-                           WHEN balance_eur_value IS NOT NULL THEN balance_eur_value
-                           WHEN balance_currency = 'EUR' THEN balance_value
+                           WHEN s.balance_eur_value IS NOT NULL THEN s.balance_eur_value
+                           WHEN s.balance_currency = 'EUR' THEN s.balance_value
                            ELSE 0
                        END
                    ) AS total_eur
-            FROM account_snapshots
-            WHERE snapshot_date >= ?
-            GROUP BY snapshot_date, account_type
-            ORDER BY snapshot_date ASC
+            FROM account_snapshots s
+            LEFT JOIN (
+                SELECT a.account_id, a.account_type
+                FROM account_snapshots a
+                JOIN (
+                    SELECT account_id, MAX(snapshot_date) AS latest_date
+                    FROM account_snapshots GROUP BY account_id
+                ) m ON a.account_id = m.account_id AND a.snapshot_date = m.latest_date
+            ) latest ON latest.account_id = s.account_id
+            WHERE s.snapshot_date >= ?
+            GROUP BY s.snapshot_date, COALESCE(latest.account_type, s.account_type)
+            ORDER BY s.snapshot_date ASC
             """,
             (start_date,),
         ).fetchall()
