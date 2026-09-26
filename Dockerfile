@@ -73,6 +73,8 @@ RUN pip install --no-cache-dir -r requirements_web.txt
 # Copy backend and frontend
 COPY api_proxy.py .
 COPY app.js .
+COPY i18n.js .
+COPY translations.js .
 COPY scripts/run_server.sh ./scripts/run_server.sh
 COPY scripts/gunicorn_conf.py ./scripts/gunicorn_conf.py
 

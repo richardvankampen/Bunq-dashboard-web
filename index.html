@@ -103,6 +103,12 @@
                         <span>Refresh</span>
                     </button>
                     
+                    <!-- Language Toggle -->
+                    <div class="lang-toggle glass-effect" role="group" aria-label="Taal">
+                        <button type="button" class="lang-option" data-lang-option="nl" data-no-i18n title="Nederlands">NL</button>
+                        <button type="button" class="lang-option" data-lang-option="en" data-no-i18n title="English">EN</button>
+                    </div>
+
                     <!-- Theme Toggle -->
                     <button class="theme-toggle glass-effect" id="themeToggle">
                         <i class="fas fa-moon"></i>
@@ -258,7 +264,7 @@
                             <button class="action-btn" title="Detail" data-viz-detail="cashflow">
                                 <i class="fas fa-up-right-from-square"></i>
                             </button>
-                            <button class="action-btn" title="Fullscreen">
+                            <button class="action-btn" data-action="fullscreen" title="Fullscreen">
                                 <i class="fas fa-expand"></i>
                             </button>
                         </div>
@@ -279,7 +285,7 @@
                             <button class="action-btn" title="Detail" data-viz-detail="money-flow">
                                 <i class="fas fa-up-right-from-square"></i>
                             </button>
-                            <button class="action-btn" title="Fullscreen">
+                            <button class="action-btn" data-action="fullscreen" title="Fullscreen">
                                 <i class="fas fa-expand"></i>
                             </button>
                         </div>
@@ -297,7 +303,7 @@
                             <button class="action-btn" title="Detail" data-viz-detail="categories">
                                 <i class="fas fa-up-right-from-square"></i>
                             </button>
-                            <button class="action-btn" title="Fullscreen">
+                            <button class="action-btn" data-action="fullscreen" title="Fullscreen">
                                 <i class="fas fa-expand"></i>
                             </button>
                         </div>
@@ -317,7 +323,7 @@
                             <button class="action-btn" title="Detail" data-viz-detail="budget-coach">
                                 <i class="fas fa-up-right-from-square"></i>
                             </button>
-                            <button class="action-btn" title="Fullscreen">
+                            <button class="action-btn" data-action="fullscreen" title="Fullscreen">
                                 <i class="fas fa-expand"></i>
                             </button>
                         </div>
@@ -728,7 +734,7 @@
                         </label>
                     </div>
                     <div id="adminStatusPanel" class="admin-status-panel">
-                        <p class="setting-help">Open eerst Settings en klik op <strong>Check status</strong>.</p>
+                        <p class="setting-help">Klik op <strong>Check status</strong>.</p>
                     </div>
                     <div id="adminTerminalPanel" class="admin-terminal-panel" style="display: none;"></div>
                 </div>
@@ -743,7 +749,9 @@
             integrity="sha384-wziAfh6b/qT+3LrqebF9WeK4+J5sehS6FA10J1t3a866kJ/fvU5UwofWnQyzLtwu"
             crossorigin="anonymous"></script>
     
-    <!-- Main Application Script -->
+    <!-- UI language (NL/EN) and texts, then the application -->
+    <script src="i18n.js"></script>
+    <script src="translations.js"></script>
     <script src="app.js"></script>
     
     <script>

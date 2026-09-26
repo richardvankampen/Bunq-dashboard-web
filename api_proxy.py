@@ -2258,7 +2258,7 @@ def get_vaultwarden_device_identifier():
 
 app = Flask(__name__)
 STATIC_DIR = APP_DIR
-STATIC_FILES = {'index.html', 'styles.css', 'app.js'}
+STATIC_FILES = {'index.html', 'styles.css', 'app.js', 'i18n.js', 'translations.js'}
 
 # Simple in-memory cache (per process)
 CACHE_ENABLED = get_bool_env('CACHE_ENABLED', True)

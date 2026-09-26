@@ -16,6 +16,7 @@ Python/Flask web dashboard for Bunq bank data. Deployed on Synology NAS via Dock
 |------|---------|
 | `api_proxy.py` | Main backend — all API routes and Bunq SDK logic |
 | `docker-compose.yml` | Docker Swarm stack config |
+| `i18n.js` / `translations.js` | UI language switch (NL/EN): `t()`, DOM translation, NL↔EN texts |
 | `requirements_web.txt` | Python runtime dependencies (installed in Docker image) |
 | `requirements_dev.txt` | Dev/test tooling: pytest, pyflakes, black (includes runtime deps) |
 | `scripts/quick_redeploy.sh` | Fast redeploy without stack restart |
@@ -100,7 +101,7 @@ Raw fallback only if SDK result lacks savings. Uses only official routes:
 
 ## Frontend conventions
 
-- UI language: Dutch (NL).
+- UI language: Dutch (NL) by default, with an NL/EN switch (`i18n.js` + `translations.js`). Static texts are translated by a DOM observer; composed texts, chart labels and dialogs use `t('Dutch text {x}', { x })` in `app.js`. Every new UI text needs an entry in `translations.js` (`tests/test_translations.py` checks t() calls and index.html). Mark user data (account names, transaction rows) `data-no-i18n`. Internal category names stay Dutch; translate only for display (`t(category)`).
 - Widget labels: `Inkomsten`, `Uitgaven`, `Sparen`, `Cashflow (tijdslijn)`, `Geldstromen`, `Verdeling in categorieën`, `Categorie-race`, `Dagpatroon`, `Top tegenrekeningen`, `Maandverdeling`.
 - Charts: Plotly with transparent `plot_bgcolor` (no white chart backgrounds inside tiles).
 - Particles: `#particles-js` on `z-index: 0` + `pointer-events: none`; `.dashboard-container` on `z-index: 1`.

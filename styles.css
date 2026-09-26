@@ -512,6 +512,36 @@ body.effects-minimal .glass-effect {
     transform: translateY(0);
 }
 
+.lang-toggle {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--radius-md);
+}
+
+.lang-option {
+    padding: 6px 10px;
+    border: none;
+    border-radius: calc(var(--radius-md) - 3px);
+    background: transparent;
+    color: var(--text-secondary, var(--text-primary));
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: background var(--transition-medium), color var(--transition-medium);
+}
+
+.lang-option:hover {
+    color: var(--text-primary);
+}
+
+.lang-option.active {
+    background: var(--accent-primary);
+    color: #ffffff;
+}
+
 .refresh-btn i {
     transition: transform 0.6s ease;
 }

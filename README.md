@@ -20,7 +20,8 @@ Every document has an English (`*.md`) and a Dutch (`*-NL.md`) version with the 
 
 ## ✨ Key Features
 
-- Single-port dashboard (frontend + API) on port 5000, Dutch UI
+- Single-port dashboard (frontend + API) on port 5000
+- Dashboard in Dutch or English: the NL/EN switch in the header changes every text, chart label and number/date format (the choice is remembered per browser)
 - Read-only Bunq API access (payments and, where available, card payments; SDK-first account retrieval incl. savings)
 - Local transaction store (SQLite): loads come from the store with an incremental background sync; a monthly reconcile keeps it in line with Bunq and keeps history Bunq no longer serves
 - Balance history rebuilt from stored transactions (falls back to daily snapshots)
@@ -36,7 +37,7 @@ Every document has an English (`*.md`) and a Dutch (`*-NL.md`) version with the 
 - Synology-ready deployment with install/update, quick-redeploy and IP-whitelist scripts
 - Admin maintenance in Settings (status, egress IP, whitelist update, Bunq context re-init, full maintenance run, copy-ready terminal commands)
 
-**Dashboard widgets:**
+**Dashboard widgets** (Dutch names; in English: Current accounts, Savings accounts, Income, Expenses, Savings, Savings rate, Cash flow, Money flows, Breakdown by category, Budget discipline, Daily pattern, Top counterparties, Spending spread, Category race):
 - Balance tiles: Betaalrekeningen (totaal), Spaarrekeningen (totaal)
 - KPI tiles with trend vs previous months: Inkomsten, Uitgaven, Sparen, Spaarquote
 - Cashflow (tijdslijn): income/expenses per day, week or month plus cumulative net

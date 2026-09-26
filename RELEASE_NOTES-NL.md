@@ -7,6 +7,11 @@
 
 ## 2026-09-26
 
+### Taalkeuze
+- Nieuwe NL/EN-knop in de header: het hele dashboard (tegels, grafieken, tooltips, detailvensters, inzichten, actieplan, instellingen en beheeronderhoud) wisselt tussen Nederlands en Engels, inclusief getal- en datumnotatie. De keuze wordt in de browser onthouden; standaard is Nederlands.
+- Nederlandse teksten die nog deels Engels waren (beheermeldingen, actieplan) zijn nu volledig Nederlands.
+- De Nederlandse documentatie gebruikt de Nederlandse knopnamen van het beheeronderhoud.
+
 ### Documentatie
 - Engelse en Nederlandse documentatie hebben nu dezelfde opbouw en inhoud: `SECURITY`, `SYNOLOGY_INSTALL` en `TROUBLESHOOTING` zijn in beide talen volledige gidsen (de Engelse versies waren korte samenvattingen, de Nederlandse deels Engels).
 - Bijgewerkt naar de huidige app: namen van de knoppen voor beheeronderhoud, actuele widgetnamen en functies in de README, de transactieopslag, eigen categorieregels en back-ups van `config/` (`dashboard_data.db`, `category_rules.json`).

@@ -15,13 +15,23 @@ Dit bestand is de actuele bron voor overdracht.
 - Session-auth met secure cookies werkt.
 - Dashboard draait via Synology + Docker Swarm + Gunicorn.
 
+## UI-taal (NL/EN)
+
+- Knop NL/EN in de header (`.lang-toggle`, `data-lang-option`); keuze in `localStorage.uiLanguage`, standaard `nl`. `<html lang>` en `document.title` volgen mee.
+- `i18n.js`: `t(tekst, params)` (placeholders `{naam}`; Plotly `%{...}` blijft staan), `uiLang()`, `uiLocale()` (`nl-NL` / `en-GB`), `setUiLanguage()`. Een MutationObserver vertaalt tekstnodes en de attributen `title`, `placeholder`, `aria-label`, `data-tooltip` (origineel per node onthouden; teksten die al vertaald binnenkomen worden via een omgekeerde tabel herkend). Overgeslagen: `[data-no-i18n]` (transactierijen, rekeningnamen), Plotly/SVG/canvas, `pre`/`code`.
+- `translations.js`: eerste tabel Nederlands→Engels, tweede Engels→Nederlands (bron is gemengd: dashboard NL, instellingen/login/beheer EN). Nieuwe UI-tekst altijd toevoegen; `tests/test_translations.py` controleert alle `t()`-teksten, alle teksten in `index.html`, placeholders en categorienamen.
+- `app.js`: samengestelde teksten, grafieklabels/hovertemplates, dialogen (`confirm`/`prompt`) via `t()`; categorieën blijven intern Nederlands en worden alleen voor weergave vertaald (`t(category)`, Sankey via `sankeyDisplayLabel`, sunburst-labels met Nederlandse ids). Getallen/datums via `uiLocale()`; Plotly krijgt `plotlyConfig()` met een geregistreerde `nl`-locale (maanden, `,`/`.`).
+- Taalwissel → event `uilanguagechange` → `handleUiLanguageChange()`: `processAndRenderData` opnieuw, "Laatst bijgewerkt" opnieuw, open detailvenster opnieuw opgebouwd (`lastDetailView`).
+- Fullscreen-knoppen worden gevonden via `data-action="fullscreen"` (niet via `title`, die wordt vertaald).
+- Backendteksten (foutmeldingen van de API) blijven zoals de backend ze stuurt.
+
 ## Documentatie-talen (actueel)
 
 - User-facing docs: Engelse hoofdversie (`*.md`) + Nederlandse variant (`*-NL.md`) met **dezelfde opbouw en inhoud** (zelfde secties, nummering en voorbeelden; bij elke wijziging beide bijwerken):
   - `README` / `SECURITY` / `SYNOLOGY_INSTALL` / `TROUBLESHOOTING` / `RELEASE_NOTES` (elk EN + `-NL`).
 - Sinds 2026-09-26 zijn SECURITY, SYNOLOGY_INSTALL en TROUBLESHOOTING in beide talen volledige gidsen (voorheen EN = samenvatting, NL deels Engels).
 - Docs volgen de huidige app:
-  - admin-knoppen: `Check status`, `Check egress IP`, `Set Bunq API whitelist IP`, `Reinit context only (advanced)`, `Run full maintenance (recommended)`, `Show install/update commands`, `Show restart/validate commands` (paneel `Admin Maintenance`);
+  - admin-knoppen (EN-docs Engelse namen, NL-docs Nederlandse namen zoals de UI in die taal toont): `Check status`/`Status controleren`, `Check egress IP`/`Egress-IP controleren`, `Set Bunq API whitelist IP`/`Bunq API-whitelist-IP instellen`, `Reinit context only (advanced)`/`Alleen context opnieuw opbouwen (gevorderd)`, `Run full maintenance (recommended)`/`Volledig onderhoud uitvoeren (aanbevolen)`, `Show install/update commands`/`Install/update-commando's tonen`, `Show restart/validate commands`/`Herstart/validatie-commando's tonen` (paneel `Admin Maintenance`/`Beheeronderhoud`);
   - README-featurelijst met huidige widgetnamen, transactieopslag, categorisatie/eigen regels;
   - back-ups omvatten `config/` (`dashboard_data.db`, `category_rules.json`, Bunq-context) en `.env`;
   - `.env`-tabel splitst variabelen die `docker-compose.yml` doorgeeft van variabelen die de code leest maar compose niet doorgeeft (`BUNQ_PAYMENT_*`, `BUNQ_CARD_PAYMENT_*`, `RECONCILE_*`, `SYNC_MIN_INTERVAL_SECONDS`, `ACCOUNTS_CACHE_SECONDS`, `SOURCE_FAILURE_BACKOFF_SECONDS`, `CATEGORY_RULES_PATH`, `VAULTWARDEN_CLI_TIMEOUT_SECONDS`): die werken pas na toevoegen aan compose `environment:` + full deploy;

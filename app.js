@@ -46,6 +46,9 @@ const chartRegistry = {
     plotly: {}
 };
 let racingData = null;
+let lastUpdateAt = null;
+// Re-opens the detail popup that is showing (to rebuild it after a language switch).
+let lastDetailView = null;
 let racingPlayInterval = null;
 const RACING_ANIMATION_FPS = 2;
 const DETAIL_TRANSACTIONS_PAGE_SIZE = 200;
@@ -424,7 +427,7 @@ async function authenticatedFetch(url, options = {}) {
         
     } catch (error) {
         console.error('API request failed:', error);
-        showError(`Request failed: ${error.message}`);
+        showError(t('Request failed: {message}', { message: error.message }));
         return null;
     }
 }
@@ -592,6 +595,7 @@ function renderAccountsFilter(accounts) {
         });
         
         const text = document.createElement('span');
+        text.setAttribute('data-no-i18n', '');
         text.textContent = `${account.description} (${account.balance?.currency || 'EUR'})`;
         
         label.appendChild(checkbox);
@@ -648,7 +652,7 @@ async function handleLogin(event) {
 
     if (loginButton) {
         loginButton.disabled = false;
-        loginButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login';
+        loginButton.innerHTML = `<i class="fas fa-sign-in-alt"></i> ${t('Login')}`;
     }
     
     if (!success) {
@@ -733,7 +737,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         console.error('❌ Fatal startup error:', error);
         hideLoading();
-        showError(`Dashboard startup error: ${error.message || error}`);
+        showError(t('Dashboard startup error: {message}', { message: error.message || error }));
     } finally {
         clearTimeout(startupWatchdog);
     }
@@ -744,6 +748,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ============================================
 
 function setupEventListeners() {
+    // Language switch (i18n.js)
+    document.addEventListener('uilanguagechange', handleUiLanguageChange);
+
     // Login/Logout
     document.getElementById('loginBtn')?.addEventListener('click', showLoginModal);
     document.getElementById('logoutBtn')?.addEventListener('click', logout);
@@ -1130,7 +1137,7 @@ async function toggleCardFullscreen(card) {
 
 function updateFullscreenButtonState() {
     const fullscreenElement = getFullscreenElement();
-    const buttons = document.querySelectorAll('.action-btn[title="Fullscreen"], .action-btn[title="Exit Fullscreen"]');
+    const buttons = document.querySelectorAll('.action-btn[data-action="fullscreen"]');
 
     buttons.forEach((button) => {
         const card = button.closest('.viz-card');
@@ -1150,7 +1157,7 @@ function updateFullscreenButtonState() {
 }
 
 function setupCardActionButtons() {
-    const fullscreenButtons = document.querySelectorAll('.action-btn[title="Fullscreen"]');
+    const fullscreenButtons = document.querySelectorAll('.action-btn[data-action="fullscreen"]');
     fullscreenButtons.forEach((button) => {
         button.addEventListener('click', async () => {
             const card = button.closest('.viz-card');
@@ -1163,7 +1170,7 @@ function setupCardActionButtons() {
         });
     });
 
-    const downloadButtons = document.querySelectorAll('.action-btn[title="Download"]');
+    const downloadButtons = document.querySelectorAll('.action-btn[data-action="download"]');
     downloadButtons.forEach((button) => {
         button.addEventListener('click', async () => {
             const card = button.closest('.viz-card');
@@ -1303,7 +1310,7 @@ async function loadRealData() {
         if (all.length) {
             if (truncatedBySafetyCap) {
                 console.warn(`⚠️ Transaction dataset truncated at ${all.length}/${total} rows (hardPageCap=${hardPageCap})`);
-                showError(`Result set capped at ${all.length} transactions. Narrow the period or account filter for complete data.`);
+                showError(t('Result set capped at {count} transactions. Narrow the period or account filter for complete data.', { count: all.length }));
             }
             if (backendTruncated) {
                 const names = Array.from(truncatedAccounts.values())
@@ -1311,10 +1318,10 @@ async function loadRealData() {
                     .filter(Boolean)
                     .slice(0, 3);
                 const label = names.length ? ` (${names.join(', ')}${truncatedAccounts.size > 3 ? ', ...' : ''})` : '';
-                showError(`Backend transaction window reached for one or more accounts${label}. Consider lower 'days' or higher BUNQ_PAYMENT_MAX_PAGES.`);
+                showError(t("Backend transaction window reached for one or more accounts{label}. Consider lower 'days' or higher BUNQ_PAYMENT_MAX_PAGES.", { label }));
             }
             if (backendMissingEurCount > 0) {
-                showError(`${backendMissingEurCount} transactie(s) in vreemde valuta hebben geen omrekening naar EUR en tellen niet mee in totalen en grafieken; inkomsten en uitgaven zijn daardoor mogelijk te laag.`);
+                showError(t('{count} transactie(s) in vreemde valuta hebben geen omrekening naar EUR en tellen niet mee in totalen en grafieken; inkomsten en uitgaven zijn daardoor mogelijk te laag.', { count: backendMissingEurCount }));
             }
             transactionsData = all.map(t => ({
                 ...t,
@@ -1334,7 +1341,7 @@ async function loadRealData() {
             // Session expired - modal already shown
             loadDemoData();
         } else if (loadError) {
-            showError(`Kon data niet laden: ${loadError}`);
+            showError(t('Kon data niet laden: {error}', { error: t(loadError) }));
         }
         
     } catch (error) {
@@ -1359,7 +1366,7 @@ function loadDemoData() {
             processAndRenderData(transactionsData);
         } catch (error) {
             console.error('❌ Error loading demo data:', error);
-            showError(`Demo data error: ${error.message || error}`);
+            showError(t('Demo data error: {message}', { message: error.message || error }));
         } finally {
             hideLoading();
             updateLastUpdateTime();
@@ -1941,11 +1948,11 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null,
             'Relatief weinig transacties in deze periode.',
             'Kies een langere periode of vernieuw de gegevens.'],
         [activeDays > 0 && activeDays < Math.max(10, Math.floor(days * 0.35)),
-            `Beperkte dagdekking: ${activeDays} dagen met transacties.`,
+            t('Beperkte dagdekking: {days} dagen met transacties.', { days: activeDays }),
             'Kies een langere periode voor stabielere trends en budgetcijfers.'],
         [spanDays > 0 && spanDays < Math.max(14, Math.floor(days * 0.5)),
-            `De transacties beslaan slechts ${spanDays} dagen van de periode.`,
-            'Controleer of de historie volledig is opgehaald (handmatige controle: TROUBLESHOOTING, stap 5b).'],
+            t('De transacties beslaan slechts {days} dagen van de periode.', { days: spanDays }),
+            'Controleer of de historie volledig is opgehaald (handmatige controle: TROUBLESHOOTING, sectie 7).'],
         [(coverage.category_coverage ?? 1) < 0.78,
             'Categorie-dekking op uitgaven is laag.',
             'Voeg eigen categorieregels toe in config/category_rules.json voor veelvoorkomende tegenrekeningen.'],
@@ -2004,7 +2011,7 @@ function computeDataQualitySummary(transactions, accounts, serverSummary = null,
 }
 
 function formatCurrency(value) {
-    return new Intl.NumberFormat('nl-NL', {
+    return new Intl.NumberFormat(uiLocale(), {
         style: 'currency',
         currency: 'EUR',
         minimumFractionDigits: 2,
@@ -2015,7 +2022,7 @@ function formatCurrency(value) {
 function formatCurrencyWithCode(value, currencyCode = 'EUR') {
     const code = String(currencyCode || 'EUR').toUpperCase();
     try {
-        return new Intl.NumberFormat('nl-NL', {
+        return new Intl.NumberFormat(uiLocale(), {
             style: 'currency',
             currency: code,
             minimumFractionDigits: 2,
@@ -2028,12 +2035,12 @@ function formatCurrencyWithCode(value, currencyCode = 'EUR') {
 
 // Dutch number format (16,7%); n.v.t. when there is no value.
 function formatPercent(value) {
-    if (value === null || value === undefined || !Number.isFinite(Number(value))) return 'n.v.t.';
-    return `${Number(value).toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return t('n.v.t.');
+    return `${Number(value).toLocaleString(uiLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
 function formatRatioPercent(value) {
-    if (value === null || value === undefined || !Number.isFinite(Number(value))) return 'n.v.t.';
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return t('n.v.t.');
     return formatPercent(Number(value) * 100);
 }
 
@@ -2102,7 +2109,7 @@ const TREND_MIN_BASE_EUR = 50;
 const TREND_MONTHS_BACK = 3;
 
 function trendMonthLabel(key) {
-    return dateFromKey(`${key}-01`).toLocaleDateString('nl-NL', { month: 'short', year: '2-digit' });
+    return dateFromKey(`${key}-01`).toLocaleDateString(uiLocale(), { month: 'short', year: '2-digit' });
 }
 
 // Last complete month vs the average of up to 3 complete months before it.
@@ -2117,7 +2124,7 @@ function compareMonthlyValues(months) {
         change: Math.abs(baseline) > 0.01 ? (delta / Math.abs(baseline)) * 100 : null,
         delta,
         baseline,
-        title: `${trendMonthLabel(latest.monthKey)} t.o.v. gemiddelde van ${previous.map((row) => trendMonthLabel(row.monthKey)).join(', ')} (volledige maanden).`
+        title: t('{month} t.o.v. gemiddelde van {months} (volledige maanden).', { month: trendMonthLabel(latest.monthKey), months: previous.map((row) => trendMonthLabel(row.monthKey)).join(', ') })
     };
 }
 
@@ -2207,15 +2214,15 @@ function setTrendIndicator(element, trend, { higherIsBetter = true } = {}) {
     const { change = null, delta = null, baseline = null, title = '' } = trend || {};
     const useEuro = Number.isFinite(delta) && Number.isFinite(baseline) && Math.abs(baseline) < TREND_MIN_BASE_EUR;
     if (!useEuro && (change === null || !Number.isFinite(change))) {
-        element.textContent = 'n.v.t.';
-        element.title = title || 'Niet te berekenen.';
+        element.textContent = t('n.v.t.');
+        element.title = t(title || 'Niet te berekenen.');
         parent?.classList.remove('positive', 'negative');
         setTrendArrow(parent, 0);
         return;
     }
     const direction = useEuro ? delta : change;
     element.textContent = useEuro ? formatSignedCurrency(delta) : formatSignedPercent(change);
-    element.title = useEuro ? `${title} Verschil in euro: de vergelijkingsbasis is kleiner dan ${formatCurrency(TREND_MIN_BASE_EUR)}.` : title;
+    element.title = useEuro ? `${t(title)} ${t('Verschil in euro: de vergelijkingsbasis is kleiner dan {amount}.', { amount: formatCurrency(TREND_MIN_BASE_EUR) })}` : t(title);
     const good = higherIsBetter ? direction >= 0 : direction <= 0;
     parent?.classList.toggle('positive', good);
     parent?.classList.toggle('negative', !good);
@@ -2244,7 +2251,7 @@ function setBalanceTrend(element, change, startDate = null) {
     if (!element) return;
     const parent = element.parentElement;
     if (change === null || !Number.isFinite(change)) {
-        element.textContent = 'n.v.t.';
+        element.textContent = t('n.v.t.');
         element.title = 'Niet te berekenen: geen saldo aan het begin van de reeks.';
         parent?.classList.remove('positive', 'negative');
         parent?.classList.add('neutral');
@@ -2253,7 +2260,7 @@ function setBalanceTrend(element, change, startDate = null) {
     }
     element.textContent = formatSignedPercent(change);
     element.title = startDate instanceof Date && !Number.isNaN(startDate.getTime())
-        ? `Saldo nu t.o.v. ${startDate.toLocaleDateString('nl-NL')} (begin van de beschikbare saldohistorie in de periode).`
+        ? t('Saldo nu t.o.v. {date} (begin van de beschikbare saldohistorie in de periode).', { date: startDate.toLocaleDateString(uiLocale()) })
         : 'Saldo nu t.o.v. het begin van de beschikbare saldohistorie.';
     parent?.classList.toggle('positive', change >= 0);
     parent?.classList.toggle('negative', change < 0);
@@ -2263,7 +2270,7 @@ function setBalanceTrend(element, change, startDate = null) {
 
 function formatShortDate(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-    return date.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' });
+    return date.toLocaleDateString(uiLocale(), { day: '2-digit', month: '2-digit' });
 }
 
 function renderMetricMiniChart(canvasId, points, color) {
@@ -2349,8 +2356,8 @@ function renderBalanceKPIs(metrics) {
     const savingsTrendEl = document.getElementById('savingsBalanceTrend');
 
     if (!metrics) {
-        if (checkingEl) checkingEl.textContent = 'n.v.t.';
-        if (savingsEl) savingsEl.textContent = 'n.v.t.';
+        if (checkingEl) checkingEl.textContent = t('n.v.t.');
+        if (savingsEl) savingsEl.textContent = t('n.v.t.');
         setBalanceTrend(checkingTrendEl, null);
         setBalanceTrend(savingsTrendEl, null);
         ['checkingSparkline', 'savingsBalanceSparkline'].forEach((chartId) => {
@@ -2386,23 +2393,24 @@ function renderBalanceKPIs(metrics) {
 
 function showBalanceDetail(type) {
     if (!balanceMetrics) return;
+    lastDetailView = () => showBalanceDetail(type);
 
     const labels = {
         checking: 'Betaalrekeningen',
         savings: 'Spaarrekeningen',
         investment: 'Beleggingen / Crypto'
     };
-    const label = labels[type] || 'Rekeningen';
+    const label = t(labels[type] || 'Rekeningen');
     const accounts = [...(balanceMetrics.grouped[type] || [])]
         .filter((account) => isOwnBunqAccount(account))
         .sort((a, b) => {
-        const aName = (a.description || `Account ${a.id}`).toLocaleLowerCase('nl-NL');
-        const bName = (b.description || `Account ${b.id}`).toLocaleLowerCase('nl-NL');
+        const aName = (a.description || t('Rekening {id}', { id: a.id })).toLocaleLowerCase('nl-NL');
+        const bName = (b.description || t('Rekening {id}', { id: b.id })).toLocaleLowerCase('nl-NL');
         return aName.localeCompare(bName, 'nl-NL');
     });
     const total = accounts.reduce((sum, acc) => sum + (Number(acc.balanceEurValue) || 0), 0);
     const nonEurNote = balanceMetrics.missingFxCount > 0
-        ? ` (${balanceMetrics.missingFxCount} non-EUR rekening(en) zonder FX-rate)`
+        ? t(' ({count} non-EUR rekening(en) zonder FX-rate)', { count: balanceMetrics.missingFxCount })
         : '';
 
     const accountIds = new Set(accounts.map((acc) => String(acc.id)));
@@ -2418,7 +2426,7 @@ function showBalanceDetail(type) {
             type: 'bar',
             orientation: 'h',
             x: accounts.map((acc) => Number(acc.balanceEurValue) || 0).reverse(),
-            y: accounts.map((acc) => acc.description || `Account ${acc.id}`).reverse(),
+            y: accounts.map((acc) => acc.description || t('Rekening {id}', { id: acc.id })).reverse(),
             marker: {
                 color: accounts.map((acc) => (
                     acc.account_type === 'savings' ? '#22c55e' :
@@ -2448,12 +2456,12 @@ function showBalanceDetail(type) {
     }
 
     openDetailModal({
-        title: `<i class="fas fa-wallet"></i> ${label} - Verdeling`,
-        summary: `Totaal: ${formatCurrency(total)}${nonEurNote}`,
+        title: `<i class="fas fa-wallet"></i> ${t('{label} - Verdeling', { label })}`,
+        summary: t('Totaal: {amount}', { amount: formatCurrency(total) }) + nonEurNote,
         rows,
         chart: chartConfig,
         transactionRows,
-        transactionsTitle: `Transacties op ${label.toLowerCase()} (${transactionRows.length})`
+        transactionsTitle: t('Transacties op {label} ({count})', { label: label.toLowerCase(), count: transactionRows.length })
     });
 }
 
@@ -2554,7 +2562,7 @@ function renderMoreDetailTransactions(options = {}) {
     const nextRows = detailTransactionsState.filteredRows.slice(start, start + DETAIL_TRANSACTIONS_PAGE_SIZE);
     if (nextRows.length > 0) {
         const rowsHtml = nextRows.map((row) => `
-            <tr>
+            <tr data-no-i18n>
                 <td>${escapeHtml(row.date)}</td>
                 <td>${escapeHtml(row.time)}</td>
                 <td class="own-account">${escapeHtml(row.ownAccount)}</td>
@@ -2573,8 +2581,8 @@ function renderMoreDetailTransactions(options = {}) {
 
     if (metaEl) {
         metaEl.textContent = totalFiltered === totalAll
-            ? `${detailTransactionsState.renderedCount} van ${totalFiltered} transacties`
-            : `${detailTransactionsState.renderedCount} van ${totalFiltered} transacties (gefilterd uit ${totalAll})`;
+            ? t('{shown} van {total} transacties', { shown: detailTransactionsState.renderedCount, total: totalFiltered })
+            : t('{shown} van {total} transacties (gefilterd uit {all})', { shown: detailTransactionsState.renderedCount, total: totalFiltered, all: totalAll });
     }
     if (moreBtnEl) {
         const hasMore = detailTransactionsState.renderedCount < totalFiltered;
@@ -2667,7 +2675,7 @@ function openDetailModal({
     nextListClasses.forEach((className) => listEl.classList.add(className));
     listEl.dataset.extraClasses = nextListClasses.join(' ');
 
-    titleEl.innerHTML = title || '<i class="fas fa-chart-bar"></i> Detail';
+    titleEl.innerHTML = title || `<i class="fas fa-chart-bar"></i> ${t('Detail')}`;
     summaryEl.textContent = summary || '';
     const detailRows = Array.isArray(rows) ? rows : [];
     detailModalState.rowActionMap = rowActionMap && typeof rowActionMap === 'object' ? rowActionMap : null;
@@ -2698,7 +2706,7 @@ function openDetailModal({
 
     if (chart && window.Plotly) {
         const traces = Array.isArray(chart.trace) ? chart.trace : [chart.trace];
-        Plotly.react(chartEl, traces, chart.layout, { displayModeBar: false, responsive: true });
+        Plotly.react(chartEl, traces, chart.layout, plotlyConfig());
         chartEl.style.display = 'block';
     } else if (window.Plotly) {
         Plotly.purge(chartEl);
@@ -2706,7 +2714,7 @@ function openDetailModal({
     }
 
     if (transactionsSectionEl && transactionsTitleEl && Array.isArray(transactionRows) && transactionRows.length > 0) {
-        transactionsTitleEl.textContent = transactionsTitle || `Individuele transacties (${transactionRows.length})`;
+        transactionsTitleEl.textContent = transactionsTitle || t('Individuele transacties ({count})', { count: transactionRows.length });
         detailTransactionsState.rows = transactionRows;
         detailTransactionsState.query = '';
         detailTransactionsState.sortKey = DETAIL_TRANSACTIONS_DEFAULT_SORT;
@@ -2775,7 +2783,7 @@ function buildTransactionTableRows(transactions, options = {}) {
         const ownAccount = (
             String(transaction?.account_name || '').trim()
             || String(account?.description || account?.display_name || '').trim()
-            || (transaction?.account_id != null ? `Rekening ${transaction.account_id}` : '-')
+            || (transaction?.account_id != null ? t('Rekening {id}', { id: transaction.account_id }) : '-')
         );
         const description = (
             typeof transaction?.description === 'string' && transaction.description.trim()
@@ -2794,9 +2802,9 @@ function buildTransactionTableRows(transactions, options = {}) {
         const category = resolveCategoryLabel(transaction);
         const amountValue = Number(transaction.amount) || 0;
         return {
-            date: hasValidDate ? txDate.toLocaleDateString('nl-NL') : '-',
+            date: hasValidDate ? txDate.toLocaleDateString(uiLocale()) : '-',
             time: hasValidDate
-                ? txDate.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+                ? txDate.toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
                 : '-',
             ownAccount,
             counterparty,
@@ -2921,6 +2929,7 @@ function isInternalSavingsToSavingsTransfer(transaction, savingsSets) {
 }
 
 function showTransactionDetail(detailType) {
+    lastDetailView = () => showTransactionDetail(detailType);
     let transactions = getCurrentNormalizedTransactions();
     if (detailType === 'savings-transfers') {
         // Same transactions as the `Sparen` tile.
@@ -2961,7 +2970,7 @@ function showTransactionDetail(detailType) {
                     .sort((x, y) => y.amount - x.amount)
                     .slice(0, 5)
                     .map((transaction) => ({
-                        label: `Incidenteel · ${transaction.date.toLocaleDateString('nl-NL')} · ${resolveMerchantLabel(transaction)} (${transaction.category})`,
+                        label: `${t('Incidenteel')} · ${transaction.date.toLocaleDateString(uiLocale())} · ${resolveMerchantLabel(transaction)} (${t(transaction.category)})`,
                         value: formatCurrency(transaction.amount)
                     }))
             ];
@@ -2986,13 +2995,13 @@ function showTransactionDetail(detailType) {
         };
 
         openDetailModal({
-            title: `<i class="fas ${isIncome ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i> ${isIncome ? 'Inkomsten' : 'Uitgaven'} - geselecteerde periode`,
-            summary: `${subset.length} transacties · totaal ${formatCurrency(total)}`
-                + (isIncome ? ' · terugbetalingen en overboekingen tussen eigen rekeningen (ook Triodos) tellen niet als inkomen' : ''),
+            title: `<i class="fas ${isIncome ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i> ${t(isIncome ? 'Inkomsten - geselecteerde periode' : 'Uitgaven - geselecteerde periode')}`,
+            summary: t('{count} transacties · totaal {amount}', { count: subset.length, amount: formatCurrency(total) })
+                + (isIncome ? t(' · terugbetalingen en overboekingen tussen eigen rekeningen (ook Triodos) tellen niet als inkomen') : ''),
             rows: incomeRows,
             chart: { trace, layout },
             transactionRows,
-            transactionsTitle: `Individuele ${isIncome ? 'inkomsten' : 'uitgaven'} (${transactionRows.length})`
+            transactionsTitle: t(isIncome ? 'Individuele inkomsten ({count})' : 'Individuele uitgaven ({count})', { count: transactionRows.length })
         });
         return;
     }
@@ -3022,11 +3031,11 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-piggy-bank"></i> Spaarrekening mutaties',
-            summary: `${subset.length} mutaties · stortingen ${formatCurrency(deposits)} · opnames ${formatCurrency(withdrawals)}`,
+            summary: t('{count} mutaties · stortingen {deposits} · opnames {withdrawals}', { count: subset.length, deposits: formatCurrency(deposits), withdrawals: formatCurrency(withdrawals) }),
             rows: [],
             chart: { trace, layout },
             transactionRows,
-            transactionsTitle: `Individuele spaarrekening-mutaties (${transactionRows.length})`
+            transactionsTitle: t('Individuele spaarrekening-mutaties ({count})', { count: transactionRows.length })
         });
         return;
     }
@@ -3059,7 +3068,7 @@ function showTransactionDetail(detailType) {
                 value: `${formatCurrency(summary.essentialTotal)} (${formatPercent(((summary.essentialTotal / total) * 100))})`
             },
             ...topEssential.map(([category, amount]) => ({
-                label: `Noodzakelijk · ${category}`,
+                label: `${t('Noodzakelijk')} · ${t(category)}`,
                 value: formatCurrency(amount)
             })),
             {
@@ -3071,14 +3080,14 @@ function showTransactionDetail(detailType) {
                 value: formatCurrency(summary.refunds)
             }] : []),
             ...topDiscretionary.map(([category, amount]) => ({
-                label: `Vrij besteedbaar · ${category}`,
+                label: `${t('Vrij besteedbaar')} · ${t(category)}`,
                 value: formatCurrency(amount)
             }))
         ];
 
         const trace = {
             type: 'pie',
-            labels: ['Noodzakelijk', 'Vrij besteedbaar'],
+            labels: [t('Noodzakelijk'), t('Vrij besteedbaar')],
             values: [summary.essentialTotal, summary.discretionaryTotal],
             marker: { colors: ['#3b82f6', '#f59e0b'] },
             textinfo: 'label+percent',
@@ -3094,11 +3103,11 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-scale-balanced"></i> Noodzaak vs wens',
-            summary: `Totaal uitgaven: ${formatCurrency(total)}`,
+            summary: t('Totaal uitgaven: {amount}', { amount: formatCurrency(total) }),
             rows,
             chart: { trace, layout },
             transactionRows,
-            transactionsTitle: `Individuele uitgaven (${transactionRows.length})`
+            transactionsTitle: t('Individuele uitgaven ({count})', { count: transactionRows.length })
         });
         return;
     }
@@ -3113,7 +3122,7 @@ function showTransactionDetail(detailType) {
             openDetailModal({
                 title: '<i class="fas fa-store"></i> Aandeel top-tegenrekening',
                 summary: 'Geen uitgaven gevonden in de geselecteerde periode.',
-                rows: [{ label: 'Geen merchant data.', value: '' }],
+                rows: [{ label: 'Geen tegenrekeningdata.', value: '' }],
                 chart: null
             });
             return;
@@ -3145,14 +3154,14 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-store"></i> Aandeel top-tegenrekening',
-            summary: `Top merchant: ${top.merchant} (${formatPercent(topShare)} van uitgaven)`,
+            summary: t('Grootste tegenrekening: {merchant} ({share} van de uitgaven)', { merchant: top.merchant, share: formatPercent(topShare) }),
             rows: rows.slice(0, 20).map((row) => ({
                 label: row.merchant,
                 value: `${formatCurrency(row.amount)} (${formatPercent(((row.amount / totalExpenses) * 100))})`
             })),
             chart: { trace, layout },
             transactionRows,
-            transactionsTitle: `Individuele uitgaven (${transactionRows.length})`
+            transactionsTitle: t('Individuele uitgaven ({count})', { count: transactionRows.length })
         });
         return;
     }
@@ -3181,7 +3190,7 @@ function showTransactionDetail(detailType) {
         );
         const previousLabel = previousMonths.length === 1
             ? previousMonths[0].monthLabel
-            : `gem. ${previousMonths.map((row) => row.monthLabel).join(' + ')}`;
+            : t('gem. {months}', { months: previousMonths.map((row) => row.monthLabel).join(' + ') });
         const categories = new Set([...Object.keys(recentByCategory), ...Object.keys(priorByCategory)]);
 
         const rows = Array.from(categories)
@@ -3207,7 +3216,7 @@ function showTransactionDetail(detailType) {
         const recentTotal = rows.reduce((sum, row) => sum + row.recent, 0);
         const priorTotal = rows.reduce((sum, row) => sum + row.prior, 0);
         const totalChangePct = priorTotal > 0 ? ((recentTotal - priorTotal) / priorTotal) * 100 : null;
-        const formatPct = (value) => (value === null ? 'n.v.t.' : `${formatPercent(value)}`);
+        const formatPct = (value) => (value === null ? t('n.v.t.') : `${formatPercent(value)}`);
 
         const chartRows = [...rows]
             .sort((a, b) => (b.recent + b.prior) - (a.recent + a.prior))
@@ -3217,14 +3226,14 @@ function showTransactionDetail(detailType) {
             {
                 type: 'bar',
                 name: previousLabel,
-                x: chartRows.map((row) => row.category),
+                x: chartRows.map((row) => t(row.category)),
                 y: chartRows.map((row) => row.prior),
                 marker: { color: 'rgba(148,163,184,0.8)' }
             },
             {
                 type: 'bar',
                 name: latestMonth.monthLabel,
-                x: chartRows.map((row) => row.category),
+                x: chartRows.map((row) => t(row.category)),
                 y: chartRows.map((row) => row.recent),
                 marker: { color: 'rgba(59,130,246,0.85)' }
             }
@@ -3240,15 +3249,15 @@ function showTransactionDetail(detailType) {
         };
 
         openDetailModal({
-            title: `<i class="fas fa-chart-line"></i> Uitgavenmomentum (${latestMonth.monthLabel} vs ${previousLabel})`,
-            summary: `Totaal: ${formatCurrency(recentTotal)} vs ${formatCurrency(priorTotal)} (${formatPct(totalChangePct)}). Alleen volledige maanden; terugbetalingen niet meegeteld.`,
+            title: `<i class="fas fa-chart-line"></i> ${t('Uitgavenmomentum ({month} vs {previous})', { month: latestMonth.monthLabel, previous: previousLabel })}`,
+            summary: t('Totaal: {recent} vs {prior} ({change}). Alleen volledige maanden; terugbetalingen niet meegeteld.', { recent: formatCurrency(recentTotal), prior: formatCurrency(priorTotal), change: formatPct(totalChangePct) }),
             rows: rows.slice(0, 20).map((row) => ({
-                label: row.category,
+                label: t(row.category),
                 value: `${formatCurrency(row.recent)} vs ${formatCurrency(row.prior)} (Δ ${formatCurrency(row.delta)}, ${formatPct(row.deltaPct)})`
             })),
             chart: { trace: traces, layout },
             transactionRows,
-            transactionsTitle: `Individuele uitgaven ${latestMonth.monthLabel} (${transactionRows.length})`
+            transactionsTitle: t('Individuele uitgaven {month} ({count})', { month: latestMonth.monthLabel, count: transactionRows.length })
         });
         return;
     }
@@ -3259,13 +3268,13 @@ function showTransactionDetail(detailType) {
         const transactionRows = buildTransactionTableRows(transactions);
         openDetailModal({
             title: '<i class="fas fa-chart-line"></i> Cashflow (tijdslijn)',
-            summary: `${transactions.length} transacties · inkomsten ${formatCurrency(totals.income)} · uitgaven ${formatCurrency(totals.expenses)}`
-                + (totals.refunds > 0.004 ? ` (na ${formatCurrency(totals.refunds)} terugbetalingen)` : '')
-                + ` · netto ${formatCurrency(totals.netSavings)}`,
+            summary: t('{count} transacties · inkomsten {income} · uitgaven {expenses}', { count: transactions.length, income: formatCurrency(totals.income), expenses: formatCurrency(totals.expenses) })
+                + (totals.refunds > 0.004 ? t(' (na {amount} terugbetalingen)', { amount: formatCurrency(totals.refunds) }) : '')
+                + t(' · netto {amount}', { amount: formatCurrency(totals.netSavings) }),
             rows: [],
             chart: { trace: traces, layout },
             transactionRows,
-            transactionsTitle: `Alle bij- en afschrijvingen (${transactionRows.length})`
+            transactionsTitle: t('Alle bij- en afschrijvingen ({count})', { count: transactionRows.length })
         });
         return;
     }
@@ -3289,9 +3298,9 @@ function showTransactionDetail(detailType) {
         const chartRows = breakdown.expenses.slice(0, 12).reverse();
         openDetailModal({
             title: '<i class="fas fa-circle-notch"></i> Verdeling in categorieën',
-            summary: `Uitgaven ${formatCurrency(totalExpenses)} in ${breakdown.expenses.length} categorieën (na terugbetalingen, zonder overboekingen tussen eigen rekeningen als dat filter aan staat).`,
+            summary: t('Uitgaven {amount} in {count} categorieën (na terugbetalingen, zonder overboekingen tussen eigen rekeningen als dat filter aan staat).', { amount: formatCurrency(totalExpenses), count: breakdown.expenses.length }),
             rows: breakdown.expenses.map((row) => ({
-                label: `${row.category} · ${formatPercent((row.total / totalExpenses) * 100)} · `
+                label: `${t(row.category)} · ${formatPercent((row.total / totalExpenses) * 100)} · `
                     + row.merchants.slice(0, 3).map((merchant) => `${merchant.label} (${formatCurrency(merchant.amount)})`).join(', '),
                 value: formatCurrency(row.total)
             })),
@@ -3300,7 +3309,7 @@ function showTransactionDetail(detailType) {
                     type: 'bar',
                     orientation: 'h',
                     x: chartRows.map((row) => row.total),
-                    y: chartRows.map((row) => row.category),
+                    y: chartRows.map((row) => t(row.category)),
                     marker: { color: chartRows.map((row) => getCategoryColor(row.category)) },
                     hovertemplate: '%{y}<br>%{x:.2f} EUR<extra></extra>'
                 },
@@ -3314,7 +3323,7 @@ function showTransactionDetail(detailType) {
                 }
             },
             transactionRows,
-            transactionsTitle: `Uitgaven en terugbetalingen (${transactionRows.length})`
+            transactionsTitle: t('Uitgaven en terugbetalingen ({count})', { count: transactionRows.length })
         });
         return;
     }
@@ -3346,7 +3355,7 @@ function showTransactionDetail(detailType) {
                 detailTransactionsState.query = '';
                 detailTransactionsState.sortKey = DETAIL_TRANSACTIONS_DEFAULT_SORT;
                 const titleEl = document.getElementById('balanceDetailTransactionsTitle');
-                if (titleEl) titleEl.textContent = `Transacties (${transactionRowsAll.length})`;
+                if (titleEl) titleEl.textContent = t('Transacties ({count})', { count: transactionRowsAll.length });
                 const searchEl = document.getElementById('balanceDetailTransactionsSearch');
                 if (searchEl) searchEl.value = '';
                 const sortEl = document.getElementById('balanceDetailTransactionsSort');
@@ -3363,7 +3372,7 @@ function showTransactionDetail(detailType) {
                 detailTransactionsState.query = '';
                 detailTransactionsState.sortKey = DETAIL_TRANSACTIONS_DEFAULT_SORT;
                 const titleEl = document.getElementById('balanceDetailTransactionsTitle');
-                if (titleEl) titleEl.textContent = `Transacties categorie: ${row.category} (${scoped.length})`;
+                if (titleEl) titleEl.textContent = t('Transacties categorie: {category} ({count})', { category: t(row.category), count: scoped.length });
                 const searchEl = document.getElementById('balanceDetailTransactionsSearch');
                 if (searchEl) searchEl.value = '';
                 const sortEl = document.getElementById('balanceDetailTransactionsSort');
@@ -3375,10 +3384,10 @@ function showTransactionDetail(detailType) {
 
         const trace = {
             type: 'bar',
-            x: rows.map((row) => row.category),
+            x: rows.map((row) => t(row.category)),
             y: rows.map((row) => row.net),
             marker: { color: rows.map((row) => row.net >= 0 ? '#22c55e' : '#ef4444') },
-            hovertemplate: '%{x}<br>Netto: %{y:.2f} EUR<extra></extra>'
+            hovertemplate: t('%{x}<br>Netto: %{y:.2f} EUR<extra></extra>')
         };
         const layout = {
             margin: { t: 10, r: 20, l: 40, b: 70 },
@@ -3391,22 +3400,22 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-project-diagram"></i> Geldstromen detail',
-            summary: `Categorieën: ${rows.length}`,
+            summary: t('Categorieën: {count}', { count: rows.length }),
             rows: [
                 {
                     label: 'Alle transacties in de periode',
-                    value: `${transactionRowsAll.length} transacties`,
+                    value: t('{count} transacties', { count: transactionRowsAll.length }),
                     actionKey: '__all__'
                 },
                 ...rows.map((row) => ({
-                    label: `${row.category} · In ${formatCurrency(row.income)} · Uit ${formatCurrency(row.expense)}`,
-                    value: `Netto ${formatCurrency(row.net)}`,
+                    label: t('{category} · In {income} · Uit {expense}', { category: t(row.category), income: formatCurrency(row.income), expense: formatCurrency(row.expense) }),
+                    value: t('Netto {amount}', { amount: formatCurrency(row.net) }),
                     actionKey: `cat:${row.category}`
                 }))
             ],
             chart: { trace, layout },
             transactionRows: transactionRowsAll,
-            transactionsTitle: `Transacties (${transactionRowsAll.length})`,
+            transactionsTitle: t('Transacties ({count})', { count: transactionRowsAll.length }),
             rowActionMap,
             transactionsCollapsedByDefault: true
         });
@@ -3436,45 +3445,45 @@ function showTransactionDetail(detailType) {
         const baseDiscretionary = avgBase.reduce((sum, row) => sum + row.discretionary, 0);
         const baseUncategorized = avgBase.reduce((sum, row) => sum + row.uncategorized, 0);
         const uncategorizedNote = baseUncategorized > 0.004
-            ? ` Ongecategoriseerde uitgaven (Overig) tellen als vrij besteedbaar: ${formatCurrency(baseUncategorized / avgBase.length)} per maand (${((baseUncategorized / Math.max(baseDiscretionary, 0.01)) * 100).toFixed(0)}% van vrij besteedbaar).`
+            ? t(' Ongecategoriseerde uitgaven (Overig) tellen als vrij besteedbaar: {amount} per maand ({share}% van vrij besteedbaar).', { amount: formatCurrency(baseUncategorized / avgBase.length), share: ((baseUncategorized / Math.max(baseDiscretionary, 0.01)) * 100).toFixed(0) })
             : '';
 
         const traces = [
             {
                 type: 'bar',
-                name: 'Noodzakelijk',
+                name: t('Noodzakelijk'),
                 x: labels,
                 y: monthly.map((row) => row.essentials),
                 marker: { color: 'rgba(59,130,246,0.82)' },
-                hovertemplate: '%{x}<br>Noodzakelijk: %{y:.2f} EUR<extra></extra>'
+                hovertemplate: t('%{x}<br>Noodzakelijk: %{y:.2f} EUR<extra></extra>')
             },
             {
                 type: 'bar',
-                name: 'Vrij besteedbaar',
+                name: t('Vrij besteedbaar'),
                 x: labels,
                 y: monthly.map((row) => row.discretionary),
                 marker: { color: 'rgba(245,158,11,0.82)' },
-                hovertemplate: '%{x}<br>Vrij besteedbaar: %{y:.2f} EUR<extra></extra>'
+                hovertemplate: t('%{x}<br>Vrij besteedbaar: %{y:.2f} EUR<extra></extra>')
             },
             {
                 type: 'scatter',
                 mode: 'lines+markers',
-                name: 'Inkomen',
+                name: t('Inkomen'),
                 x: labels,
                 y: monthly.map((row) => row.income),
                 line: { color: '#22c55e', width: 2.5 },
                 marker: { size: 6 },
-                hovertemplate: '%{x}<br>Inkomen: %{y:.2f} EUR<extra></extra>'
+                hovertemplate: t('%{x}<br>Inkomen: %{y:.2f} EUR<extra></extra>')
             },
             {
                 type: 'scatter',
                 mode: 'lines+markers',
-                name: 'Overgehouden',
+                name: t('Overgehouden'),
                 x: labels,
                 y: monthly.map((row) => row.netSavings),
                 line: { color: '#38bdf8', width: 2.5, dash: 'dot' },
                 marker: { size: 6 },
-                hovertemplate: '%{x}<br>Overgehouden: %{y:.2f} EUR<extra></extra>'
+                hovertemplate: t('%{x}<br>Overgehouden: %{y:.2f} EUR<extra></extra>')
             }
         ];
         const layout = {
@@ -3490,12 +3499,33 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-scale-balanced"></i> Budgetdiscipline (50/30/20)',
-            summary: `Gemiddeld${completeMonths.length ? ' (volledige maanden)' : ''}: noodzakelijk ${formatPercent(avgEssentials)} (doel 50%), vrij besteedbaar ${formatPercent(avgDiscretionary)} (doel 30%), overgehouden ${formatPercent(avgSavings)} (doel 20%). ${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`} overgehouden: ${formatPercent(latest.savingsPct)}. Overgehouden = inkomen min uitgaven, ook wat op de betaalrekening blijft staan (de tegel Sparen telt alleen stortingen op spaarrekeningen). Terugbetalingen verlagen de uitgaven van hun soort (noodzakelijk of vrij), overboekingen tussen eigen rekeningen tellen niet mee.${uncategorizedNote}`,
+            summary: t(completeMonths.length
+                ? 'Gemiddeld (volledige maanden): noodzakelijk {essentials} (doel 50%), vrij besteedbaar {discretionary} (doel 30%), overgehouden {saved} (doel 20%).'
+                : 'Gemiddeld: noodzakelijk {essentials} (doel 50%), vrij besteedbaar {discretionary} (doel 30%), overgehouden {saved} (doel 20%).', {
+                essentials: formatPercent(avgEssentials),
+                discretionary: formatPercent(avgDiscretionary),
+                saved: formatPercent(avgSavings)
+            })
+                + ' '
+                + t('{month} overgehouden: {saved}.', {
+                    month: latest.isCurrent ? t('Lopende maand') : t('Laatste volledige maand ({month})', { month: latest.monthLabel }),
+                    saved: formatPercent(latest.savingsPct)
+                })
+                + ' '
+                + t('Overgehouden = inkomen min uitgaven, ook wat op de betaalrekening blijft staan (de tegel Sparen telt alleen stortingen op spaarrekeningen). Terugbetalingen verlagen de uitgaven van hun soort (noodzakelijk of vrij), overboekingen tussen eigen rekeningen tellen niet mee.')
+                + uncategorizedNote,
             rows: monthly.slice().reverse().map((row) => ({
-                label: `${row.monthLabel} · In ${formatCurrency(row.income)} · Noodzakelijk ${formatCurrency(row.essentials)} (${formatPercent(row.essentialsPct)}) · Vrij ${formatCurrency(row.discretionary)} (${formatPercent(row.discretionaryPct)})`
-                    + (row.uncategorized > 0.004 ? `, waarvan ongecategoriseerd ${formatCurrency(row.uncategorized)}` : '')
-                    + (row.refunds > 0.004 ? ` · na ${formatCurrency(row.refunds)} terugbetalingen` : ''),
-                value: `Netto ${formatCurrency(row.netSavings)} (${formatPercent(row.savingsPct)})`
+                label: t('{month} · In {income} · Noodzakelijk {essentials} ({essentialsPct}) · Vrij {discretionary} ({discretionaryPct})', {
+                    month: row.monthLabel,
+                    income: formatCurrency(row.income),
+                    essentials: formatCurrency(row.essentials),
+                    essentialsPct: formatPercent(row.essentialsPct),
+                    discretionary: formatCurrency(row.discretionary),
+                    discretionaryPct: formatPercent(row.discretionaryPct)
+                })
+                    + (row.uncategorized > 0.004 ? t(', waarvan ongecategoriseerd {amount}', { amount: formatCurrency(row.uncategorized) }) : '')
+                    + (row.refunds > 0.004 ? t(' · na {amount} terugbetalingen', { amount: formatCurrency(row.refunds) }) : ''),
+                value: t('Netto {amount} ({share})', { amount: formatCurrency(row.netSavings), share: formatPercent(row.savingsPct) })
             })),
             chart: { trace: traces, layout }
         });
@@ -3526,14 +3556,14 @@ function showTransactionDetail(detailType) {
                         'rgba(59,130,246,0.82)'
                     )).reverse()
                 },
-                hovertemplate: '%{y}<br>Potentieel effect: %{x:.2f} EUR<extra></extra>'
+                hovertemplate: t('%{y}<br>Potentieel effect: %{x:.2f} EUR<extra></extra>')
             },
             layout: {
                 margin: { t: 10, r: 20, l: 180, b: 30 },
                 paper_bgcolor: 'rgba(0,0,0,0)',
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 font: { color: '#cbd5f5' },
-                xaxis: { gridcolor: 'rgba(255,255,255,0.08)', title: 'EUR potentieel' },
+                xaxis: { gridcolor: 'rgba(255,255,255,0.08)', title: t('EUR potentieel') },
                 yaxis: { automargin: true, tickangle: 0 }
             }
         } : null;
@@ -3541,11 +3571,11 @@ function showTransactionDetail(detailType) {
         openDetailModal({
             title: '<i class="fas fa-list-check"></i> Actieplan (prioriteit)',
             summary: actions.length
-                ? `Topprioriteiten op basis van huidige periode (${actions.length} acties, hoogste confidence ${Math.round((Number(actions[0].confidence) || 0.75) * 100)}%).`
+                ? t('Topprioriteiten op basis van huidige periode ({count} acties, hoogste zekerheid {confidence}%).', { count: actions.length, confidence: Math.round((Number(actions[0].confidence) || 0.75) * 100) })
                 : 'Geen acties beschikbaar.',
             rows: actions.map((action) => ({
                 label: `P${action.priority} · ${action.title}`,
-                value: `${action.summary}${(Number(action.impact) || 0) > 0.01 ? ` · Impact ${formatCurrency(action.impact)}` : ''} · Confidence ${Math.round((Number(action.confidence) || 0.75) * 100)}%${action.playbook ? ` · Actie: ${action.playbook}` : ''}`
+                value: `${action.summary}${(Number(action.impact) || 0) > 0.01 ? t(' · Impact {amount}', { amount: formatCurrency(action.impact) }) : ''}${t(' · Zekerheid {confidence}%', { confidence: Math.round((Number(action.confidence) || 0.75) * 100) })}${action.playbook ? t(' · Actie: {playbook}', { playbook: action.playbook }) : ''}`
             })),
             chart,
             listClassName: 'balance-detail-list-stacked'
@@ -3572,26 +3602,26 @@ function showTransactionDetail(detailType) {
             x: chartRows.map((row) => row.avgMonthly),
             y: chartRows.map((row) => row.merchant),
             marker: { color: 'rgba(168,85,247,0.82)' },
-            text: chartRows.map((row) => `${row.monthsPresent} mnd`),
+            text: chartRows.map((row) => t('{months} mnd', { months: row.monthsPresent })),
             textposition: 'outside',
-            hovertemplate: '%{y}<br>Gem. per maand: %{x:.2f} EUR<extra></extra>'
+            hovertemplate: t('%{y}<br>Gem. per maand: %{x:.2f} EUR<extra></extra>')
         };
         const layout = {
             margin: { t: 10, r: 44, l: 180, b: 30 },
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             font: { color: '#cbd5f5' },
-            xaxis: { gridcolor: 'rgba(255,255,255,0.08)', title: 'Gemiddelde maandlast (EUR)' },
+            xaxis: { gridcolor: 'rgba(255,255,255,0.08)', title: t('Gemiddelde maandlast (EUR)') },
             yaxis: { automargin: true }
         };
 
         const monthlyTotal = recurring.rows.reduce((sum, row) => sum + row.avgMonthly, 0);
         openDetailModal({
             title: '<i class="fas fa-repeat"></i> Terugkerende kosten',
-            summary: `${recurring.rows.length} vaste maandelijkse posten · geschatte maandlast ${formatCurrency(monthlyTotal)}. Alleen tegenrekeningen met ±1 betaling per maand en een stabiel bedrag.`,
+            summary: t('{count} vaste maandelijkse posten · geschatte maandlast {amount}. Alleen tegenrekeningen met ±1 betaling per maand en een stabiel bedrag.', { count: recurring.rows.length, amount: formatCurrency(monthlyTotal) }),
             rows: recurring.rows.map((row) => ({
-                label: `${row.merchant} (${row.category}) · ${row.monthsPresent}/${recurring.months} maanden`,
-                value: `${formatCurrency(row.avgMonthly)}/mnd (stabiliteit ${(Math.max(0, 1 - row.stability) * 100).toFixed(0)}%)`
+                label: t('{merchant} ({category}) · {present}/{months} maanden', { merchant: row.merchant, category: t(row.category), present: row.monthsPresent, months: recurring.months }),
+                value: t('{amount}/mnd (stabiliteit {stability}%)', { amount: formatCurrency(row.avgMonthly), stability: (Math.max(0, 1 - row.stability) * 100).toFixed(0) })
             })),
             chart: { trace, layout }
         });
@@ -3624,7 +3654,7 @@ function showTransactionDetail(detailType) {
         const chart = {
             trace: {
                 type: 'bar',
-                x: componentRows.map((row) => row.label),
+                x: componentRows.map((row) => t(row.label)),
                 y: componentRows.map((row) => row.value * 100),
                 marker: {
                     color: componentRows.map((row) => (
@@ -3642,7 +3672,7 @@ function showTransactionDetail(detailType) {
                 font: { color: '#cbd5f5' },
                 xaxis: { tickangle: -20 },
                 yaxis: {
-                    title: 'Dekking (%)',
+                    title: t('Dekking (%)'),
                     range: [0, 100],
                     gridcolor: 'rgba(255,255,255,0.08)'
                 }
@@ -3650,7 +3680,7 @@ function showTransactionDetail(detailType) {
         };
 
         const rows = [
-            { label: 'Kwaliteitsscore', value: `${quality.score}/100 (${quality.qualityLabel})` },
+            { label: 'Kwaliteitsscore', value: `${quality.score}/100 (${t(quality.qualityLabel)})` },
             { label: 'Transacties (periode)', value: String(metrics.total_transactions ?? 0) },
             { label: 'Actieve transactiedagen', value: String(metrics.active_transaction_days ?? 0) },
             { label: 'Dagen tussen eerste en laatste transactie', value: String(metrics.dataset_span_days ?? 0) },
@@ -3661,17 +3691,17 @@ function showTransactionDetail(detailType) {
             { label: 'EUR-dekking', value: formatRatioPercent(coverage.amount_eur_coverage) },
             { label: 'Rekeningen in vreemde valuta omgerekend', value: formatRatioPercent(coverage.fx_coverage) },
             { label: 'Aandeel interne overboekingen', value: formatRatioPercent(coverage.internal_share) },
-            { label: 'Laatste synchronisatie met Bunq', value: metrics.latest_capture_at ? new Date(metrics.latest_capture_at).toLocaleString('nl-NL') : 'n.v.t.' }
+            { label: 'Laatste synchronisatie met Bunq', value: metrics.latest_capture_at ? new Date(metrics.latest_capture_at).toLocaleString(uiLocale()) : t('n.v.t.') }
         ];
 
         if (Array.isArray(quality.warnings) && quality.warnings.length) {
             quality.warnings.forEach((warning, index) => {
-                rows.push({ label: `Waarschuwing ${index + 1}`, value: warning });
+                rows.push({ label: t('Waarschuwing {n}', { n: index + 1 }), value: t(warning) });
             });
         }
         if (Array.isArray(quality.recommendations) && quality.recommendations.length) {
             quality.recommendations.slice(0, 4).forEach((recommendation, index) => {
-                rows.push({ label: `Aanbeveling ${index + 1}`, value: recommendation });
+                rows.push({ label: t('Aanbeveling {n}', { n: index + 1 }), value: t(recommendation) });
             });
         }
 
@@ -3777,7 +3807,7 @@ function buildCashflowFigure(transactions) {
         bucket.cumulative = running;
     });
 
-    const unit = { day: 'Dag', week: 'Week van', month: 'Maand' }[size];
+    const unit = t({ day: 'Dag', week: 'Week van', month: 'Maand' }[size]);
     const dateFormat = size === 'month' ? '%m-%Y' : '%d-%m-%Y';
     const x = buckets.map((bucket) => bucket.start);
     const traces = [
@@ -3785,17 +3815,17 @@ function buildCashflowFigure(transactions) {
             x,
             y: buckets.map((bucket) => bucket.income),
             type: 'bar',
-            name: 'Inkomsten',
+            name: t('Inkomsten'),
             marker: { color: 'rgba(34,197,94,0.65)' },
-            hovertemplate: `${unit} %{x|${dateFormat}}<br>Inkomsten: %{y:.2f} EUR<extra></extra>`
+            hovertemplate: `${unit} %{x|${dateFormat}}<br>${t('Inkomsten')}: %{y:.2f} EUR<extra></extra>`
         },
         {
             x,
             y: buckets.map((bucket) => -bucket.expenses),
             type: 'bar',
-            name: 'Uitgaven',
+            name: t('Uitgaven'),
             marker: { color: 'rgba(239,68,68,0.65)' },
-            hovertemplate: `${unit} %{x|${dateFormat}}<br>Uitgaven (na terugbetalingen): %{customdata:.2f} EUR<extra></extra>`,
+            hovertemplate: `${unit} %{x|${dateFormat}}<br>${t('Uitgaven (na terugbetalingen)')}: %{customdata:.2f} EUR<extra></extra>`,
             customdata: buckets.map((bucket) => bucket.expenses)
         },
         {
@@ -3803,10 +3833,10 @@ function buildCashflowFigure(transactions) {
             y: buckets.map((bucket) => bucket.cumulative),
             type: 'scatter',
             mode: 'lines',
-            name: 'Netto cumulatief',
+            name: t('Netto cumulatief'),
             yaxis: 'y2',
             line: { color: '#8b5cf6', width: 3, shape: size === 'day' ? 'linear' : 'hv' },
-            hovertemplate: `t/m ${unit.toLowerCase()} %{x|${dateFormat}}<br>Netto sinds begin periode: %{y:.2f} EUR<extra></extra>`
+            hovertemplate: `${t('t/m')} ${unit.toLowerCase()} %{x|${dateFormat}}<br>${t('Netto sinds begin periode')}: %{y:.2f} EUR<extra></extra>`
         }
     ];
     const ranges = alignedZeroRanges(
@@ -3820,18 +3850,41 @@ function buildCashflowFigure(transactions) {
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#cbd5f5' },
         xaxis: { showgrid: false },
-        yaxis: { title: `Per ${{ day: 'dag', week: 'week', month: 'maand' }[size]}`, range: ranges.left, zeroline: true, gridcolor: 'rgba(255,255,255,0.05)' },
-        yaxis2: { title: 'Cumulatief', range: ranges.right, overlaying: 'y', side: 'right', zeroline: false, showgrid: false },
+        yaxis: { title: t({ day: 'Per dag', week: 'Per week', month: 'Per maand' }[size]), range: ranges.left, zeroline: true, gridcolor: 'rgba(255,255,255,0.05)' },
+        yaxis2: { title: t('Cumulatief'), range: ranges.right, overlaying: 'y', side: 'right', zeroline: false, showgrid: false },
         legend: { orientation: 'h', y: -0.2 }
     };
     return { traces, layout, size };
+}
+
+// Plotly config for every chart: month/day names and number separators follow the UI language.
+let plotlyLocaleRegistered = false;
+function plotlyConfig() {
+    if (!plotlyLocaleRegistered && window.Plotly?.register) {
+        window.Plotly.register({
+            moduleType: 'locale',
+            name: 'nl',
+            dictionary: {},
+            format: {
+                days: ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'],
+                shortDays: ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'],
+                months: ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'],
+                shortMonths: ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'],
+                date: '%d-%m-%Y',
+                decimal: ',',
+                thousands: '.'
+            }
+        });
+        plotlyLocaleRegistered = true;
+    }
+    return { displayModeBar: false, responsive: true, locale: uiLang() === 'nl' ? 'nl' : 'en' };
 }
 
 function renderCashflowChart(data) {
     const container = document.getElementById('cashflowChart');
     if (!container) return;
     const { traces, layout } = buildCashflowFigure(data);
-    Plotly.react(container, traces, layout, { displayModeBar: false, responsive: true });
+    Plotly.react(container, traces, layout, plotlyConfig());
 }
 
 function renderSankeyChart(data) {
@@ -3890,7 +3943,7 @@ function renderSankeyChart(data) {
             plot_bgcolor: 'rgba(0,0,0,0)',
             font: { color: '#cbd5f5' },
             annotations: [{
-                text: 'Geen geldstromen beschikbaar in deze periode.',
+                text: t('Geen geldstromen beschikbaar in deze periode.'),
                 showarrow: false,
                 x: 0.5,
                 y: 0.5,
@@ -3898,7 +3951,7 @@ function renderSankeyChart(data) {
                 yref: 'paper',
                 font: { size: 14, color: '#cbd5f5' }
             }]
-        }, { displayModeBar: false, responsive: true });
+        }, plotlyConfig());
         return;
     }
 
@@ -4006,16 +4059,16 @@ function renderSankeyChart(data) {
 
     setSankeySummary(
         container,
-        `In ${formatCurrency(totalIncome)} · Uit ${formatCurrency(totalExpenses)}`
-            + (refundsUsed > 0.004 ? ` (na ${formatCurrency(refundsUsed)} terugbetalingen)` : '')
-            + ` · Netto ${formatCurrency(net)}`
+        t('In {income} · Uit {expenses}', { income: formatCurrency(totalIncome), expenses: formatCurrency(totalExpenses) })
+            + (refundsUsed > 0.004 ? t(' (na {amount} terugbetalingen)', { amount: formatCurrency(refundsUsed) }) : '')
+            + t(' · Netto {amount}', { amount: formatCurrency(net) })
     );
 
     const trace = {
         type: 'sankey',
         arrangement: 'snap',
         node: {
-            label: labels,
+            label: labels.map(sankeyDisplayLabel),
             pad: 15,
             thickness: 18,
             color: labels.map((label) => {
@@ -4038,7 +4091,7 @@ function renderSankeyChart(data) {
             value,
             color: colors,
             customdata: linkSharePct,
-            hovertemplate: '%{source.label} → %{target.label}<br>%{value:.2f} EUR<br>%{customdata:.1f}% van bron<extra></extra>'
+            hovertemplate: t('%{source.label} → %{target.label}<br>%{value:.2f} EUR<br>%{customdata:.1f}% van bron<extra></extra>')
         }
     };
 
@@ -4048,7 +4101,15 @@ function renderSankeyChart(data) {
         font: { color: '#cbd5f5' }
     };
 
-    Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
+    Plotly.react(container, [trace], layout, plotlyConfig());
+}
+
+// Sankey node labels are built from Dutch names ("In: Salaris", "Nodig: Wonen"); translate the
+// prefix and the category for display.
+function sankeyDisplayLabel(label) {
+    const match = /^(In|Nodig|Vrij): (.*)$/.exec(label);
+    if (!match) return t(label);
+    return `${t(`${match[1]}:`)} ${t(match[2])}`;
 }
 
 function setSankeySummary(container, text) {
@@ -4127,7 +4188,7 @@ function renderSunburstChart(data) {
 
     const pushNode = (id, label, parent, value, color, share) => {
         ids.push(id);
-        labels.push(label);
+        labels.push(t(label));
         parents.push(parent);
         values.push(value);
         colors.push(color);
@@ -4143,7 +4204,7 @@ function renderSunburstChart(data) {
             plot_bgcolor: 'rgba(0,0,0,0)',
             font: { color: '#ffffff' },
             annotations: [{
-                text: 'Geen categorie-data beschikbaar in deze periode.',
+                text: t('Geen categorie-data beschikbaar in deze periode.'),
                 showarrow: false,
                 x: 0.5,
                 y: 0.5,
@@ -4151,12 +4212,12 @@ function renderSunburstChart(data) {
                 yref: 'paper',
                 font: { size: 14, color: '#cbd5f5' }
             }]
-        }, { displayModeBar: false, responsive: true });
+        }, plotlyConfig());
         return;
     }
 
-    const shareOf = (part, whole, of) => (whole > 0.01 ? `${formatPercent((part / whole) * 100)} van ${of}` : '');
-    pushNode('root', 'Totaal', '', totalIncome + totalExpenses, '#334155', `Netto ${formatCurrency(totalIncome - totalExpenses)}`);
+    const shareOf = (part, whole, of) => (whole > 0.01 ? t(`{share} van ${of}`, { share: formatPercent((part / whole) * 100) }) : '');
+    pushNode('root', 'Totaal', '', totalIncome + totalExpenses, '#334155', t('Netto {amount}', { amount: formatCurrency(totalIncome - totalExpenses) }));
     pushNode('income', 'Inkomsten', 'root', totalIncome, '#22c55e', '');
     pushNode('expenses', 'Uitgaven', 'root', totalExpenses, '#ef4444', shareOf(totalExpenses, totalIncome, 'de inkomsten'));
 
@@ -4218,7 +4279,7 @@ function renderSunburstChart(data) {
         uniformtext: { minsize: 10, mode: 'hide' }
     };
 
-    Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
+    Plotly.react(container, [trace], layout, plotlyConfig());
 }
 
 function renderTimeTravelChart(data) {
@@ -4232,7 +4293,7 @@ function renderTimeTravelChart(data) {
             plot_bgcolor: 'rgba(0,0,0,0)',
             font: { color: '#cbd5f5' },
             annotations: [{
-                text: 'Onvoldoende data voor budgetdiscipline analyse.',
+                text: t('Onvoldoende data voor budgetdiscipline analyse.'),
                 showarrow: false,
                 x: 0.5,
                 y: 0.5,
@@ -4240,7 +4301,7 @@ function renderTimeTravelChart(data) {
                 yref: 'paper',
                 font: { size: 14, color: '#cbd5f5' }
             }]
-        }, { displayModeBar: false, responsive: true });
+        }, plotlyConfig());
         return;
     }
 
@@ -4255,47 +4316,50 @@ function renderTimeTravelChart(data) {
         .map((value) => Number(value) || 0));
     const latest = latestCompleteBudgetMonth(monthly);
     const noIncomeMonths = monthly.filter((row) => row.essentialsPct === null).map((row) => row.monthLabel);
-    const statusText = `${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`}: `
-        + `noodzakelijk ${formatPercent(latest.essentialsPct)} (doel 50%), vrij besteedbaar ${formatPercent(latest.discretionaryPct)} (doel 30%), `
-        + `overgehouden ${formatPercent(latest.savingsPct)} (doel 20%).`
-        + (noIncomeMonths.length ? ` Geen inkomen in: ${noIncomeMonths.join(', ')}.` : '');
+    const statusText = t('{month}: noodzakelijk {essentials} (doel 50%), vrij besteedbaar {discretionary} (doel 30%), overgehouden {saved} (doel 20%).', {
+        month: latest.isCurrent ? t('Lopende maand') : t('Laatste volledige maand ({month})', { month: latest.monthLabel }),
+        essentials: formatPercent(latest.essentialsPct),
+        discretionary: formatPercent(latest.discretionaryPct),
+        saved: formatPercent(latest.savingsPct)
+    })
+        + (noIncomeMonths.length ? t(' Geen inkomen in: {months}.', { months: noIncomeMonths.join(', ') }) : '');
 
     const traces = [
         {
             type: 'scatter',
             mode: 'lines+markers',
-            name: 'Noodzakelijk %',
+            name: t('Noodzakelijk %'),
             x: labels,
             y: essentials,
             line: { color: '#3b82f6', width: 3 },
             marker: { size: 7 },
-            hovertemplate: '%{x}<br>Noodzakelijk: %{y:.1f}%<extra></extra>'
+            hovertemplate: t('%{x}<br>Noodzakelijk: %{y:.1f}%<extra></extra>')
         },
         {
             type: 'scatter',
             mode: 'lines+markers',
-            name: 'Vrij besteedbaar %',
+            name: t('Vrij besteedbaar %'),
             x: labels,
             y: discretionary,
             customdata: monthly.map((row) => row.uncategorized),
             line: { color: '#f59e0b', width: 3 },
             marker: { size: 7 },
-            hovertemplate: '%{x}<br>Vrij besteedbaar: %{y:.1f}%<br>waarvan ongecategoriseerd (Overig): %{customdata:.2f} EUR<extra></extra>'
+            hovertemplate: t('%{x}<br>Vrij besteedbaar: %{y:.1f}%<br>waarvan ongecategoriseerd (Overig): %{customdata:.2f} EUR<extra></extra>')
         },
         {
             type: 'scatter',
             mode: 'lines+markers',
-            name: 'Overgehouden %',
+            name: t('Overgehouden %'),
             x: labels,
             y: savings,
             line: { color: '#22c55e', width: 3 },
             marker: { size: 7 },
-            hovertemplate: '%{x}<br>Overgehouden: %{y:.1f}%<extra></extra>'
+            hovertemplate: t('%{x}<br>Overgehouden: %{y:.1f}%<extra></extra>')
         },
         {
             type: 'scatter',
             mode: 'lines',
-            name: 'Doel noodzakelijk (50%)',
+            name: t('Doel noodzakelijk (50%)'),
             x: labels,
             y: labels.map(() => 50),
             line: { color: 'rgba(59,130,246,0.65)', width: 1.8, dash: 'dot' },
@@ -4304,7 +4368,7 @@ function renderTimeTravelChart(data) {
         {
             type: 'scatter',
             mode: 'lines',
-            name: 'Doel vrij besteedbaar (30%)',
+            name: t('Doel vrij besteedbaar (30%)'),
             x: labels,
             y: labels.map(() => 30),
             line: { color: 'rgba(245,158,11,0.65)', width: 1.8, dash: 'dot' },
@@ -4313,7 +4377,7 @@ function renderTimeTravelChart(data) {
         {
             type: 'scatter',
             mode: 'lines',
-            name: 'Doel overhouden (20%)',
+            name: t('Doel overhouden (20%)'),
             x: labels,
             y: labels.map(() => 20),
             line: { color: 'rgba(34,197,94,0.65)', width: 1.8, dash: 'dot' },
@@ -4328,7 +4392,7 @@ function renderTimeTravelChart(data) {
         font: { color: '#cbd5f5' },
         xaxis: { showgrid: false },
         yaxis: {
-            title: '% van maandinkomen',
+            title: t('% van maandinkomen'),
             gridcolor: 'rgba(255,255,255,0.08)',
             range: [Math.floor(minPct / 10) * 10, Math.ceil(maxPct / 10) * 10]
         },
@@ -4346,7 +4410,7 @@ function renderTimeTravelChart(data) {
         }]
     };
 
-    Plotly.react(container, traces, layout, { displayModeBar: false, responsive: true });
+    Plotly.react(container, traces, layout, plotlyConfig());
 }
 
 function renderHeatmapChart(data) {
@@ -4378,11 +4442,11 @@ function renderHeatmapChart(data) {
 
     const trace = {
         z: grid,
-        x: dayParts.map((part) => part.label),
-        y: weekdays,
+        x: dayParts.map((part) => t(part.label)),
+        y: weekdays.map((day) => t(day)),
         type: 'heatmap',
         colorscale: 'YlOrRd',
-        hovertemplate: '%{y} · %{x}<br>Variabele uitgaven: %{z:.2f} EUR<extra></extra>'
+        hovertemplate: t('%{y} · %{x}<br>Variabele uitgaven: %{z:.2f} EUR<extra></extra>')
     };
 
     const layout = {
@@ -4392,7 +4456,7 @@ function renderHeatmapChart(data) {
         xaxis: { tickangle: -20 }
     };
 
-    Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
+    Plotly.react(container, [trace], layout, plotlyConfig());
 }
 
 function renderMerchantsChart(data) {
@@ -4429,7 +4493,7 @@ function renderMerchantsChart(data) {
         yaxis: { gridcolor: 'rgba(255,255,255,0.05)', automargin: true }
     };
     
-    Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
+    Plotly.react(container, [trace], layout, plotlyConfig());
 }
 
 // Amount buckets for the spending-spread chart; widths grow with the amount so one large
@@ -4487,7 +4551,7 @@ function renderRidgePlot(data) {
 
     const spread = buildSpendingSpread(data, 4);
     const datasets = spread.map((row) => ({
-        label: `${row.category} (${row.count})`,
+        label: `${t(row.category)} (${row.count})`,
         data: row.shares,
         counts: row.counts,
         borderColor: getCategoryColor(row.category),
@@ -4513,18 +4577,18 @@ function renderRidgePlot(data) {
                     callbacks: {
                         label: (context) => {
                             const count = context.dataset.counts?.[context.dataIndex] ?? 0;
-                            return `${context.dataset.label}: ${formatPercent(context.parsed.y)} (${count} betalingen)`;
+                            return t('{label}: {share} ({count} betalingen)', { label: context.dataset.label, share: formatPercent(context.parsed.y), count });
                         }
                     }
                 }
             },
             scales: {
                 x: {
-                    title: { display: true, text: 'Bedrag per betaling' },
+                    title: { display: true, text: t('Bedrag per betaling') },
                     grid: { color: 'rgba(255,255,255,0.05)' }
                 },
                 y: {
-                    title: { display: true, text: '% van betalingen in categorie' },
+                    title: { display: true, text: t('% van betalingen in categorie') },
                     beginAtZero: true,
                     ticks: { callback: (value) => `${value}%` },
                     grid: { color: 'rgba(255,255,255,0.05)' }
@@ -4593,7 +4657,7 @@ function updateRacingChart(frameIndex) {
     const trace = {
         type: 'bar',
         x: values,
-        y: labels,
+        y: labels.map((label) => t(label)),
         orientation: 'h',
         marker: {
             color: labels.map(getCategoryColor)
@@ -4610,12 +4674,12 @@ function updateRacingChart(frameIndex) {
         yaxis: { gridcolor: 'rgba(255,255,255,0.05)', automargin: true }
     };
     
-    Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
+    Plotly.react(container, [trace], layout, plotlyConfig());
     
     const raceMonth = document.getElementById('raceMonth');
     if (raceMonth) {
         const frameDate = new Date(`${frameKey}T00:00:00`);
-        raceMonth.textContent = frameDate.toLocaleDateString('nl-NL', {
+        raceMonth.textContent = frameDate.toLocaleDateString(uiLocale(), {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric'
@@ -4879,14 +4943,14 @@ function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12, options 
             const netSavings = row.income - row.essentials - row.discretionary;
             const denominator = row.income > 0.01 ? row.income : null;
             const isCurrent = row.monthKey === currentMonthKey;
-            const baseLabel = new Date(`${row.monthKey}-01T00:00:00`).toLocaleDateString('nl-NL', {
+            const baseLabel = new Date(`${row.monthKey}-01T00:00:00`).toLocaleDateString(uiLocale(), {
                 month: 'short',
                 year: '2-digit'
             });
             return {
                 ...row,
                 isCurrent,
-                monthLabel: isCurrent ? `${baseLabel} (lopend)` : baseLabel,
+                monthLabel: isCurrent ? t('{month} (lopend)', { month: baseLabel }) : baseLabel,
                 netSavings,
                 essentialsPct: denominator ? (row.essentials / denominator) * 100 : null,
                 discretionaryPct: denominator ? (row.discretionary / denominator) * 100 : null,
@@ -4985,14 +5049,14 @@ function estimateMonthlyNet(transactions) {
         return {
             monthlyNet: months.reduce((sum, row) => sum + row.net, 0) / months.length,
             months: months.length,
-            basis: `${months.length} volledige ${months.length === 1 ? 'maand' : 'maanden'}`
+            basis: t(months.length === 1 ? '{count} volledige maand' : '{count} volledige maanden', { count: months.length })
         };
     }
     const net = excludeOwnTransfersForBudget(transactions).reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
     return {
         monthlyNet: (net / periodDaysCovered(transactions)) * AVG_DAYS_PER_MONTH,
         months: 0,
-        basis: 'periode tot nu toe'
+        basis: t('periode tot nu toe')
     };
 }
 
@@ -5022,7 +5086,7 @@ function projectCurrentMonthNet(allTransactions, now = new Date()) {
             .filter((transaction) => transaction.date.getDate() > day)
             .reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0));
         const rest = restByMonth.reduce((sum, value) => sum + value, 0) / restByMonth.length;
-        return { projected: monthToDate + rest, monthToDate, rest, basis: `${months.length} volledige ${months.length === 1 ? 'maand' : 'maanden'}` };
+        return { projected: monthToDate + rest, monthToDate, rest, basis: t(months.length === 1 ? '{count} volledige maand' : '{count} volledige maanden', { count: months.length }) };
     }
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const hasMonthData = (transactions || []).some((transaction) => (
@@ -5030,7 +5094,7 @@ function projectCurrentMonthNet(allTransactions, now = new Date()) {
     ));
     if (!hasMonthData) return null;
     const rest = (monthToDate / day) * (daysInMonth - day);
-    return { projected: monthToDate + rest, monthToDate, rest, basis: 'lineair (nog geen volledige maand)' };
+    return { projected: monthToDate + rest, monthToDate, rest, basis: t('lineair (nog geen volledige maand)') };
 }
 
 // Label used to add up spending per counterparty: card payments often carry a store number
@@ -5200,7 +5264,7 @@ function summarizeNeedsVsWants(transactions) {
 // volatile because of rent day.
 function computeWeeklySpendingVolatility(transactions) {
     const valid = (transactions || []).filter(isValidTransactionDate);
-    if (!valid.length) return { mean: 0, std: 0, cv: 0, weeks: 0, label: 'n.v.t.' };
+    if (!valid.length) return { mean: 0, std: 0, cv: 0, weeks: 0, label: t('n.v.t.') };
 
     const firstDate = new Date(Math.min(...valid.map((transaction) => transaction.date.getTime())));
     const start = new Date(Math.max(getSelectedPeriodStart().getTime(), firstDate.getTime()));
@@ -5225,7 +5289,7 @@ function computeWeeklySpendingVolatility(transactions) {
             .reduce((sum, transaction) => sum + Math.abs(transaction.amount || 0), 0));
     }
 
-    if (weekTotals.length < 3) return { mean: 0, std: 0, cv: 0, weeks: weekTotals.length, label: 'n.v.t.' };
+    if (weekTotals.length < 3) return { mean: 0, std: 0, cv: 0, weeks: weekTotals.length, label: t('n.v.t.') };
     const mean = weekTotals.reduce((sum, value) => sum + value, 0) / weekTotals.length;
     if (mean <= 0.01) return { mean, std: 0, cv: 0, weeks: weekTotals.length, label: 'Laag' };
     const variance = weekTotals.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / weekTotals.length;
@@ -5345,8 +5409,8 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
     }) => {
         actions.push({
             priority: Math.max(1, Math.min(3, Number(priority) || 3)),
-            title,
-            summary,
+            title: t(title),
+            summary: t(summary),
             impact: Math.max(0, Number(impact) || 0),
             confidence: Math.max(0.4, Math.min(0.98, (Number(confidence) || 0.75) * coverageFactor)),
             reason,
@@ -5379,7 +5443,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 1,
                 title: 'Houd netto 20% van je inkomen over',
-                summary: `Gemiddeld tekort t.o.v. 20%-target: ${formatCurrency(savingsGap)} per maand.`,
+                summary: t('Gemiddeld tekort t.o.v. het 20%-doel: {amount} per maand.', { amount: formatCurrency(savingsGap) }),
                 impact: savingsGap,
                 confidence: 0.9 * baselineConfidence,
                 reason: 'budget-rule'
@@ -5392,7 +5456,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 1,
                 title: 'Verlaag vrij besteedbare uitgaven',
-                summary: `Gemiddeld discretionary ${formatCurrency(avgDiscretionary)} vs target ${formatCurrency(discretionaryTarget)}.`,
+                summary: t('Gemiddeld vrij besteedbaar {actual} vs doel {target}.', { actual: formatCurrency(avgDiscretionary), target: formatCurrency(discretionaryTarget) }),
                 impact: discretionaryGap,
                 confidence: 0.88 * baselineConfidence,
                 reason: 'budget-rule'
@@ -5405,7 +5469,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Herzie vaste lasten',
-                summary: `Gemiddeld essentials ${formatCurrency(avgEssentials)} vs target ${formatCurrency(essentialTarget)}.`,
+                summary: t('Gemiddeld noodzakelijk {actual} vs doel {target}.', { actual: formatCurrency(avgEssentials), target: formatCurrency(essentialTarget) }),
                 impact: essentialGap,
                 confidence: 0.84 * baselineConfidence,
                 reason: 'fixed-cost'
@@ -5416,7 +5480,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Vergroot inkomensruimte naast besparen',
-                summary: `Noodzakelijke uitgaven nemen ${formatPercent(latest.essentialsPct)} in van inkomen; extra inkomsten hebben nu meer effect dan extra kleine cuts.`,
+                summary: t('Noodzakelijke uitgaven nemen {share} in van het inkomen; extra inkomsten hebben nu meer effect dan extra kleine bezuinigingen.', { share: formatPercent(latest.essentialsPct) }),
                 impact: Math.max((latest.essentialsPct - 50) * (latest.income / 100), baseImpactFloor * 0.7),
                 confidence: 0.76 * baselineConfidence,
                 reason: 'income-side'
@@ -5431,7 +5495,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Stop uitgavengroei',
-                summary: `Uitgaven in ${expenseCompare.latest.monthLabel} ${formatPercent(increasePct)} hoger dan ${expenseCompare.previousLabel} (${formatCurrency(expenseDelta)}).`,
+                summary: t('Uitgaven in {month} {change} hoger dan {previous} ({amount}).', { month: expenseCompare.latest.monthLabel, change: formatPercent(increasePct), previous: expenseCompare.previousLabel, amount: formatCurrency(expenseDelta) }),
                 impact: Math.max(expenseDelta, 0),
                 confidence: 0.79,
                 reason: 'expense-trend'
@@ -5446,7 +5510,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 1,
                 title: 'Anticipeer op lagere inkomensstroom',
-                summary: `Inkomen in ${incomeCompare.latest.monthLabel} ${formatPercent(Math.abs(incomeDeltaPct))} lager dan ${incomeCompare.previousLabel} (${formatCurrency(incomeDelta)}).`,
+                summary: t('Inkomen in {month} {change} lager dan {previous} ({amount}).', { month: incomeCompare.latest.monthLabel, change: formatPercent(Math.abs(incomeDeltaPct)), previous: incomeCompare.previousLabel, amount: formatCurrency(incomeDelta) }),
                 impact: Math.max(incomeDelta * 0.2, 0),
                 confidence: 0.83,
                 reason: 'income-trend'
@@ -5466,7 +5530,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Verminder categorie-concentratie',
-                summary: `${topCategory[0]} is ${formatPercent(topCategoryShare)} van alle uitgaven (${formatCurrency(topCategory[1])}).`,
+                summary: t('{name} is {share} van alle uitgaven ({amount}).', { name: t(topCategory[0]), share: formatPercent(topCategoryShare), amount: formatCurrency(topCategory[1]) }),
                 impact: topCategory[1] * 0.1,
                 confidence: 0.81,
                 reason: 'category-concentration'
@@ -5482,7 +5546,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 3,
                 title: 'Verlaag afhankelijkheid van één tegenrekening',
-                summary: `${topMerchant[0]} is ${formatPercent(share)} van alle uitgaven (${formatCurrency(topMerchant[1])}).`,
+                summary: t('{name} is {share} van alle uitgaven ({amount}).', { name: topMerchant[0], share: formatPercent(share), amount: formatCurrency(topMerchant[1]) }),
                 impact: topMerchant[1] * 0.08,
                 confidence: 0.72,
                 reason: 'merchant-concentration'
@@ -5497,7 +5561,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         pushAction({
             priority: 2,
             title: 'Optimaliseer terugkerende kosten',
-            summary: `${recurringTop.merchant} gemiddeld ${formatCurrency(recurringTop.avgMonthly)}/mnd over ${recurringTop.monthsPresent} maanden.`,
+            summary: t('{merchant} gemiddeld {amount}/mnd over {months} maanden.', { merchant: recurringTop.merchant, amount: formatCurrency(recurringTop.avgMonthly), months: recurringTop.monthsPresent }),
             impact: recurringTop.avgMonthly * 0.12,
             confidence: recurringTop.monthsPresent >= 4 ? 0.87 : 0.74,
             reason: 'recurring'
@@ -5510,7 +5574,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 1,
                 title: 'Verlaag structurele vaste lasten',
-                summary: `Terugkerende kosten (excl. wonen/belastingen) zijn circa ${formatPercent((recurringShare * 100))} van de gemiddelde maanduitgaven (${formatCurrency(recurringMonthlyTotal)}).`,
+                summary: t('Terugkerende kosten (excl. wonen/belastingen) zijn circa {share} van de gemiddelde maanduitgaven ({amount}).', { share: formatPercent((recurringShare * 100)), amount: formatCurrency(recurringMonthlyTotal) }),
                 impact: recurringMonthlyTotal * 0.1,
                 confidence: 0.86,
                 reason: 'recurring-structure'
@@ -5528,23 +5592,23 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         if (lever.type === 'category') {
             pushAction({
                 priority: lever.share > 0.22 ? 2 : 3,
-                title: `Verlaag ${lever.label} uitgaven`,
-                summary: `${lever.label} is ${formatPercent(((lever.share || 0) * 100))} van de uitgaven (gem. ${formatCurrency(lever.baselineMonthly)}/mnd). Richt op ~${(lever.targetCutPct * 100).toFixed(0)}% reductie.`,
+                title: t('Verlaag uitgaven aan {category}', { category: t(lever.label) }),
+                summary: t('{category} is {share} van de uitgaven (gem. {amount}/mnd). Richt op ~{cut}% minder.', { category: t(lever.label), share: formatPercent(((lever.share || 0) * 100)), amount: formatCurrency(lever.baselineMonthly), cut: (lever.targetCutPct * 100).toFixed(0) }),
                 impact: lever.expectedMonthly,
                 confidence: 0.82,
                 reason: 'lever-category',
-                playbook: `Stel budget in op ${formatCurrency(Math.max(0, lever.baselineMonthly - lever.expectedMonthly))}/mnd en monitor weeklimiet op deze categorie.`
+                playbook: t('Stel een budget in van {amount}/mnd en houd een weeklimiet aan voor deze categorie.', { amount: formatCurrency(Math.max(0, lever.baselineMonthly - lever.expectedMonthly)) })
             });
             return;
         }
         pushAction({
             priority: lever.share > 0.12 ? 2 : 3,
-            title: `Optimaliseer uitgaven bij ${lever.label}`,
-            summary: `${lever.label} vertegenwoordigt ${formatPercent((lever.share * 100))} van de uitgaven (gem. ${formatCurrency(lever.baselineMonthly)}/mnd). Doel: ~${(lever.targetCutPct * 100).toFixed(0)}% lager.`,
+            title: t('Optimaliseer uitgaven bij {merchant}', { merchant: lever.label }),
+            summary: t('{merchant} is {share} van de uitgaven (gem. {amount}/mnd). Doel: ~{cut}% lager.', { merchant: lever.label, share: formatPercent((lever.share * 100)), amount: formatCurrency(lever.baselineMonthly), cut: (lever.targetCutPct * 100).toFixed(0) }),
             impact: lever.expectedMonthly,
             confidence: 0.76,
             reason: 'lever-merchant',
-            playbook: `Vergelijk alternatief/abonnement en stuur op minstens ${formatCurrency(lever.expectedMonthly)} lagere maandlast.`
+            playbook: t('Vergelijk alternatieven of abonnementen en mik op minstens {amount} lagere maandlast.', { amount: formatCurrency(lever.expectedMonthly) })
         });
     });
 
@@ -5553,7 +5617,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         pushAction({
             priority: 3,
             title: 'Verminder uitgavenvolatiliteit',
-            summary: `Variabele uitgaven per week schommelen sterk (${(volatility.cv * 100).toFixed(0)}% van het gemiddelde van ${formatCurrency(volatility.mean)}/week).`,
+            summary: t('Variabele uitgaven per week schommelen sterk ({cv}% van het gemiddelde van {amount}/week).', { cv: (volatility.cv * 100).toFixed(0), amount: formatCurrency(volatility.mean) }),
             impact: volatility.std * 0.25 * (AVG_DAYS_PER_MONTH / 7),
             confidence: 0.68,
             reason: 'volatility'
@@ -5568,7 +5632,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 1,
                 title: 'Urgent: buffer onder 2 maanden',
-                summary: `Runway is ${Math.round(runwayDays)} dagen. Richt op minimaal 90 dagen buffer.`,
+                summary: t('Runway is {days} dagen. Richt op minimaal 90 dagen buffer.', { days: Math.round(runwayDays) }),
                 impact: bufferGap,
                 confidence: 0.94,
                 reason: 'runway'
@@ -5580,7 +5644,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Bouw 3 maanden buffer op',
-                summary: `Runway ${Math.round(runwayDays)} dagen. Aanvullende buffer nodig: ${formatCurrency(bufferGap)}.`,
+                summary: t('Runway {days} dagen. Aanvullende buffer nodig: {amount}.', { days: Math.round(runwayDays), amount: formatCurrency(bufferGap) }),
                 impact: bufferGap,
                 confidence: 0.87,
                 reason: 'runway'
@@ -5592,7 +5656,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         pushAction({
             priority: 1,
             title: 'Herstel negatieve maandelijkse besparing',
-            summary: `Laatste maand is netto negatief (${formatPercent(latest.savingsPct)}).`,
+            summary: t('Laatste maand is netto negatief ({share}).', { share: formatPercent(latest.savingsPct) }),
             impact: Math.abs(latest.netSavings),
             confidence: 0.9,
             reason: 'negative-savings'
@@ -5603,7 +5667,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         pushAction({
             priority: 3,
             title: 'Huidige koers vasthouden',
-            summary: 'Kernratio’s liggen rond target. Monitor maandelijks en optimaliseer op categorie-niveau.',
+            summary: 'Kernratio’s liggen rond het doel. Controleer maandelijks en optimaliseer per categorie.',
             impact: 0,
             confidence: 0.72,
             reason: 'steady'
@@ -5653,7 +5717,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const projectedMonthNet = document.getElementById('projectedMonthNet');
     const dataQualityScore = document.getElementById('dataQualityScore');
 
-    const NA = 'n.v.t.';
+    const NA = t('n.v.t.');
     const expenseByCategory = buildExpenseByCategory(data);
     const biggest = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1])[0];
     // Next to the (usually fixed) biggest category, the biggest variable one.
@@ -5663,9 +5727,9 @@ function renderInsights(data, kpis, qualitySummary = null) {
     if (biggestCategory) {
         biggestCategory.textContent = !biggest
             ? NA
-            : `${biggest[0]} (${formatCurrency(biggest[1])})`
+            : `${t(biggest[0])} (${formatCurrency(biggest[1])})`
                 + (biggestVariable && biggestVariable[0] !== biggest[0]
-                    ? ` · variabel: ${biggestVariable[0]} (${formatCurrency(biggestVariable[1])})`
+                    ? t(' · variabel: {category} ({amount})', { category: t(biggestVariable[0]), amount: formatCurrency(biggestVariable[1]) })
                     : '');
     }
 
@@ -5677,7 +5741,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     if (spendVolatility) {
         spendVolatility.textContent = volatility.label === NA
             ? NA
-            : `${volatility.label} (${(volatility.cv * 100).toFixed(0)}%)`;
+            : `${t(volatility.label)} (${(volatility.cv * 100).toFixed(0)}%)`;
     }
 
     // Variable spending only: with fixed costs it is nearly always rent (or alimony) day.
@@ -5685,7 +5749,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const expensive = [...daily].sort((a, b) => b.expenses - a.expenses)[0];
     if (expensiveDay) {
         expensiveDay.textContent = expensive && expensive.expenses > 0.004
-            ? `${expensive.date.toLocaleDateString('nl-NL')} (${formatCurrency(expensive.expenses)})`
+            ? `${expensive.date.toLocaleDateString(uiLocale())} (${formatCurrency(expensive.expenses)})`
             : NA;
     }
 
@@ -5693,19 +5757,20 @@ function renderInsights(data, kpis, qualitySummary = null) {
     const expenseCompare = compareLatestCompleteMonth(data, (row) => row.expenses);
     if (trendInsight) {
         if (!expenseCompare || expenseCompare.changePct === null) {
-            trendInsight.textContent = `${NA} (minder dan 2 volledige maanden in de periode)`;
+            trendInsight.textContent = `${NA} ${t('(minder dan 2 volledige maanden in de periode)')}`;
         } else {
             const change = expenseCompare.changePct;
-            const direction = change <= 0 ? 'lager' : 'hoger';
+            const lower = change <= 0;
             const latestSpend = buildExpenseByCategory(
                 transactionsInMonths(data, [expenseCompare.latest.monthKey])
                     .filter((transaction) => !NON_ACTIONABLE_CATEGORIES.has(transaction.category))
             );
             const biggestActionable = Object.entries(latestSpend).sort((a, b) => b[1] - a[1])[0];
             const action = change > 10 && biggestActionable
-                ? `Actie: beperk ${biggestActionable[0]} met ~${formatCurrency(biggestActionable[1] * 0.1)}/mnd`
-                : 'Actie: houd dit niveau vast';
-            trendInsight.textContent = `Uitgaven ${expenseCompare.latest.monthLabel} ${formatPercent(Math.abs(change))} ${direction} dan ${expenseCompare.previousLabel}. ${action}.`;
+                ? t('Actie: beperk {category} met ~{amount}/mnd', { category: t(biggestActionable[0]), amount: formatCurrency(biggestActionable[1] * 0.1) })
+                : t('Actie: houd dit niveau vast');
+            const params = { month: expenseCompare.latest.monthLabel, change: formatPercent(Math.abs(change)), previous: expenseCompare.previousLabel };
+            trendInsight.textContent = `${t(lower ? 'Uitgaven {month} {change} lager dan {previous}.' : 'Uitgaven {month} {change} hoger dan {previous}.', params)} ${action}.`;
         }
     }
 
@@ -5723,7 +5788,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
         } else {
             const runwayDays = liquidBalance / dailyBurn;
             const runwayMonths = runwayDays / AVG_DAYS_PER_MONTH;
-            liquidityRunway.textContent = `${Math.round(runwayDays).toLocaleString('nl-NL')} dagen (${runwayMonths.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mnd)`;
+            liquidityRunway.textContent = t('{days} dagen ({months} mnd)', { days: Math.round(runwayDays).toLocaleString(uiLocale()), months: runwayMonths.toLocaleString(uiLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
         }
     }
 
@@ -5734,7 +5799,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
             needsVsWants.textContent = NA;
         } else {
             const essentialShare = (needsSummary.essentialTotal / totalNeedsWants) * 100;
-            needsVsWants.textContent = `${formatPercent(essentialShare)} noodzakelijk`;
+            needsVsWants.textContent = t('{share} noodzakelijk', { share: formatPercent(essentialShare) });
         }
     }
 
@@ -5744,8 +5809,8 @@ function renderInsights(data, kpis, qualitySummary = null) {
         if (!latestBudget) {
             budgetRuleFit.textContent = NA;
         } else {
-            budgetRuleFit.textContent = `N ${latestBudget.essentialsPct.toFixed(0)} / V ${latestBudget.discretionaryPct.toFixed(0)} / O ${latestBudget.savingsPct.toFixed(0)}`;
-            budgetRuleFit.title = `Noodzakelijk / vrij besteedbaar / overgehouden in % van het inkomen, ${latestBudget.monthLabel}.`;
+            budgetRuleFit.textContent = t('N {needs} / V {wants} / O {saved}', { needs: latestBudget.essentialsPct.toFixed(0), wants: latestBudget.discretionaryPct.toFixed(0), saved: latestBudget.savingsPct.toFixed(0) });
+            budgetRuleFit.title = t('Noodzakelijk / vrij besteedbaar / overgehouden in % van het inkomen, {month}.', { month: latestBudget.monthLabel });
         }
     }
 
@@ -5769,7 +5834,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
             recurringCosts.textContent = NA;
         } else {
             const recurringMonthly = recurring.rows.reduce((sum, row) => sum + row.avgMonthly, 0);
-            recurringCosts.textContent = `${formatCurrency(recurringMonthly)}/mnd`;
+            recurringCosts.textContent = t('{amount}/mnd', { amount: formatCurrency(recurringMonthly) });
         }
     }
 
@@ -5779,7 +5844,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
             projectedMonthNet.textContent = NA;
         } else {
             projectedMonthNet.textContent = formatCurrency(projection.projected);
-            projectedMonthNet.title = `Tot nu toe ${formatCurrency(projection.monthToDate)}, verwacht rest van de maand ${formatCurrency(projection.rest)} (basis: ${projection.basis}).`;
+            projectedMonthNet.title = t('Tot nu toe {sofar}, verwacht rest van de maand {rest} (basis: {basis}).', { sofar: formatCurrency(projection.monthToDate), rest: formatCurrency(projection.rest), basis: projection.basis });
         }
     }
 
@@ -5791,8 +5856,8 @@ function renderInsights(data, kpis, qualitySummary = null) {
         } else {
             const confidencePct = Math.round((Number(topAction.confidence) || 0.75) * 100);
             nextBestAction.textContent = topAction.impact > 0.01
-                ? `P${topAction.priority} · ${topAction.title} (${formatCurrency(topAction.impact)}) · zekerheid ${confidencePct}%`
-                : `P${topAction.priority} · ${topAction.title} · zekerheid ${confidencePct}%`;
+                ? `P${topAction.priority} · ${topAction.title} (${formatCurrency(topAction.impact)}) · ${t('zekerheid {pct}%', { pct: confidencePct })}`
+                : `P${topAction.priority} · ${topAction.title} · ${t('zekerheid {pct}%', { pct: confidencePct })}`;
             nextBestAction.title = 'Zekerheid: hoe betrouwbaar het advies is, op basis van het aantal volledige maanden en de datakwaliteit. Bedrag: geschatte impact per maand.';
         }
     }
@@ -5802,8 +5867,10 @@ function renderInsights(data, kpis, qualitySummary = null) {
             dataQualityScore.textContent = NA;
         } else {
             const warningCount = Array.isArray(qualitySummary.warnings) ? qualitySummary.warnings.length : 0;
-            const warningSuffix = warningCount ? ` · ${warningCount} waarschuwing${warningCount > 1 ? 'en' : ''}` : '';
-            dataQualityScore.textContent = `${qualitySummary.score}/100 (${qualitySummary.qualityLabel})${warningSuffix}`;
+            const warningSuffix = warningCount
+                ? ` · ${t(warningCount > 1 ? '{count} waarschuwingen' : '{count} waarschuwing', { count: warningCount })}`
+                : '';
+            dataQualityScore.textContent = `${qualitySummary.score}/100 (${t(qualitySummary.qualityLabel)})${warningSuffix}`;
         }
     }
 }
@@ -5842,10 +5909,28 @@ async function refreshData() {
 }
 
 function updateLastUpdateTime() {
-    const now = new Date();
+    lastUpdateAt = new Date();
+    renderLastUpdateTime();
+}
+
+function renderLastUpdateTime() {
     const lastUpdate = document.getElementById('lastUpdate');
-    if (lastUpdate) {
-        lastUpdate.textContent = `Laatst bijgewerkt: ${now.toLocaleTimeString('nl-NL')}`;
+    if (lastUpdate && lastUpdateAt) {
+        lastUpdate.textContent = t('Laatst bijgewerkt: {time}', { time: lastUpdateAt.toLocaleTimeString(uiLocale()) });
+    }
+}
+
+// Language switch (i18n.js): static texts are translated in place; everything app.js composes
+// is rebuilt in the new language.
+function handleUiLanguageChange() {
+    renderLastUpdateTime();
+    applyAdminMaintenanceOptionsToUI();
+    if (Array.isArray(transactionsData)) {
+        processAndRenderData(transactionsData);
+    }
+    const detailModal = document.getElementById('balanceDetailModal');
+    if (detailModal?.classList.contains('active') && typeof lastDetailView === 'function') {
+        lastDetailView();
     }
 }
 
@@ -5883,7 +5968,7 @@ function openSettings() {
     if (isAuthenticated) {
         loadAdminStatus();
     } else {
-        renderAdminStatusPanel(null, 'Login required om admin onderhoudsacties te gebruiken.', true);
+        renderAdminStatusPanel(null, 'Log in om beheeronderhoud te gebruiken.', true);
     }
 }
 
@@ -6120,7 +6205,7 @@ async function runAdminAction(buttonId, busyHtml, actionFn) {
 
 async function loadAdminStatus() {
     if (!isAuthenticated) {
-        renderAdminStatusPanel(null, 'Login required om admin status te laden.', true);
+        renderAdminStatusPanel(null, 'Log in om de beheerstatus te laden.', true);
         return;
     }
 
@@ -6138,7 +6223,7 @@ async function loadAdminStatus() {
 
 async function checkAdminEgressIp() {
     if (!isAuthenticated) {
-        renderAdminStatusPanel(adminStatusData, 'Login required om egress IP te checken.', true);
+        renderAdminStatusPanel(adminStatusData, 'Log in om het egress-IP te controleren.', true);
         return;
     }
 
@@ -6153,13 +6238,13 @@ async function checkAdminEgressIp() {
         if (ipInputEl && !ipInputEl.value && egressIp) {
             ipInputEl.value = egressIp;
         }
-        renderAdminStatusPanel(adminStatusData, `Egress IP resolved: ${egressIp}`, false, egressIp);
+        renderAdminStatusPanel(adminStatusData, t('Egress IP resolved: {ip}', { ip: egressIp }), false, egressIp);
     });
 }
 
 async function setBunqWhitelistIp() {
     if (!isAuthenticated) {
-        renderAdminStatusPanel(adminStatusData, 'Login required om Bunq whitelist IP te zetten.', true);
+        renderAdminStatusPanel(adminStatusData, 'Log in om het Bunq-whitelist-IP in te stellen.', true);
         return;
     }
 
@@ -6169,7 +6254,7 @@ async function setBunqWhitelistIp() {
     const suggestedIp = (ipInputEl?.value || '').trim() || (adminStatusData?.egress_ip || '').trim();
     const promptDefault = suggestedIp || '';
     const prompted = window.prompt(
-        'Voer het nieuwe publieke IPv4-adres in voor Bunq whitelist.\nLaat leeg om automatisch egress-IP te gebruiken.',
+        t('Voer het nieuwe publieke IPv4-adres in voor Bunq whitelist.\nLaat leeg om automatisch egress-IP te gebruiken.'),
         promptDefault
     );
     if (prompted === null) {
@@ -6197,12 +6282,12 @@ async function setBunqWhitelistIp() {
             ipInputEl.value = targetIp;
         }
     }
-    const targetLabel = useAutoTarget ? 'current egress IP (auto)' : targetIp;
+    const targetLabel = useAutoTarget ? t('current egress IP (auto)') : targetIp;
 
     const confirmed = window.confirm(
-        `Veilige 2-staps update uitvoeren voor "${targetLabel}"?\n` +
-        'Stap 1: IP toevoegen/activeren (zonder andere IPs te deactiveren).\n' +
-        'Stap 2: na bevestiging andere ACTIVE IPs op INACTIVE zetten.'
+        t('Veilige 2-staps update uitvoeren voor "{target}"?', { target: targetLabel }) + '\n' +
+        t('Stap 1: IP toevoegen/activeren (zonder andere IPs te deactiveren).') + '\n' +
+        t('Stap 2: na bevestiging andere ACTIVE IPs op INACTIVE zetten.')
     );
     if (!confirmed) return;
 
@@ -6227,14 +6312,14 @@ async function setBunqWhitelistIp() {
         const step1Data = step1Response.data || {};
         const resolvedIp = step1Data.target_ip || targetIp || '';
         const step1Actions = step1Data.actions || {};
-        const step1Message = `Stap 1 OK voor ${resolvedIp || targetLabel}: ` +
+        const step1Message = t('Stap 1 OK voor {target}:', { target: resolvedIp || targetLabel }) + ' ' +
             `created=${(step1Actions.created || []).length}, ` +
             `activated=${(step1Actions.activated || []).length}, ` +
             `deactivated=${(step1Actions.deactivated || []).length}.`;
 
         const continueStep2 = window.confirm(
             `${step1Message}\n\n` +
-            'Klik OK om nu stap 2 uit te voeren: andere ACTIVE IPs op INACTIVE zetten.'
+            t('Klik OK om nu stap 2 uit te voeren: andere ACTIVE IPs op INACTIVE zetten.')
         );
 
         if (!continueStep2) {
@@ -6244,7 +6329,7 @@ async function setBunqWhitelistIp() {
             await loadAdminStatus();
             renderAdminStatusPanel(
                 adminStatusData,
-                `${step1Message} Stap 2 overgeslagen (veilig).`,
+                `${step1Message} ${t('Stap 2 overgeslagen (veilig).')}`,
                 false,
                 resolvedIp
             );
@@ -6264,13 +6349,13 @@ async function setBunqWhitelistIp() {
 
         if (!step2Response || !step2Response.success) {
             const errorText = step2Response?.error || 'Bunq whitelist update stap 2 mislukt.';
-            renderAdminStatusPanel(adminStatusData, `${step1Message} ${errorText}`, true);
+            renderAdminStatusPanel(adminStatusData, `${step1Message} ${t(errorText)}`, true);
             return;
         }
 
         const step2Data = step2Response.data || {};
         const actions = step2Data.actions || {};
-        const message = `Whitelist veilig bijgewerkt voor ${step2Data.target_ip || resolvedIp || targetLabel}. ` +
+        const message = t('Whitelist veilig bijgewerkt voor {target}.', { target: step2Data.target_ip || resolvedIp || targetLabel }) + ' ' +
             `created=${(actions.created || []).length}, ` +
             `activated=${(actions.activated || []).length}, ` +
             `deactivated=${(actions.deactivated || []).length}.`;
@@ -6285,16 +6370,16 @@ async function setBunqWhitelistIp() {
 
 async function reinitializeBunqContext() {
     if (!isAuthenticated) {
-        renderAdminStatusPanel(adminStatusData, 'Login required om Bunq context te herinitialiseren.', true);
+        renderAdminStatusPanel(adminStatusData, 'Log in om de Bunq-context opnieuw op te bouwen.', true);
         return;
     }
 
     const confirmed = window.confirm(
-        'Reinit context only (advanced):\n' +
-        '- Recreates Bunq context (installation + device registration)\n' +
-        '- Refreshes API key from Vaultwarden/direct secret\n' +
-        '- Does NOT update Bunq whitelist IP\n\n' +
-        'Continue?'
+        t('Reinit context only (advanced):') + '\n' +
+        t('- Recreates Bunq context (installation + device registration)') + '\n' +
+        t('- Refreshes API key from Vaultwarden/direct secret') + '\n' +
+        t('- Does NOT update Bunq whitelist IP') + '\n\n' +
+        t('Continue?')
     );
     if (!confirmed) {
         return;
@@ -6331,7 +6416,7 @@ async function reinitializeBunqContext() {
 
 async function runBundledAdminMaintenance() {
     if (!isAuthenticated) {
-        renderAdminStatusPanel(adminStatusData, 'Login required om maintenance uit te voeren.', true);
+        renderAdminStatusPanel(adminStatusData, 'Log in om onderhoud uit te voeren.', true);
         return;
     }
 
@@ -6340,7 +6425,7 @@ async function runBundledAdminMaintenance() {
     let targetIp = (ipInputEl?.value || '').trim();
 
     if (!options.auto_target_ip && !targetIp) {
-        renderAdminStatusPanel(adminStatusData, 'Vul een IPv4 in of zet "Gebruik automatisch egress IP" aan.', true);
+        renderAdminStatusPanel(adminStatusData, 'Vul een IPv4 in of zet "Whitelist-IP (egress) automatisch bepalen" aan.', true);
         return;
     }
 
@@ -6355,15 +6440,15 @@ async function runBundledAdminMaintenance() {
             ipInputEl.value = targetIp;
         }
     }
-    const targetLabel = options.auto_target_ip ? 'current egress IP (auto)' : targetIp;
+    const targetLabel = options.auto_target_ip ? t('current egress IP (auto)') : targetIp;
 
     const confirmed = window.confirm(
-        'Run full maintenance now?\n' +
-        '- This is the recommended runtime recovery flow.\n' +
-        `- Recreate context: ${options.force_recreate ? 'yes' : 'no'}\n` +
-        `- Refresh API key: ${options.refresh_key ? 'yes' : 'no'}\n` +
-        `- Update whitelist target IP: ${targetLabel}\n` +
-        `- Deactivate other whitelist IPs: ${options.deactivate_others ? 'yes' : 'no'}`
+        t('Run full maintenance now?') + '\n' +
+        t('- This is the recommended runtime recovery flow.') + '\n' +
+        t('- Recreate context: {value}', { value: t(options.force_recreate ? 'yes' : 'no') }) + '\n' +
+        t('- Refresh API key: {value}', { value: t(options.refresh_key ? 'yes' : 'no') }) + '\n' +
+        t('- Update whitelist target IP: {value}', { value: targetLabel }) + '\n' +
+        t('- Deactivate other whitelist IPs: {value}', { value: t(options.deactivate_others ? 'yes' : 'no') })
     );
     if (!confirmed) return;
 
@@ -6387,7 +6472,7 @@ async function runBundledAdminMaintenance() {
 
         const data = response.data || {};
         const steps = Array.isArray(data.steps) ? data.steps.join(', ') : '';
-        const message = `Full maintenance completed${steps ? ` (${steps})` : ''}.`;
+        const message = steps ? t('Full maintenance completed ({steps}).', { steps }) : t('Full maintenance completed.');
         const egressIp = data.egress_ip || data.resolved_target_ip || '';
 
         if (options.load_status_after) {

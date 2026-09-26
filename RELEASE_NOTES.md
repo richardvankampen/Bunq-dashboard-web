@@ -7,6 +7,11 @@
 
 ## 2026-09-26
 
+### Language switch
+- New NL/EN switch in the header: the whole dashboard (tiles, charts, tooltips, detail popups, insights, action plan, settings and admin maintenance) switches between Dutch and English, including number and date formats. The choice is remembered in the browser; Dutch is the default.
+- Dutch texts that were still partly English (admin notices, action plan) are now fully Dutch.
+- The Dutch docs use the Dutch button names of the admin maintenance panel.
+
 ### Documentation
 - English and Dutch documentation now have the same structure and content: `SECURITY`, `SYNOLOGY_INSTALL` and `TROUBLESHOOTING` are full guides in both languages (the English versions were short summaries, the Dutch versions were partly English).
 - Up to date with the app: admin maintenance button names, current widget names and features in the README, the transaction store, personal category rules, and backups of `config/` (`dashboard_data.db`, `category_rules.json`).
