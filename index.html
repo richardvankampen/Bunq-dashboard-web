@@ -615,7 +615,8 @@
                 </div>
                 <div class="setting-group">
                     <label>Auto-refresh interval (minutes)</label>
-                    <input type="number" id="refreshInterval" min="0" max="60" value="0" placeholder="0 = disabled">
+                    <p class="setting-help">0 = off. Updates in the background while this tab is visible.</p>
+                    <input type="number" id="refreshInterval" min="0" max="1440" step="1" value="0" placeholder="0 = disabled">
                 </div>
                 <div class="setting-group">
                     <label>
@@ -641,7 +642,7 @@
                         <input type="checkbox" id="excludeInternalTransfers" checked>
                         Exclude internal transfers (recommended)
                     </label>
-                    <p class="setting-help">Transfers between your own Bunq accounts won't count as income or expense.</p>
+                    <p class="setting-help">Transfers between your own accounts (including linked external accounts such as Triodos) won't count as income or expense.</p>
                 </div>
                 <div class="setting-group">
                     <label>
@@ -652,6 +653,7 @@
                 </div>
                 <div class="setting-group">
                     <label>Accounts to include</label>
+                    <p class="setting-help">Applied when you save. All accounts selected (or none) = all accounts, including accounts opened later.</p>
                     <div id="accountsFilter" class="accounts-filter">
                         <p class="setting-help">Login required to load accounts.</p>
                     </div>

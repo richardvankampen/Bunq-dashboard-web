@@ -7,6 +7,14 @@
 
 ## 2026-09-26
 
+### Settings
+- The account selection is applied when you press Save (closing the panel discards it) and no longer triggers a new fetch: all accounts are always loaded and the selection is applied in the browser. This also fixes household figures (runway, savings via transfers) that only saw the selected accounts.
+- "All accounts" is stored as all, so accounts opened later are included automatically; accounts that no longer exist are dropped from the selection.
+- The auto-refresh interval takes effect on save (0 turns it off), runs in the background without the loading screen, and pauses while the tab is hidden. Values are whole minutes, up to 1440.
+- The API endpoint is checked on save; an empty field restores the default.
+- Changing the internal-transfer filter or the account selection redraws the dashboard without reloading data.
+- The selected period is remembered.
+
 ### Language switch
 - New NL/EN switch in the header: the whole dashboard (tiles, charts, tooltips, detail popups, insights, action plan, settings and admin maintenance) switches between Dutch and English, including number and date formats. The choice is remembered in the browser; Dutch is the default.
 - Dutch texts that were still partly English (admin notices, action plan) are now fully Dutch.
