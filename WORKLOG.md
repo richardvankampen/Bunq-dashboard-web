@@ -4,6 +4,17 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — trendlogica gecontroleerd en gecorrigeerd
+
+- 6 bevindingen, allemaal opgelost:
+  1. Tegeltrends zonder salarismaand-correctie en met andere basis (3 vs 2 maanden) dan inzichten → één maandbasis (`summarizeCompleteMonths`), overal tot 3 eerdere maanden.
+  2. Vaste pijlen in de HTML (Inkomsten ↑, Uitgaven ↓, Sparen ↑) → pijl volgt de richting (`setTrendArrow`).
+  3. Korte periodes (<60 dagen): Inkomsten/Sparen `n.v.t.`, Uitgaven op variabele uitgaven per halve periode.
+  4. Kleine basis gaf extreme percentages → verschil in euro bij basis <€50.
+  5. `12.3%` zonder teken → `+12,3%`; alle `%`-teksten in Nederlandse notatie.
+  6. Saldotrend-tooltip noemt nu de werkelijke startdatum van de saldohistorie.
+- Verificatie: headless Chromium (180 dagen, salaris één keer op de 30e): Inkomsten `+14,0%` (extra uitkering/verkoop, geen salarissprong), Uitgaven `-1,5%` met pijl ↓ en groen, Sparen `+€ 300,00` (kleine basis), saldotrend met startdatum; 30 dagen: Inkomsten/Sparen `n.v.t.`, Uitgaven op variabele uitgaven; inzicht "1,5% lager"; geen JS-fouten; pytest 298 groen.
+
 ### Opgeleverd — spaarquote gecontroleerd en gecorrigeerd
 
 - 4 bevindingen, allemaal opgelost:
