@@ -22,6 +22,12 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Uitgaven
+- Terugbetalingen verlagen nu overal de uitgaven, ook in `Top tegenrekeningen`, `Categorie-race`, de inzichten grootste categorie en top-tegenrekening, `Uitgavenmomentum` en de besparingshefbomen (een geretourneerde bestelling telt niet meer als uitgave).
+- Filialen van dezelfde winkel (bv. "Albert Heijn 1234" en "ALBERT HEIJN 5678 UTRECHT") tellen in totalen als één tegenrekening.
+- `Dagpatroon` toont alleen variabele uitgaven: incasso's voor vaste lasten worden 's nachts geboekt en lieten de nacht lijken op het grootste uitgavenmoment.
+- De waarschuwing over vreemde valuta is in het Nederlands.
+
 ### Inkomen
 - Salaris wordt vaker herkend (loonbetaling, maandloon, vakantiegeld, eindejaarsuitkering, bonus, 13e maand), en een betaler die elke maand ongeveer hetzelfde bedrag betaalt telt als vast inkomen, ook zonder trefwoord (bv. "Periode 9").
 - Nieuwe categorie `Uitkeringen & toeslagen` voor UWV, SVB (kinderbijslag, AOW), pensioenfondsen, DUO-studiefinanciering, toeslagen en gemeentelijke uitkeringen (voorheen `Overig` of `Belastingen`). Opgeslagen transacties worden eenmalig bijgewerkt.

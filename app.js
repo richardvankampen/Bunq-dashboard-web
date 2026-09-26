@@ -1314,7 +1314,7 @@ async function loadRealData() {
                 showError(`Backend transaction window reached for one or more accounts${label}. Consider lower 'days' or higher BUNQ_PAYMENT_MAX_PAGES.`);
             }
             if (backendMissingEurCount > 0) {
-                showError(`${backendMissingEurCount} non-EUR transaction(s) have no EUR conversion and are excluded from EUR totals/charts.`);
+                showError(`${backendMissingEurCount} transactie(s) in vreemde valuta hebben geen omrekening naar EUR en tellen niet mee in totalen en grafieken; inkomsten en uitgaven zijn daardoor mogelijk te laag.`);
             }
             transactionsData = all.map(t => ({
                 ...t,
@@ -3020,17 +3020,10 @@ function showTransactionDetail(detailType) {
     }
 
     if (detailType === 'merchant-concentration') {
-        const merchantTotals = new Map();
-        const expenseTransactions = transactions.filter((transaction) => (transaction.amount || 0) < 0);
-        expenseTransactions.forEach((transaction) => {
-            const merchant = resolveMerchantLabel(transaction);
-            merchantTotals.set(merchant, (merchantTotals.get(merchant) || 0) + Math.abs(transaction.amount || 0));
-        });
+        const expenseTransactions = transactions.filter((transaction) => (transaction.amount || 0) < 0 || isRefundTransaction(transaction));
         const transactionRows = buildTransactionTableRows(expenseTransactions);
 
-        const rows = Array.from(merchantTotals.entries())
-            .map(([merchant, amount]) => ({ merchant, amount }))
-            .sort((a, b) => b.amount - a.amount);
+        const rows = netSpendingByMerchant(transactions).map((row) => ({ merchant: row.label, amount: row.amount }));
 
         if (!rows.length) {
             openDetailModal({
@@ -4244,8 +4237,11 @@ function renderHeatmapChart(data) {
     const weekdays = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
     const grid = Array.from({ length: weekdays.length }, () => Array(dayParts.length).fill(0));
 
+    // Variable spending only: direct debits for fixed costs (rent, insurance, energy) are booked
+    // in nightly batches and would make the night look like the biggest spending moment.
     data.forEach((transaction) => {
         if ((transaction.amount || 0) >= 0) return;
+        if (FIXED_COST_CATEGORIES.has(transaction.category)) return;
         const date = transaction.date;
         const dayIndex = (date.getDay() + 6) % 7;
         const hour = date.getHours();
@@ -4261,7 +4257,7 @@ function renderHeatmapChart(data) {
         y: weekdays,
         type: 'heatmap',
         colorscale: 'YlOrRd',
-        hovertemplate: '%{y} · %{x}<br>Uitgaven: %{z:.2f} EUR<extra></extra>'
+        hovertemplate: '%{y} · %{x}<br>Variabele uitgaven: %{z:.2f} EUR<extra></extra>'
     };
 
     const layout = {
@@ -4280,17 +4276,11 @@ function renderMerchantsChart(data) {
 
     const widgetData = data || [];
 
-    const totals = {};
-    widgetData.forEach(t => {
-        if (t.amount >= 0) return;
-        const merchant = resolveMerchantLabel(t);
-        totals[merchant] = (totals[merchant] || 0) + Math.abs(t.amount);
-    });
-    
-    const sorted = Object.entries(totals)
-        .filter(([merchant]) => merchant && merchant !== 'Onbekend')
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 12);
+    // Net of refunds, grouped per shop (merchantGroupLabel).
+    const sorted = netSpendingByMerchant(widgetData)
+        .filter((row) => row.label && row.label !== 'Onbekend')
+        .slice(0, 12)
+        .map((row) => [row.label, row.amount]);
     const labels = sorted.map(([name]) => name);
     const values = sorted.map(([, value]) => value);
     
@@ -4419,11 +4409,12 @@ function renderRidgePlot(data) {
     });
 }
 
+// Cumulative net spending per category per day: a refund lowers its purchase category on the
+// day it comes in.
 function buildDailyCategoryTotals(data) {
-    const expenses = (data || []).filter((transaction) => (
-        (transaction.amount || 0) < 0
-        && transaction.date instanceof Date
-        && !Number.isNaN(transaction.date.getTime())
+    const expenses = spendingEntries(data).filter((entry) => (
+        entry.transaction.date instanceof Date
+        && !Number.isNaN(entry.transaction.date.getTime())
     ));
     if (!expenses.length) {
         return { frames: [], categories: [], byFrame: {} };
@@ -4434,10 +4425,10 @@ function buildDailyCategoryTotals(data) {
     let minDate = null;
     let maxDate = null;
 
-    expenses.forEach((transaction) => {
-        const dateKey = toDateKey(transaction.date);
-        const category = transaction.category || 'Overig';
-        const amount = Math.abs(Number(transaction.amount) || 0);
+    expenses.forEach((entry) => {
+        const dateKey = toDateKey(entry.transaction.date);
+        const category = entry.category;
+        const amount = entry.amount;
         if (!byDayDelta[dateKey]) byDayDelta[dateKey] = {};
         byDayDelta[dateKey][category] = (byDayDelta[dateKey][category] || 0) + amount;
         categories.add(category);
@@ -4467,7 +4458,7 @@ function updateRacingChart(frameIndex) {
     if (!racingData || !racingData.frames.length) return;
     const frameKey = racingData.frames[frameIndex];
     const totals = racingData.byFrame[frameKey] || {};
-    const items = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    const items = Object.entries(totals).filter(([, value]) => value > 0.004).sort((a, b) => b[1] - a[1]).slice(0, 12);
     const labels = items.map(([cat]) => cat);
     const values = items.map(([, value]) => value);
     
@@ -4902,12 +4893,72 @@ function projectCurrentMonthNet(transactions, now = new Date()) {
     return { projected: monthToDate + rest, monthToDate, rest, basis: 'lineair (nog geen volledige maand)' };
 }
 
+// Label used to add up spending per counterparty: card payments often carry a store number
+// or city ("Albert Heijn 1234", "ALBERT HEIJN 5678 UTRECHT NLD"), which would split one shop
+// into many. Cut at the first later token with 3+ digits; drop a country code and legal form.
+function merchantGroupLabel(label) {
+    const original = String(label || '').trim();
+    const tokens = original.split(/\s+/);
+    const cut = tokens.findIndex((token, index) => index > 0 && /\d{3,}/.test(token));
+    let text = cut > 0 ? tokens.slice(0, cut).join(' ') : original;
+    text = text
+        .replace(/\s+(NLD|NL)$/i, '')
+        .replace(/[\s,]+(B\.?\s?V\.?|N\.?\s?V\.?)$/i, '')
+        .replace(/[\s.,*#-]+$/, '')
+        .trim();
+    return text || original;
+}
+
+function merchantGroupKey(label) {
+    return merchantGroupLabel(label).toLocaleLowerCase('nl-NL').replace(/[^\p{L}\p{N}&]+/gu, ' ').trim();
+}
+
+// Spending per transaction for the spending views: outflows count positive; a refund counts
+// negative against the category (refund_category) and counterparty of its purchase.
+function spendingEntries(transactions) {
+    const entries = [];
+    (transactions || []).forEach((transaction) => {
+        const amount = Number(transaction.amount) || 0;
+        if (amount < 0) {
+            entries.push({ transaction, category: transaction.category || 'Overig', merchant: resolveMerchantLabel(transaction), amount: -amount });
+        } else if (isRefundTransaction(transaction)) {
+            entries.push({ transaction, category: transaction.refund_category || 'Overig', merchant: resolveMerchantLabel(transaction), amount: -amount });
+        }
+    });
+    return entries;
+}
+
+// Net spending per counterparty group: [{ key, label, amount }], largest first, only > 0.
+function netSpendingByMerchant(transactions, filterEntry = null) {
+    const groups = new Map();
+    spendingEntries(transactions).forEach((entry) => {
+        if (filterEntry && !filterEntry(entry)) return;
+        const key = merchantGroupKey(entry.merchant);
+        if (!key) return;
+        if (!groups.has(key)) groups.set(key, { key, amount: 0, labels: new Map() });
+        const group = groups.get(key);
+        group.amount += entry.amount;
+        const label = merchantGroupLabel(entry.merchant);
+        group.labels.set(label, (group.labels.get(label) || 0) + 1);
+    });
+    return Array.from(groups.values())
+        .filter((group) => group.amount > 0.004)
+        .map((group) => ({
+            key: group.key,
+            label: Array.from(group.labels.entries()).sort((x, y) => y[1] - x[1])[0][0],
+            amount: group.amount
+        }))
+        .sort((x, y) => y.amount - x.amount);
+}
+
+// Net spending per category (refunds subtracted from their purchase category).
 function buildExpenseByCategory(transactions) {
     const totals = {};
-    (transactions || []).forEach((transaction) => {
-        if ((transaction.amount || 0) >= 0) return;
-        const category = transaction.category || 'Overig';
-        totals[category] = (totals[category] || 0) + Math.abs(transaction.amount || 0);
+    spendingEntries(transactions).forEach((entry) => {
+        totals[entry.category] = (totals[entry.category] || 0) + entry.amount;
+    });
+    Object.keys(totals).forEach((category) => {
+        if (totals[category] <= 0.004) delete totals[category];
     });
     return totals;
 }
@@ -4924,23 +4975,21 @@ function buildConcreteCostLevers(transactions, options = {}) {
         ? transactionsInMonths(transactions, months.map((row) => row.monthKey))
         : (transactions || []);
     const monthCount = months.length || (periodDaysCovered(transactions) / AVG_DAYS_PER_MONTH);
-    const expenses = source.filter((transaction) => (transaction.amount || 0) < 0);
-    if (!expenses.length || monthCount <= 0) return [];
+    // Net of refunds; counterparties grouped per shop.
+    const entries = spendingEntries(source);
+    if (!entries.length || monthCount <= 0) return [];
 
     const categoryTotals = new Map();
-    const merchantTotals = new Map();
     let totalExpenses = 0;
-
-    expenses.forEach((transaction) => {
-        const amountAbs = Math.abs(Number(transaction.amount) || 0);
-        if (!Number.isFinite(amountAbs) || amountAbs <= 0) return;
-        totalExpenses += amountAbs;
-        const category = transaction.category || 'Overig';
-        if (NON_ACTIONABLE_CATEGORIES.has(category)) return;
-        const merchant = resolveMerchantLabel(transaction);
-        categoryTotals.set(category, (categoryTotals.get(category) || 0) + amountAbs);
-        merchantTotals.set(merchant, (merchantTotals.get(merchant) || 0) + amountAbs);
+    entries.forEach((entry) => {
+        totalExpenses += entry.amount;
+        if (NON_ACTIONABLE_CATEGORIES.has(entry.category)) return;
+        categoryTotals.set(entry.category, (categoryTotals.get(entry.category) || 0) + entry.amount);
     });
+    const merchantTotals = new Map(
+        netSpendingByMerchant(source, (entry) => !NON_ACTIONABLE_CATEGORIES.has(entry.category))
+            .map((row) => [row.label, row.amount])
+    );
 
     if (totalExpenses <= 0.01) return [];
 
@@ -5062,7 +5111,7 @@ function summarizeRecurringCosts(transactions, maxItems = 12) {
     const merchantCategories = new Map();
     expenseTransactions.forEach((transaction) => {
         const monthKey = monthKeyOf(transaction.date);
-        const merchant = resolveMerchantLabel(transaction);
+        const merchant = merchantGroupLabel(resolveMerchantLabel(transaction));
         const amount = Math.abs(Number(transaction.amount) || 0);
         monthKeys.add(monthKey);
         if (!merchantByMonth.has(merchant)) {
@@ -5285,13 +5334,8 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         }
     }
 
-    const merchantExpenses = {};
-    actionableTransactions.forEach((transaction) => {
-        if ((transaction.amount || 0) >= 0) return;
-        const merchant = resolveMerchantLabel(transaction);
-        merchantExpenses[merchant] = (merchantExpenses[merchant] || 0) + Math.abs(transaction.amount || 0);
-    });
-    const topMerchant = Object.entries(merchantExpenses).sort((a, b) => b[1] - a[1])[0];
+    const topMerchantRow = netSpendingByMerchant(actionableTransactions)[0];
+    const topMerchant = topMerchantRow ? [topMerchantRow.label, topMerchantRow.amount] : null;
     if (topMerchant && kpis.expenses > 0.01) {
         const share = (topMerchant[1] / kpis.expenses) * 100;
         if (share > 25) {
@@ -5552,13 +5596,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
         }
     }
 
-    const merchantExpenses = {};
-    data.forEach((transaction) => {
-        if ((transaction.amount || 0) >= 0) return;
-        const merchant = resolveMerchantLabel(transaction);
-        merchantExpenses[merchant] = (merchantExpenses[merchant] || 0) + Math.abs(transaction.amount || 0);
-    });
-    const merchantsSorted = Object.entries(merchantExpenses).sort((a, b) => b[1] - a[1]);
+    const merchantsSorted = netSpendingByMerchant(data).map((row) => [row.label, row.amount]);
     if (topMerchantShare) {
         if (!merchantsSorted.length || kpis.expenses <= 0) {
             topMerchantShare.textContent = NA;
