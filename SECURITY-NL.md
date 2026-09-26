@@ -62,13 +62,25 @@ Tailscale maakt een privénetwerk (een "tailnet") tussen je eigen apparaten, geb
 4. Open het dashboard vanaf een apparaat in je tailnet: http://100.x.y.z:5000
 ```
 
-**HTTPS met een Tailscale-naam (aanbevolen):** zet **MagicDNS** en **HTTPS-certificaten** aan in de beheerconsole (pagina DNS), en voer daarna op de NAS via SSH uit:
+**HTTPS via Tailscale** — kies een van twee manieren:
+
+*Manier 1: je eigen domein via de reverse proxy van DSM (aanbevolen als je die al gebruikt).* Hetzelfde adres werkt thuis en onderweg, met het certificaat dat je al hebt:
+1. Maak je LAN bereikbaar via Tailscale: voer op de NAS `sudo tailscale set --advertise-routes=192.168.1.0/24` uit (jouw LAN-bereik) en keur de route goed in de beheerconsole (Machines → NAS → Edit route settings).
+2. Laat een lokale DNS-server (bv. het Synology-pakket **DNS Server**) `bunq.jouwdomein.nl` beantwoorden met het LAN-IP van de NAS.
+3. Beheerconsole → **DNS** → Nameservers → Add nameserver → Custom: het LAN-IP van de NAS, met **Restrict to domain** = `jouwdomein.nl` (split DNS). Apparaten in je tailnet vragen dan alleen voor dat domein je eigen DNS-server.
+4. Gebruik de reverse-proxyregel van DSM en het Let's Encrypt-certificaat voor `bunq.jouwdomein.nl` (zie Reverse proxy hieronder), met een toegangsprofiel dat alleen `192.168.0.0/16` en `100.64.0.0/10` toestaat.
+5. `ALLOWED_ORIGINS=https://bunq.jouwdomein.nl` (volledige deploy na het wijzigen van `.env`).
+
+Gebruik bij deze manier geen `tailscale serve` op poort 443: serve neemt poort 443 op het Tailscale-adres van de NAS over, waardoor de reverse proxy van DSM dat verkeer niet meer ziet. Verwijder het met `sudo tailscale serve --https=443 off` (`sudo tailscale serve status` toont dan `No serve config`).
+
+*Manier 2: een Tailscale-naam met `tailscale serve` (geen eigen domein nodig).* Zet **MagicDNS** en **HTTPS-certificaten** aan in de beheerconsole (pagina DNS), en voer daarna op de NAS via SSH uit:
 ```bash
 sudo tailscale serve --bg 5000
 # Het dashboard staat nu op https://nas.<jouw-tailnet>.ts.net (alleen binnen je tailnet)
 sudo tailscale serve status
 # Moet "(tailnet only)" en "proxy http://127.0.0.1:5000" tonen; nooit "Funnel on"
 ```
+Dit stuurt **al** het verkeer naar `https://nas.<jouw-tailnet>.ts.net` (poort 443) naar het dashboard; andere poorten blijven direct bereikbaar. Wil je poort 443 vrijhouden, gebruik dan `--https=8443` of `--https=10000` (de enige andere poorten die serve voor HTTPS toestaat) en neem die poort op in `ALLOWED_ORIGINS`.
 De eerste keer kan Tailscale antwoorden met `Serve is not enabled on your tailnet` en een link (`https://login.tailscale.com/f/serve?node=…`). Dat is een eenmalige toestemming: open de link terwijl je bent ingelogd als beheerder van het tailnet, bevestig, en voer het commando opnieuw uit. Het eerste bezoek aan het `https://`-adres kan even duren, omdat het certificaat dan wordt aangevraagd.
 Zet in `.env` en doe een volledige deploy (configwijziging):
 ```bash
@@ -77,7 +89,7 @@ SESSION_COOKIE_SECURE=true
 ```
 
 Tips voor Tailscale:
-- Gebruik **alleen `tailscale serve`**, nooit `tailscale funnel`: funnel zet het dashboard op internet.
+- Gebruik nooit `tailscale funnel`: funnel zet het dashboard op internet.
 - Laat de NAS **geen exit node** gebruiken: Bunq ziet dan het publieke IP van de exit node, en dat staat niet op je Bunq-whitelist.
 - Deel de NAS alleen met je eigen apparaten; met Tailscale-ACL's kun je beperken welke gebruikers/apparaten poort 5000 bereiken.
 - Blokkeert de Synology-firewall het Tailscale-verkeer, sta dan `100.64.0.0/10` (het Tailscale-adresbereik) toe voor poort 5000 (zie Firewall hieronder).
@@ -339,7 +351,7 @@ sudo iptables-save > /etc/iptables/rules.v4
 
 ### Reverse proxy met HTTPS (aanbevolen)
 
-Met Tailscale geeft `tailscale serve` (optie A hierboven) al HTTPS met een geldig certificaat; de reverse proxy hieronder is dan voor het dashboard niet nodig.
+Met Tailscale kun je deze reverse proxy ook voor toegang van buitenaf gebruiken (optie A, manier 1), of in plaats daarvan `tailscale serve` (manier 2), dat een eigen certificaat meebrengt.
 
 **Synology reverse proxy:**
 ```text

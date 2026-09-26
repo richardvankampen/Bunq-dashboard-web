@@ -266,7 +266,7 @@ Acties:
 grep '^ALLOWED_ORIGINS=' /volume1/docker/bunq-dashboard/.env
 ```
 
-`ALLOWED_ORIGINS` moet precies overeenkomen met de URL in je browser (schema, host en poort), bv. `https://nas.<jouw-tailnet>.ts.net` als je `tailscale serve` gebruikt. Meerdere origins: scheid ze met komma's. Na een wijziging: volledige deploy.
+`ALLOWED_ORIGINS` moet precies overeenkomen met de URL in je browser (schema, host en poort), bv. `https://bunq.jouwdomein.nl` achter de reverse proxy van DSM, of `https://nas.<jouw-tailnet>.ts.net` als je `tailscale serve` gebruikt. Meerdere origins: scheid ze met komma's. Na een wijziging: volledige deploy.
 
 ### 11. Sessie verloopt te snel of inloggen blijft niet hangen
 
@@ -293,9 +293,11 @@ Meestal de browsercache.
 Controleer:
 - het apparaat en de NAS zijn allebei **verbonden** in de Tailscale-app (zelfde tailnet) en de sleutel van de NAS is niet verlopen (beheerconsole → Machines)
 - `http://<Tailscale-IP van de NAS>:5000` werkt; zo niet, sta `100.64.0.0/10` toe voor poort 5000 in de Synology-firewall
-- bij `tailscale serve`: MagicDNS en HTTPS-certificaten staan aan in de beheerconsole, en `sudo tailscale serve status` toont poort 5000
+- met je eigen domein (manier 1): de subnet route is **goedgekeurd** in de beheerconsole (Machines → NAS), op het apparaat staat "Use Tailscale subnets" aan (Linux: `--accept-routes`), split DNS verwijst je domein naar de lokale DNS-server, en het toegangsprofiel van de reverse proxy staat `100.64.0.0/10` toe. Test: `nslookup bunq.jouwdomein.nl` op het apparaat moet het LAN-IP van de NAS geven
+- je eigen domein op 443 toont iets anders, of `https://nas.<jouw-tailnet>.ts.net` opent altijd het dashboard: een oude `tailscale serve`-config bezet nog poort 443; verwijder die met `sudo tailscale serve --https=443 off`
+- bij `tailscale serve` (manier 2): MagicDNS en HTTPS-certificaten staan aan in de beheerconsole, en `sudo tailscale serve status` toont poort 5000
 - `Serve is not enabled on your tailnet` (met een link): eenmalige toestemming; open de link als beheerder van het tailnet, bevestig, en voer `sudo tailscale serve --bg 5000` opnieuw uit
-- inloggen lukt maar de sessie blijft niet hangen: `ALLOWED_ORIGINS` moet de exacte `https://…ts.net`-URL bevatten en `SESSION_COOKIE_SECURE=true` staan (volledige deploy na het wijzigen van `.env`)
+- inloggen lukt maar de sessie blijft niet hangen: `ALLOWED_ORIGINS` moet de exacte URL bevatten die je opent (`https://bunq.jouwdomein.nl` of `https://…ts.net`) en `SESSION_COOKIE_SECURE=true` staan (volledige deploy na het wijzigen van `.env`)
 - gebruik nooit `tailscale funnel`: dat maakt het dashboard bereikbaar vanaf internet
 
 ---

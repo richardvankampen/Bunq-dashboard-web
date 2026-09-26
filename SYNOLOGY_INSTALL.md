@@ -464,14 +464,17 @@ Never forward port 5000 on your router. To use the dashboard away from home, pic
 1. Package Center → search "Tailscale" → Install → open it and sign in (create an account at tailscale.com if needed).
 2. Install the Tailscale app on your phone/laptop and sign in to the same account.
 3. Open the dashboard at `http://<Tailscale IP of the NAS>:5000` (the 100.x.y.z address in the Tailscale app).
-4. HTTPS (recommended): enable **MagicDNS** and **HTTPS certificates** in the Tailscale admin console, run `sudo tailscale serve --bg 5000` on the NAS, and set in `.env`:
+4. HTTPS (recommended), choose one of two ways (details: [SECURITY.md](SECURITY.md), option A):
+   - **Way 1: your own domain through the DSM reverse proxy** (handy if you already use a reverse proxy, e.g. `https://bunq.yourdomain.com` at home). Advertise your LAN as a subnet route (`sudo tailscale set --advertise-routes=192.168.1.0/24`, approve it in the admin console under Machines → NAS → Edit route settings), let a local DNS server (e.g. the Synology DNS Server package) resolve `bunq.yourdomain.com` to the NAS LAN IP, and add that DNS server in the admin console under DNS → Nameservers → Custom with "Restrict to domain" (split DNS). The DSM reverse proxy (step 4.3) then serves the dashboard on port 443 at home and via Tailscale. Allow `100.64.0.0/10` in its access control profile. `tailscale serve` is not needed.
+   - **Way 2: `tailscale serve`**: enable **MagicDNS** and **HTTPS certificates** in the admin console and run `sudo tailscale serve --bg 5000` on the NAS. This sends all traffic to port 443 of `nas.<your-tailnet>.ts.net` to the dashboard. To keep 443 free, use `sudo tailscale serve --bg --https=8443 5000` (then include `:8443` in `ALLOWED_ORIGINS`).
+     - First time only: if Tailscale answers `Serve is not enabled on your tailnet` with a link, open that link as the tailnet admin, confirm, and run the command again.
+     - Check with `sudo tailscale serve status`: it must say "(tailnet only)", never "Funnel on". Remove it with `sudo tailscale serve --https=443 off` (status then shows `No serve config`).
+
+   Then set in `.env` the URL you open (several: comma-separated) and do a full deploy (config change):
    ```bash
-   ALLOWED_ORIGINS=https://nas.<your-tailnet>.ts.net
+   ALLOWED_ORIGINS=https://bunq.yourdomain.com   # way 1, or https://nas.<your-tailnet>.ts.net for way 2
    SESSION_COOKIE_SECURE=true
    ```
-   Then do a full deploy (config change).
-   - First time only: if Tailscale answers `Serve is not enabled on your tailnet` with a link, open that link as the tailnet admin, confirm, and run `sudo tailscale serve --bg 5000` again.
-   - Check with `sudo tailscale serve status`: it must say "(tailnet only)", never "Funnel on".
 5. Never use `tailscale funnel` (that publishes the dashboard on the internet), and don't let the NAS use an exit node (Bunq would see another public IP).
 
 **VPN:** Synology VPN Server (OpenVPN); see [SECURITY.md](SECURITY.md), option B.
@@ -482,12 +485,13 @@ Never forward port 5000 on your router. To use the dashboard away from home, pic
 Control Panel → Security → Firewall → Edit Rules
 ├── Allow: ports 5000, 9000 from 192.168.0.0/16 (local network)
 ├── Allow: port 5000 from 100.64.0.0/10 (only with Tailscale)
+├── Allow: port 443 from 100.64.0.0/10 (only with Tailscale way 1: reverse proxy)
 └── Deny: all other IPs
 ```
 
 ### Step 4.3: Reverse proxy with HTTPS (recommended)
 
-With Tailscale, `tailscale serve` (step 4.1) already provides HTTPS for the dashboard; you still need a reverse proxy with HTTPS for Vaultwarden (step 2.7).
+The reverse proxy serves the dashboard at home and, with Tailscale way 1 (step 4.1), also remotely. If you use `tailscale serve` (way 2) instead, the dashboard already has HTTPS through Tailscale; you still need a reverse proxy with HTTPS for Vaultwarden (step 2.7).
 
 ```text
 Control Panel → Login Portal → Advanced → Reverse Proxy → Create
