@@ -294,6 +294,7 @@ Controleer:
 - het apparaat en de NAS zijn allebei **verbonden** in de Tailscale-app (zelfde tailnet) en de sleutel van de NAS is niet verlopen (beheerconsole → Machines)
 - `http://<Tailscale-IP van de NAS>:5000` werkt; zo niet, sta `100.64.0.0/10` toe voor poort 5000 in de Synology-firewall
 - bij `tailscale serve`: MagicDNS en HTTPS-certificaten staan aan in de beheerconsole, en `sudo tailscale serve status` toont poort 5000
+- `Serve is not enabled on your tailnet` (met een link): eenmalige toestemming; open de link als beheerder van het tailnet, bevestig, en voer `sudo tailscale serve --bg 5000` opnieuw uit
 - inloggen lukt maar de sessie blijft niet hangen: `ALLOWED_ORIGINS` moet de exacte `https://…ts.net`-URL bevatten en `SESSION_COOKIE_SECURE=true` staan (volledige deploy na het wijzigen van `.env`)
 - gebruik nooit `tailscale funnel`: dat maakt het dashboard bereikbaar vanaf internet
 

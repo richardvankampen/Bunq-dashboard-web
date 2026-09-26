@@ -69,7 +69,7 @@ Dit bestand is de actuele bron voor overdracht.
   - kwetsbaarheden melden via private GitHub security advisory.
 - Geen persoonlijke namen, bankkeuzes of situaties in docs, UI-teksten, codecommentaar of tests (repo is publiek); gebruik generieke voorbeelden ("rekening bij een andere bank", subrekening "Huur").
 - EN-docs gebruiken de Engelse UI-namen (dashboard is tweetalig); NL-docs gebruiken alleen Engels voor ingeburgerde computertermen (log, deploy, update, whitelist, cache …). Categorieregels verwijzen naar interne categorienamen (tabel in README).
-- Toegang van buitenaf: thuisnetwerk, VPN of Tailscale (SECURITY optie A/B; `tailscale serve` voor HTTPS, nooit `funnel`, geen exit node op de NAS i.v.m. Bunq-whitelist; firewall `100.64.0.0/10`).
+- Toegang van buitenaf: thuisnetwerk, VPN of Tailscale (SECURITY optie A/B; `tailscale serve` voor HTTPS, nooit `funnel`, geen exit node op de NAS i.v.m. Bunq-whitelist; firewall `100.64.0.0/10`). Eerste keer `tailscale serve`: eenmalige toestemmingslink ("Serve is not enabled on your tailnet") openen als tailnet-beheerder; controle met `tailscale serve status`.
 - Operationele updateflow in docs: `sudo git pull --rebase origin main` + `scripts/quick_redeploy.sh` (code-only), `.env`-load + `docker stack deploy` + `docker service update --force --image bunq-dashboard:$TAG` (config), `install_or_update_synology.sh` (volledig).
 - `scripts/register_bunq_ip.sh` gedrag vereenvoudigd:
   - default non-interactive flow is nu `NO_PROMPT=true sh scripts/register_bunq_ip.sh`;
