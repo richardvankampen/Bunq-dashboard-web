@@ -3270,6 +3270,55 @@ function showTransactionDetail(detailType) {
         return;
     }
 
+    if (detailType === 'categories') {
+        const breakdown = buildCategoryBreakdown(transactions);
+        const totalExpenses = breakdown.expenses.reduce((sum, row) => sum + row.total, 0);
+        const spendingTransactions = transactions.filter((transaction) => (
+            (transaction.amount || 0) < 0 || isRefundTransaction(transaction)
+        ));
+        const transactionRows = buildTransactionTableRows(spendingTransactions);
+        if (!breakdown.expenses.length) {
+            openDetailModal({
+                title: '<i class="fas fa-circle-notch"></i> Verdeling in categorieën',
+                summary: 'Geen uitgaven gevonden in de geselecteerde periode.',
+                rows: [{ label: 'Geen categorie-data.', value: '' }],
+                chart: null
+            });
+            return;
+        }
+        const chartRows = breakdown.expenses.slice(0, 12).reverse();
+        openDetailModal({
+            title: '<i class="fas fa-circle-notch"></i> Verdeling in categorieën',
+            summary: `Uitgaven ${formatCurrency(totalExpenses)} in ${breakdown.expenses.length} categorieën (na terugbetalingen, zonder overboekingen tussen eigen rekeningen als dat filter aan staat).`,
+            rows: breakdown.expenses.map((row) => ({
+                label: `${row.category} · ${formatPercent((row.total / totalExpenses) * 100)} · `
+                    + row.merchants.slice(0, 3).map((merchant) => `${merchant.label} (${formatCurrency(merchant.amount)})`).join(', '),
+                value: formatCurrency(row.total)
+            })),
+            chart: {
+                trace: {
+                    type: 'bar',
+                    orientation: 'h',
+                    x: chartRows.map((row) => row.total),
+                    y: chartRows.map((row) => row.category),
+                    marker: { color: chartRows.map((row) => getCategoryColor(row.category)) },
+                    hovertemplate: '%{y}<br>%{x:.2f} EUR<extra></extra>'
+                },
+                layout: {
+                    margin: { t: 10, r: 20, l: 120, b: 30 },
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: { color: '#cbd5f5' },
+                    xaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickprefix: '€' },
+                    yaxis: { automargin: true }
+                }
+            },
+            transactionRows,
+            transactionsTitle: `Uitgaven en terugbetalingen (${transactionRows.length})`
+        });
+        return;
+    }
+
     if (detailType === 'money-flow') {
         const flowByCategory = new Map();
         transactions.forEach((transaction) => {
@@ -4019,70 +4068,74 @@ function setSankeySummary(container, text) {
     summary.hidden = normalizedText.length === 0;
 }
 
+// Income per category, and per spending category the net spending per counterparty group
+// (shop branches together; a refund comes off its own shop). A refund without a purchase in the
+// period is spread over the category. Used by `Verdeling in categorieën` and its detail popup.
+function buildCategoryBreakdown(transactions) {
+    const income = new Map();
+    (transactions || []).forEach((transaction) => {
+        const amount = Number(transaction.amount) || 0;
+        if (amount <= 0 || isRefundTransaction(transaction)) return;
+        const category = transaction.category || 'Overig';
+        income.set(category, (income.get(category) || 0) + amount);
+    });
+
+    const byCategory = new Map();
+    spendingEntries(transactions).forEach((entry) => {
+        if (!byCategory.has(entry.category)) byCategory.set(entry.category, new Map());
+        const groups = byCategory.get(entry.category);
+        const key = merchantGroupKey(entry.merchant) || 'onbekend';
+        if (!groups.has(key)) groups.set(key, { amount: 0, labels: new Map() });
+        const group = groups.get(key);
+        group.amount += entry.amount;
+        const label = merchantGroupLabel(entry.merchant) || 'Onbekend';
+        if (entry.amount > 0) group.labels.set(label, (group.labels.get(label) || 0) + 1);
+    });
+
+    const expenses = [];
+    byCategory.forEach((groups, category) => {
+        let merchants = Array.from(groups.values()).map((group) => ({
+            label: Array.from(group.labels.entries()).sort((x, y) => y[1] - x[1])[0]?.[0] || 'Onbekend',
+            amount: group.amount
+        }));
+        const unmatched = merchants.filter((row) => row.amount < 0).reduce((sum, row) => sum - row.amount, 0);
+        merchants = merchants.filter((row) => row.amount > 0.004);
+        const gross = merchants.reduce((sum, row) => sum + row.amount, 0);
+        if (unmatched > 0 && gross > 0) {
+            const factor = Math.max(0, gross - unmatched) / gross;
+            merchants = merchants.map((row) => ({ ...row, amount: row.amount * factor }));
+        }
+        merchants = merchants.filter((row) => row.amount > 0.004).sort((x, y) => y.amount - x.amount);
+        const total = merchants.reduce((sum, row) => sum + row.amount, 0);
+        if (total > 0.004) expenses.push({ category, total, merchants });
+    });
+    expenses.sort((x, y) => y.total - x.total);
+    return { income, expenses };
+}
+
 function renderSunburstChart(data) {
     const container = document.getElementById('sunburstChart');
     if (!container) return;
 
-    const widgetData = data || [];
-
-    const incomeByCategory = new Map();
-    const expenseByCategory = new Map();
-    const merchantByCategory = new Map();
-
-    // Refunds are not income: they lower the spending category of their purchase.
-    const refundsByCategory = new Map();
-    widgetData.forEach((transaction) => {
-        const category = transaction.category || 'Overig';
-        const merchant = resolveMerchantLabel(transaction);
-        if (isRefundTransaction(transaction)) {
-            const target = transaction.refund_category || 'Overig';
-            refundsByCategory.set(target, (refundsByCategory.get(target) || 0) + transaction.amount);
-            return;
-        }
-        if (transaction.amount >= 0) {
-            incomeByCategory.set(category, (incomeByCategory.get(category) || 0) + transaction.amount);
-            return;
-        }
-        const expense = Math.abs(transaction.amount);
-        expenseByCategory.set(category, (expenseByCategory.get(category) || 0) + expense);
-        if (!merchantByCategory.has(category)) {
-            merchantByCategory.set(category, new Map());
-        }
-        const merchantMap = merchantByCategory.get(category);
-        merchantMap.set(merchant, (merchantMap.get(merchant) || 0) + expense);
-    });
-    // Net refunds per category; merchants scale along so the ring still adds up.
-    refundsByCategory.forEach((refund, category) => {
-        const gross = expenseByCategory.get(category);
-        if (!gross) return;
-        const net = Math.max(0, gross - refund);
-        const factor = net / gross;
-        if (net <= 0.004) {
-            expenseByCategory.delete(category);
-            merchantByCategory.delete(category);
-            return;
-        }
-        expenseByCategory.set(category, net);
-        const merchantMap = merchantByCategory.get(category);
-        merchantMap?.forEach((amount, merchant) => merchantMap.set(merchant, amount * factor));
-    });
-
+    const breakdown = buildCategoryBreakdown(data || []);
     const labels = [];
     const ids = [];
     const parents = [];
     const values = [];
     const colors = [];
+    const shares = [];
 
-    const pushNode = (id, label, parent, value, color) => {
+    const pushNode = (id, label, parent, value, color, share) => {
         ids.push(id);
         labels.push(label);
         parents.push(parent);
         values.push(value);
         colors.push(color);
+        shares.push(share);
     };
 
-    const totalIncome = Array.from(incomeByCategory.values()).reduce((sum, amount) => sum + amount, 0);
-    const totalExpenses = Array.from(expenseByCategory.values()).reduce((sum, amount) => sum + amount, 0);
+    const totalIncome = Array.from(breakdown.income.values()).reduce((sum, amount) => sum + amount, 0);
+    const totalExpenses = breakdown.expenses.reduce((sum, row) => sum + row.total, 0);
 
     if (totalIncome <= 0.01 && totalExpenses <= 0.01) {
         Plotly.react(container, [], {
@@ -4102,50 +4155,37 @@ function renderSunburstChart(data) {
         return;
     }
 
-    pushNode('root', 'Alles', '', totalIncome + totalExpenses, '#334155');
-    pushNode('income', 'Inkomsten', 'root', totalIncome, '#22c55e');
-    pushNode('expenses', 'Uitgaven', 'root', totalExpenses, '#ef4444');
+    const shareOf = (part, whole, of) => (whole > 0.01 ? `${formatPercent((part / whole) * 100)} van ${of}` : '');
+    pushNode('root', 'Totaal', '', totalIncome + totalExpenses, '#334155', `Netto ${formatCurrency(totalIncome - totalExpenses)}`);
+    pushNode('income', 'Inkomsten', 'root', totalIncome, '#22c55e', '');
+    pushNode('expenses', 'Uitgaven', 'root', totalExpenses, '#ef4444', shareOf(totalExpenses, totalIncome, 'de inkomsten'));
 
-    const incomeEntries = selectTopWithRemainder(
-        Array.from(incomeByCategory.entries()),
-        9,
-        'Overig inkomen',
-        0.05
-    );
-    incomeEntries.forEach(([category, amount]) => {
-        pushNode(`income:${category}`, category, 'income', amount, getCategoryColor(category));
-    });
-
-    const expenseEntries = selectTopWithRemainder(
-        Array.from(expenseByCategory.entries()),
-        14,
-        'Overig categorieen',
-        0.03
-    );
-    expenseEntries.forEach(([category, amount]) => {
-        const categoryId = `expense:${category}`;
-        const categoryColor = getCategoryColor(category);
-        pushNode(categoryId, category, 'expenses', amount, categoryColor);
-
-        const merchantMap = merchantByCategory.get(category);
-        if (!merchantMap || !merchantMap.size) return;
-
-        const merchantEntries = selectTopWithRemainder(
-            Array.from(merchantMap.entries()),
-            16,
-            'Overig winkels',
-            0.04
-        );
-        merchantEntries.forEach(([merchant, merchantAmount]) => {
-            pushNode(
-                `${categoryId}:${merchant}`,
-                merchant,
-                categoryId,
-                merchantAmount,
-                hexToRgba(categoryColor, 0.82)
-            );
+    selectTopWithRemainder(Array.from(breakdown.income.entries()), 9, 'Overig inkomen', 0.05)
+        .forEach(([category, amount]) => {
+            pushNode(`income:${category}`, category, 'income', amount, getCategoryColor(category), shareOf(amount, totalIncome, 'de inkomsten'));
         });
-    });
+
+    const merchantsByCategory = new Map(breakdown.expenses.map((row) => [row.category, row.merchants]));
+    selectTopWithRemainder(breakdown.expenses.map((row) => [row.category, row.total]), 14, 'Kleinere categorieën', 0.03)
+        .forEach(([category, amount]) => {
+            const categoryId = `expense:${category}`;
+            const categoryColor = getCategoryColor(category);
+            pushNode(categoryId, category, 'expenses', amount, categoryColor, shareOf(amount, totalExpenses, 'de uitgaven'));
+
+            const merchants = merchantsByCategory.get(category);
+            if (!merchants || !merchants.length) return;
+            selectTopWithRemainder(merchants.map((row) => [row.label, row.amount]), 16, 'Overige tegenrekeningen', 0.04)
+                .forEach(([merchant, merchantAmount]) => {
+                    pushNode(
+                        `${categoryId}:${merchant}`,
+                        merchant,
+                        categoryId,
+                        merchantAmount,
+                        hexToRgba(categoryColor, 0.82),
+                        shareOf(merchantAmount, amount, 'de categorie')
+                    );
+                });
+        });
 
     const trace = {
         type: 'sunburst',
@@ -4153,6 +4193,7 @@ function renderSunburstChart(data) {
         labels,
         parents,
         values,
+        customdata: shares,
         branchvalues: 'total',
         sort: false,
         maxdepth: 3,
@@ -4167,16 +4208,16 @@ function renderSunburstChart(data) {
                 width: 2.2
             }
         },
-        hovertemplate: '%{label}<br>%{value:.2f} EUR<br>%{percentParent:.1%} van bovenliggend<extra></extra>'
+        hovertemplate: '%{label}<br>%{value:.2f} EUR<br>%{customdata}<extra></extra>'
     };
-    
+
     const layout = {
         margin: { t: 20, r: 10, l: 10, b: 10 },
         paper_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#ffffff' },
         uniformtext: { minsize: 10, mode: 'hide' }
     };
-    
+
     Plotly.react(container, [trace], layout, { displayModeBar: false, responsive: true });
 }
 

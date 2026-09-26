@@ -4,6 +4,11 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — categorieëngrafiek gecontroleerd en gecorrigeerd
+
+- 5 bevindingen opgelost: filialen apart binnen categorieën → gegroepeerd zoals Top tegenrekeningen; terugbetaling verlaagde alle winkels in de categorie → gaat af van de eigen winkel; betekenisloze "% van bovenliggend" op het hoogste niveau → % van inkomsten/uitgaven/categorie; labels ("Overig categorieen", "Overig winkels", "Alles") → "Kleinere categorieën", "Overige tegenrekeningen", "Totaal"; geen detailvenster → knop met tabel (bedrag, aandeel, top 3 tegenrekeningen) en transacties.
+- Verificatie: headless Chromium: Coolblue €400 − €300 retour = €100 terwijl Bol.com €50 blijft, Albert Heijn 1234 + 5678 = €80, Uitgaven "49,7% van de inkomsten", detailvenster met 4 categorieën, geen JS-fouten; pytest 307 groen.
+
 ### Opgeleverd — datakwaliteit gecontroleerd en gecorrigeerd
 
 - 6 bevindingen opgelost: dubbele waarschuwingen (backend + frontend in andere woorden, telling tot 2× te hoog) → één lijst; popup mengde selectie-aantallen met backend-bedragen → alles uit dezelfde set; interne overboekingen telden als goed gecategoriseerde uitgave (en Triodos als ongecategoriseerd) → echte uitgaven; "cache ouder dan 24 uur" op rustige dagen → versheid uit laatste sync; vaste drempel 120 in backend → geschaald; Engelse/technische teksten (`Unknown`, `exclude_internal=true`, FX-advies, "non-EUR", "real data") → Nederlands.

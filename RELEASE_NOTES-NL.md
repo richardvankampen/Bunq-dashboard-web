@@ -22,6 +22,11 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Categorieëngrafiek
+- `Verdeling in categorieën` groepeert filialen net als `Top tegenrekeningen`, en een terugbetaling gaat af van de winkel waar hij vandaan komt in plaats van van alle winkels in de categorie.
+- Hover-teksten tonen zinvolle aandelen (uitgaven als % van de inkomsten, categorie als % van de uitgaven, tegenrekening als % van de categorie); duidelijkere labels ("Kleinere categorieën", "Overige tegenrekeningen", "Totaal").
+- Nieuw detailvenster met bedrag, aandeel en top 3 tegenrekeningen per categorie, plus de transacties.
+
 ### Datakwaliteit
 - Waarschuwingen staan er niet meer dubbel in (backend en dashboard hadden elk hun eigen formulering); bij elke waarschuwing hoort één advies.
 - Alle dekkingscijfers worden over dezelfde set gemeten: echte uitgaven in je selectie, zonder overboekingen tussen je eigen rekeningen.

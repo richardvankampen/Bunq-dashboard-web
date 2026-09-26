@@ -22,6 +22,11 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Categories chart
+- `Verdeling in categorieën` groups shop branches like `Top tegenrekeningen`, and a refund comes off the shop it came from instead of all shops in the category.
+- Hover texts show meaningful shares (spending as % of income, category as % of spending, counterparty as % of the category); clearer labels ("Kleinere categorieën", "Overige tegenrekeningen", "Totaal").
+- New detail popup with amount, share and top 3 counterparties per category, plus the transactions.
+
 ### Data quality
 - Warnings are no longer shown twice (backend and dashboard each had their own wording); each warning comes with one piece of advice.
 - All coverage figures are measured over the same set: real spending in your selection, without transfers between your own accounts.
