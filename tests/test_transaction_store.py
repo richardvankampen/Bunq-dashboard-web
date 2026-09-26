@@ -687,3 +687,35 @@ def test_statistics_income_excludes_refunds_and_own_external_accounts(ap, store,
     data = live_api.get('/api/statistics?days=30&cache=false').get_json()['data']
     assert data['income'] == pytest.approx(3000.0)      # no refund, no Triodos transfer
     assert data['expenses'] == pytest.approx(80.0)      # 100 minus the 20 refund
+
+
+def test_data_quality_leaves_internal_transfers_out_of_spending(ap, store):
+    store.add(10, 5, amount=-50.0, description='Albert Heijn')
+    store.add(11, 4, amount=-500.0, description='Naar spaarrekening')
+    store.items[('1', 'payment')][11]['counterparty_alias'] = {'display_name': 'Spaar', 'iban': 'NL00BUNQ0000000002'}
+    connection = ap.get_data_db_connection()
+    try:
+        ap.sync_account_source(connection, ACCOUNT, 'payment', {'2'}, {'NL00BUNQ0000000002'},
+                               NOW - timedelta(days=30), now=NOW)
+    finally:
+        connection.close()
+    metrics = ap.build_data_quality_summary(days=3650)['metrics']
+    assert metrics['internal_transactions'] == 1
+    assert metrics['expense_transactions'] == 1              # the transfer is no spending
+    assert metrics['expense_amount_total'] == pytest.approx(50.0)
+    assert metrics['categorized_expenses'] == 1
+
+
+def test_data_quality_freshness_follows_the_last_sync(ap, store):
+    store.add(10, 5)
+    _sync(ap, days=30, now=datetime.now(timezone.utc))
+    connection = ap.get_data_db_connection()
+    try:
+        with connection:   # a quiet period: no row was written for days
+            connection.execute("UPDATE bunq_transactions SET last_seen_at = ?",
+                               ((datetime.now(timezone.utc) - timedelta(days=3)).isoformat(),))
+    finally:
+        connection.close()
+    summary = ap.build_data_quality_summary(days=3650)
+    assert summary['metrics']['capture_freshness_hours'] < 1
+    assert not any('synchronisatie' in warning for warning in summary['warnings'])

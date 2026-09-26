@@ -85,7 +85,7 @@ Dit bestand is de actuele bron voor overdracht.
 - `Uitgavenvolatiliteit`: `computeWeeklySpendingVolatility` over volledige weken, zonder `FIXED_COST_CATEGORIES`; Hoog ≥ 60%, Middel ≥ 30%.
 - Actieplan: `NON_ACTIONABLE_CATEGORIES` (Wonen, Belastingen) uitgesloten van concentratie-, tegenrekening-, terugkerende-kosten- en hefboomadvies; hefbomen op maandgemiddelde van volledige maanden.
 - `Gemiddelde daguitgaven`: totaal / `periodDaysCovered` (kalenderdagen van de periode).
-- Datakwaliteit: labels Goed/Redelijk/Aandacht nodig; aandeel interne overboekingen op ongefilterde data; minimum aantal transacties ≈ 1,33 × periodedagen (20–400).
+- Datakwaliteit (`computeDataQualitySummary`): alle dekkingscijfers (aantallen én bedragen) over één set: echte uitgaven in de selectie (afschrijvingen zonder eigen overboekingen incl. Triodos, `excludeOwnTransfersForBudget`). Backend levert alleen actieve dagen, dataspan, EUR-dekking en tijd van laatste sync (`bunq_sync_state.last_sync_at`, niet `last_seen_at`). Eén lijst waarschuwingen met elk één advies (backend-waarschuwingen worden niet meer samengevoegd). Labels Goed/Redelijk/Aandacht nodig; aandeel interne overboekingen op ongefilterde data (waarschuwing alleen als het filter uit staat); minimum aantal transacties ≈ 1,33 × periodedagen (20–400), ook in de backend. Backend `build_data_quality_summary` telt interne overboekingen niet als uitgave.
 
 ## Frontend detailweergave (actueel)
 
