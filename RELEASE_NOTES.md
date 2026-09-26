@@ -22,6 +22,12 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Spending
+- Refunds now lower spending everywhere, also in `Top tegenrekeningen`, `Categorie-race`, the largest-category and top-counterparty insights, `Uitgavenmomentum` and the savings levers (a returned order no longer shows up as spending).
+- Branches of the same shop (e.g. "Albert Heijn 1234" and "ALBERT HEIJN 5678 UTRECHT") count as one counterparty in totals.
+- `Dagpatroon` shows variable spending only: fixed-cost direct debits are booked at night and made the night look like the biggest spending moment.
+- The foreign-currency warning is in Dutch.
+
 ### Income
 - Salary is recognised more often (loonbetaling, maandloon, vakantiegeld, eindejaarsuitkering, bonus, 13th month), and a payer who pays about the same amount every month counts as regular income even without a keyword (e.g. "Periode 9").
 - New category `Uitkeringen & toeslagen` for UWV, SVB (child benefit, AOW), pension funds, DUO student finance, allowances and municipal benefits (these used to be `Overig` or `Belastingen`). Stored transactions are updated once.

@@ -4,6 +4,16 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — uitgavenlogica gecontroleerd en gecorrigeerd
+
+- Review van alle uitgavenweergaven; 5 bevindingen, allemaal opgelost:
+  1. Terugbetalingen telden nog als uitgave in Top tegenrekeningen, Aandeel top-tegenrekening, Grootste categorie, Uitgavenmomentum, Categorie-race en besparingshefbomen → `spendingEntries`/`netSpendingByMerchant`/`buildExpenseByCategory` netto.
+  2. Filialen (Albert Heijn 1234 / 5678 UTRECHT NLD) telden als aparte tegenrekeningen → `merchantGroupLabel` voor totalen (ook terugkerende kosten en hefbomen).
+  3. `Dagpatroon` werd gedomineerd door nachtelijke incasso's van vaste lasten → alleen variabele uitgaven, hover-tekst aangepast.
+  4. Categorie-race negeerde terugbetalingen → daalt nu op de dag van de terugbetaling.
+  5. Engelse waarschuwing over vreemde valuta → Nederlands, noemt dat totalen te laag kunnen zijn.
+- Verificatie: pytest 298 groen; headless Chromium met gemockte API: Albert Heijn 1234 + ALBERT HEIJN 5678 UTRECHT NLD = één regel €80 (na €10 terugbetaling), geretourneerde Coolblue-bestelling €0 (niet in top/categorieën, race Winkelen €0), Dagpatroon zonder huur ('s nachts €0), geen JS-fouten.
+
 ### Opgeleverd — inkomenslogica gecontroleerd en gecorrigeerd
 
 - Review van inkomensregels (backend-categorisatie van inkomend geld, tegels, popups, budget, categorieën, `/api/statistics`); 6 bevindingen + gebruikerswens, allemaal opgelost:
