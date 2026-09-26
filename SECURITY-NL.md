@@ -25,10 +25,15 @@ Het dashboard is gebouwd voor een privé, alleen-lezen overzicht van je financi�
 | **Cookies** | `HttpOnly`, `SameSite=Lax`, standaard `Secure` |
 | **Geheimbeheer** | Vaultwarden (Bunq API key) + Docker Swarm secrets |
 | **Netwerktoegang** | Alleen via VPN of Tailscale, geen port forwarding |
-| **Rate limiting** | 30 verzoeken/min op de API, 5 inlogpogingen/min |
+| **CSRF-bescherming** | `SameSite=Lax`-cookies, plus: elke POST moet JSON zijn en van een toegestane origin komen (`ALLOWED_ORIGINS` of de host van het dashboard zelf) |
+| **Responseheaders** | Content-Security-Policy (scripts alleen van het dashboard en cdnjs/unpkg), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Cache-Control: no-store` op alle API-antwoorden |
+| **Rate limiting** | 30 verzoeken/min op de API, 5 inlogpogingen/min (zie de opmerking hieronder) |
 | **Sessieduur** | 24 uur |
 | **Wachtwoordcontrole** | Constant-time vergelijking |
 | **Runtime-server** | Gunicorn (geen Flask-ontwikkelserver) |
+| **Openbare endpoints** | Alleen `/api/live`, `/api/health` (zonder login geen foutdetails), `/api/auth/*` en de statische bestanden |
+
+**Opmerking over rate limiting:** de limieten worden per Gunicorn-worker (standaard 2) en per bron-IP geteld. Achter het ingress-netwerk van Docker Swarm of een reverse proxy komen alle verzoeken van hetzelfde interne IP, dus gelden de limieten voor iedereen samen: na 5 mislukte inlogpogingen in een minuut is inloggen die minuut voor iedereen geblokkeerd. Voor een privé-dashboard met één gebruiker achter een VPN of Tailscale is dat de bedoelde afweging; het beschermt niet tegen een vastberaden aanvaller in je eigen netwerk.
 
 ---
 

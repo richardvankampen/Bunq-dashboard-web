@@ -3,6 +3,12 @@
 // No credentials stored in localStorage!
 // ============================================
 
+// AOS (Animate On Scroll); here instead of an inline script so the Content-Security-Policy
+// needs no 'unsafe-inline' for scripts.
+if (window.AOS) {
+    window.AOS.init({ duration: 800, easing: 'ease-out-cubic', once: true, offset: 50 });
+}
+
 // Global Configuration
 const DEFAULT_API_ENDPOINT = `${window.location.origin}/api`;
 const ACCOUNT_STORAGE_KEY = 'selectedAccountIds';
@@ -350,7 +356,9 @@ async function logout() {
     try {
         await fetchWithTimeout(`${CONFIG.apiEndpoint}/auth/logout`, {
             method: 'POST',
-            credentials: 'include'
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: '{}'
         }, 12000);
         
         isAuthenticated = false;
@@ -711,10 +719,12 @@ async function handleLogin(event) {
 function showError(message) {
     const notification = document.createElement('div');
     notification.className = 'error-notification';
-    notification.innerHTML = `
-        <i class="fas fa-exclamation-circle"></i>
-        <span>${message}</span>
-    `;
+    // Text only: messages can contain backend errors and account names.
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-exclamation-circle';
+    const text = document.createElement('span');
+    text.textContent = String(message ?? '');
+    notification.append(icon, text);
     notification.style.cssText = `
         position: fixed;
         top: 20px;

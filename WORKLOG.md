@@ -4,6 +4,18 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — beveiliging gecontroleerd en aangescherpt
+
+- Bevindingen en oplossingen:
+  1. `secrets.compare_digest` op str met niet-ASCII (bv. wachtwoord met é) → TypeError → 500; niet-string JSON-waarden idem → bytes vergelijken, types/lengte valideren (400/401).
+  2. CSRF alleen via `SameSite=Lax`: andere sites op hetzelfde domein (bv. een andere dienst op *.jouwdomein) gelden als same-site → `csrf_guard`: POST moet JSON zijn en van een toegestane origin komen.
+  3. Geen security headers → CSP (geen inline scripts; AOS-init naar `app.js`), X-Frame-Options, nosniff, Referrer-/Permissions-Policy, `no-store` op API-antwoorden (financiële data niet in caches).
+  4. Openbare `/api/health` gaf de laatste Bunq-fout aan iedereen in het netwerk → alleen voor ingelogde sessie.
+  5. Gebruikersnaam ongefilterd in logs (logregels vervalsen met regeleinden) → `log_safe`.
+  6. `showError` zette meldingen als HTML (backendfouten, rekeningnamen) → textContent.
+  7. Rate limiting is per worker en per bron-IP; achter Swarm-ingress/proxy één IP voor iedereen → gedocumenteerd (bewuste afweging voor privé-dashboard).
+- Verificatie: pytest 349 groen (nieuw: niet-ASCII/foute invoer bij login, log_safe, 415 zonder JSON, 403 vreemde origin, eigen host toegestaan, headers/CSP, health zonder foutdetails); headless Chromium met de CSP van de app: geen CSP-overtredingen of JS-fouten, grafieken en detailvensters werken.
+
 ### Opgeleverd — documentatie: Engelse termen, Tailscale, geen persoonlijke situaties
 
 - Vraag: Nederlandse termen uit de Engelse documentatie halen (UI is nu tweetalig), in de Nederlandse documentatie alleen ingeburgerde computertermen in het Engels; Tailscale als alternatief voor VPN; persoonlijke situaties weghalen of generiek maken.

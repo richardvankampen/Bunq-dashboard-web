@@ -25,10 +25,15 @@ The dashboard is built for a private, read-only view of your finances.
 | **Cookies** | `HttpOnly`, `SameSite=Lax`, `Secure` by default |
 | **Secret management** | Vaultwarden (Bunq API key) + Docker Swarm secrets |
 | **Network access** | Only via VPN or Tailscale, no port forwarding |
-| **Rate limiting** | 30 requests/min on the API, 5 login attempts/min |
+| **CSRF protection** | `SameSite=Lax` cookies, plus: every POST must be JSON and come from an allowed origin (`ALLOWED_ORIGINS` or the dashboard's own host) |
+| **Response headers** | Content-Security-Policy (scripts only from the dashboard and cdnjs/unpkg), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Cache-Control: no-store` on all API responses |
+| **Rate limiting** | 30 requests/min on the API, 5 login attempts/min (see the note below) |
 | **Session expiry** | 24 hours |
 | **Password check** | Constant-time comparison |
 | **Runtime server** | Gunicorn (no Flask development server) |
+| **Public endpoints** | Only `/api/live`, `/api/health` (no error details without login), `/api/auth/*` and the static files |
+
+**Note on rate limiting:** the limits are counted per Gunicorn worker (2 by default) and per source IP. Behind Docker Swarm's ingress network or a reverse proxy, all requests reach the dashboard from the same internal IP, so the limits apply to everyone together: after 5 failed logins in a minute, logging in is blocked for everybody for that minute. For a private, single-user dashboard behind a VPN or Tailscale that is the intended trade-off; it is not a protection against a determined attacker on your network.
 
 ---
 

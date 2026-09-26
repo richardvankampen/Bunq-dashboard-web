@@ -7,6 +7,14 @@
 
 ## 2026-09-26
 
+### Beveiliging
+- Elke POST naar de API moet JSON zijn en van een toegestane origin komen (`ALLOWED_ORIGINS` of de host van het dashboard zelf): extra bescherming tegen CSRF naast `SameSite=Lax`, ook tegen andere sites op hetzelfde domein.
+- Nieuwe responseheaders: Content-Security-Policy (scripts alleen van het dashboard en cdnjs/unpkg; het inline script is naar `app.js` verhuisd), `X-Frame-Options: DENY`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, en `Cache-Control: no-store` op alle API-antwoorden.
+- Inloggen: een wachtwoord met accenten of een verkeerd opgebouwd verzoek geeft geen serverfout (500) meer; gebruikersnamen worden opgeschoond in logregels.
+- `/api/health` (openbaar) toont de laatste Bunq-fout alleen aan een ingelogde sessie.
+- Foutmeldingen worden als platte tekst getoond (geen HTML uit meldingen).
+- SECURITY beschrijft hoe rate limiting werkt achter Docker Swarm of een reverse proxy.
+
 ### Beheeronderhoud
 - Nieuwe gids **Welk probleem heb je?** in Instellingen → Beheeronderhoud: acht situaties (geen Bunq-gegevens / IP- of keyfout, IP-wissel, nieuwe API key, Vaultwarden-fout, ontbrekende of verwijderde transacties, verouderde cijfers, nieuwe versie, traag of herstartend), elk met genummerde stappen en knoppen die de juiste actie uitvoeren (bv. "Volledig onderhoud met automatisch IP") of de juiste terminalcommando's tonen.
 - Elke knop zegt wat hij doet en of hij iets wijzigt; elke optie zegt wat ze doet en welke knoppen haar gebruiken.

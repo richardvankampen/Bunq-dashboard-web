@@ -17,6 +17,7 @@ from bunq.sdk.context.bunq_context import BunqContext
 from bunq.sdk.model.generated import endpoint
 from bunq.sdk.exception.unauthorized_exception import UnauthorizedException
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 import os
 import json
 import requests
@@ -2496,11 +2497,90 @@ def check_credentials(username, password):
         logger.error("❌ No BASIC_AUTH_PASSWORD set (env or secret)!")
         return False
     
-    # Constant-time comparison to prevent timing attacks
-    username_match = secrets.compare_digest(username, expected_username)
-    password_match = secrets.compare_digest(password, expected_password)
-    
+    if not isinstance(username, str) or not isinstance(password, str):
+        return False
+
+    # Constant-time comparison to prevent timing attacks. Compare bytes: compare_digest raises
+    # TypeError on non-ASCII str (e.g. an accented character in a typed password).
+    username_match = secrets.compare_digest(username.encode('utf-8'), expected_username.encode('utf-8'))
+    password_match = secrets.compare_digest(password.encode('utf-8'), expected_password.encode('utf-8'))
+
     return username_match and password_match
+
+
+def log_safe(value, max_length=64):
+    """User input for log lines: no control characters (no forged log lines), bounded length."""
+    text = ''.join(ch if ch.isprintable() else '?' for ch in str(value))
+    return text[:max_length] + ('…' if len(text) > max_length else '')
+
+
+# ============================================
+# SECURITY: CSRF GUARD AND RESPONSE HEADERS
+# ============================================
+
+_UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
+
+
+def _origin_allowed(origin):
+    """An Origin header is fine when it is configured, or the host the request was sent to."""
+    if origin in ALLOWED_ORIGINS:
+        return True
+    netloc = urlparse(origin).netloc.lower()
+    hosts = {request.host.lower()}
+    forwarded_host = request.headers.get('X-Forwarded-Host', '').split(',')[0].strip().lower()
+    if forwarded_host:
+        hosts.add(forwarded_host)
+    return bool(netloc) and netloc in hosts
+
+
+@app.before_request
+def csrf_guard():
+    """
+    State-changing API calls must be JSON and come from an allowed origin. A cross-site form
+    or link cannot send application/json without a CORS preflight, which only allowed origins
+    pass; the Origin check also covers other sites on the same domain (SameSite=Lax treats
+    those as same-site).
+    """
+    if request.method not in _UNSAFE_METHODS or not request.path.startswith('/api/'):
+        return None
+    origin = request.headers.get('Origin')
+    if origin and not _origin_allowed(origin):
+        logger.warning(f"🚫 Blocked cross-origin {request.method} {request.path} from origin {log_safe(origin)}")
+        return jsonify({'success': False, 'error': 'Origin not allowed'}), 403
+    if request.mimetype != 'application/json':
+        logger.warning(f"🚫 Blocked non-JSON {request.method} {request.path} from {request.remote_addr}")
+        return jsonify({'success': False, 'error': 'Content-Type must be application/json'}), 415
+    return None
+
+
+def _content_security_policy():
+    connect = ' '.join(["'self'"] + [origin for origin in ALLOWED_ORIGINS if origin.startswith(('http://', 'https://'))])
+    return '; '.join([
+        "default-src 'self'",
+        "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com",
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://unpkg.com https://fonts.googleapis.com",
+        "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com",
+        "img-src 'self' data: blob:",
+        f"connect-src {connect}",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ])
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'same-origin')
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if request.path.startswith('/api/'):
+        # Financial data: never kept in browser or proxy caches.
+        response.headers['Cache-Control'] = 'no-store'
+    elif response.mimetype == 'text/html':
+        response.headers.setdefault('Content-Security-Policy', _content_security_policy())
+    return response
 
 def requires_auth(f):
     """
@@ -4237,17 +4317,17 @@ def login():
     }
     """
     try:
-        data = request.get_json()
-        
-        if not data or 'username' not in data or 'password' not in data:
+        data = request.get_json(silent=True)
+        username = data.get('username') if isinstance(data, dict) else None
+        password = data.get('password') if isinstance(data, dict) else None
+
+        if (not isinstance(username, str) or not isinstance(password, str)
+                or not username or not password or len(username) > 256 or len(password) > 1024):
             logger.warning(f"🚫 Invalid login request from {request.remote_addr}")
             return jsonify({
                 'success': False,
                 'error': 'Username and password required'
             }), 400
-        
-        username = data['username']
-        password = data['password']
         
         # Verify credentials
         if check_credentials(username, password):
@@ -4259,7 +4339,7 @@ def login():
             session['expires_at'] = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
             session.permanent = True  # Use PERMANENT_SESSION_LIFETIME
             
-            logger.info(f"✅ Successful login: {username} from {request.remote_addr}")
+            logger.info(f"✅ Successful login: {log_safe(username)} from {request.remote_addr}")
             
             response = make_response(jsonify({
                 'success': True,
@@ -4271,7 +4351,7 @@ def login():
             return response, 200
         
         else:
-            logger.warning(f"🚫 Failed login attempt: {username} from {request.remote_addr}")
+            logger.warning(f"🚫 Failed login attempt: {log_safe(username)} from {request.remote_addr}")
             return jsonify({
                 'success': False,
                 'error': 'Invalid username or password'
@@ -4289,7 +4369,7 @@ def logout():
     """Logout endpoint - destroys session"""
     username = session.get('username', 'unknown')
     session.clear()
-    logger.info(f"👋 Logout: {username} from {request.remote_addr}")
+    logger.info(f"👋 Logout: {log_safe(username)} from {request.remote_addr}")
     
     return jsonify({
         'success': True,
@@ -5363,7 +5443,9 @@ def health_check():
         'api_status': bunq_state,
         'api_key_available': bool(API_KEY),
         'bunq_context_initialized': bunq_ready,
-        'bunq_last_error': _BUNQ_INIT_LAST_ERROR,
+        # Error details only for a logged-in session (this endpoint is public); admin status and
+        # the logs have them too.
+        'bunq_last_error': _BUNQ_INIT_LAST_ERROR if session.get('authenticated') else None,
         'security': {
             'type': 'session-based',
             'rate_limiting': True,
