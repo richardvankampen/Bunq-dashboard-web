@@ -155,6 +155,17 @@ def test_incoming_money(ap, description, counterparty, mcc, expected):
     assert ap.categorize_transaction(description, counterparty, merchant_category_code=mcc, amount=25) == expected
 
 
+@pytest.mark.parametrize('description, counterparty, mcc, expected', [
+    ('Jaarafrekening', 'Eneco', None, 'Utilities'),     # lowers essential spending in the budget
+    ('Tikkie pizza', 'Jan', None, 'Horeca'),
+    ('Retour', 'Albert Heijn', '5411', 'Boodschappen'),
+    ('Terugbetaling', 'Wagenaar', None, None),            # unknown purchase
+    ('Teruggave', 'Belastingdienst', None, None),         # not a spending category
+])
+def test_refund_source_category(ap, description, counterparty, mcc, expected):
+    assert ap.refund_source_category(description, counterparty, merchant_category_code=mcc) == expected
+
+
 # --- classify_account_type ---------------------------------------------------
 
 def test_classify_none_is_checking(ap):

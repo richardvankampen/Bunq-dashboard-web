@@ -552,6 +552,8 @@ def test_migration_keeps_code_based_category_of_legacy_card_payment(ap, store):
     ap.migrate_stored_categories()
     assert _stored_category(ap, 10) == ('Horeca', 'Horeca')
     assert _stored_category(ap, 11) == ('Refund', 'Refund')
+    # The refund keeps the category of its purchase, for the budget buckets.
+    assert ap.json.loads(_row(ap, 11)['payload_json'])['refund_category'] == 'Horeca'
 
 
 def test_new_rows_store_merchant_category_code(ap, store):
@@ -654,3 +656,12 @@ def test_history_endpoint_falls_back_to_snapshots(ap, store, auth_client, monkey
     monkeypatch.setattr(ap, '_BUNQ_CONTEXT_INITIALIZED', False)
     data = auth_client.get('/api/history/balances?days=7').get_json()['data']
     assert data['source'] == 'snapshots'
+
+
+def test_refund_rows_store_their_purchase_category(ap, store):
+    store.add(10, 5, amount=80.0, description='Jaarafrekening Eneco')
+    store.add(11, 4, amount=-40.0, description='Eneco termijn')
+    _sync(ap, days=30)
+    refund = ap.json.loads(_row(ap, 10)['payload_json'])
+    assert (refund['category'], refund['refund_category']) == ('Refund', 'Utilities')
+    assert ap.json.loads(_row(ap, 11)['payload_json'])['refund_category'] is None

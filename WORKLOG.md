@@ -4,6 +4,18 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — budgetlogica gecontroleerd en gecorrigeerd
+
+- Review van 50/30/20 (`summarizeMonthlyBudgetDiscipline`), `Noodzaak vs wens`, budgetgrafiek/-detail en `Geldstromen`; 7 bevindingen, allemaal opgelost:
+  1. Met interne-overboekingen-filter uit telden eigen overboekingen als inkomen/vrij besteedbaar → budgetweergaven sluiten ze altijd uit.
+  2. Alle terugbetalingen verlaagden vrij besteedbaar (ook energie-eindafrekening) → backend bewaart `refund_category` (`CATEGORIZATION_VERSION` 3, eenmalige migratie), frontend verlaagt de juiste bak.
+  3. `Noodzaak vs wens` negeerde terugbetalingen → nu verrekend.
+  4. Salaris net over de maandgrens (weekend) gaf maand met 2 en maand met 0 salarissen → `assignSalaryMonths`.
+  5. Budgetgrafiek afgekapt op 100% → y-as tot hoogste waarde.
+  6. `Overig` verdween ongezien in vrij besteedbaar → per maand zichtbaar (hover, detailrijen, samenvatting).
+  7. Terugbetalingen boven vrij besteedbaar vielen weg → gaan van noodzakelijk af (`applyBudgetRefunds`).
+- Verificatie: pytest 280 groen, pyflakes schoon; headless Chromium met gemockte API (filter uit, salaris 1e van de maand met één keer op de 29e): alle maanden €3.000 inkomen, overboekingen naar spaar genegeerd, energie-terugbetaling €80 verlaagt noodzakelijk en Tikkie €20 vrij besteedbaar, Geldstromen splitst Terugbetalingen naar beide bakken, samenvatting toont Overig-aandeel, geen JS-fouten.
+
 ### Opgeleverd — cashflowlogica gecontroleerd en gecorrigeerd
 
 - Review van `Inkomsten`/`Uitgaven`, `Cashflow (tijdslijn)`, `Geldstromen`; 6 bevindingen, allemaal opgelost:

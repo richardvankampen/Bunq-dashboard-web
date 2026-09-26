@@ -5926,6 +5926,10 @@ def normalize_bunq_payment(source_name, payment, account_id, account_name=None,
         'counterparty_iban': next(iter(counterparty_account_ibans), None),
         'merchant': merchant_label,
         'category': category,
+        'refund_category': (
+            refund_source_category(description, counterparty_name, merchant_category_code=merchant_category_code)
+            if category == 'Refund' else None
+        ),
         'merchant_category_code': str(merchant_category_code).strip() if merchant_category_code else None,
         'type': get_obj_field(payment, 'type_', 'type'),
         'source': source_name,
@@ -6006,7 +6010,7 @@ def get_account_transactions(
 
 # Bump when the rules below change: stored transactions are recategorised once
 # at startup (migrate_stored_categories), so a rule fix also applies to history.
-CATEGORIZATION_VERSION = '2'
+CATEGORIZATION_VERSION = '3'
 
 
 def _mcc_codes(*items):
@@ -6216,6 +6220,16 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
     return category
 
 
+def refund_source_category(description, counterparty_name, merchant_category_code=None):
+    """
+    Spending category a refund belongs to (e.g. 'Utilities' for an energy settlement),
+    so the budget can lower the right bucket. None when unknown.
+    """
+    combined = f"{_normalize_category_text(description)} {_normalize_category_text(counterparty_name)}".strip()
+    category = _categorize_by_mcc(merchant_category_code) or _categorize_by_text(combined)
+    return None if category in _INCOMING_KEEP_CATEGORIES else category
+
+
 def _is_card_transaction(tx):
     tx_type = str(tx.get('type') or '').upper()
     return tx.get('source') == 'card_payment' or 'MASTERCARD' in tx_type or 'MAESTRO' in tx_type
@@ -6223,30 +6237,35 @@ def _is_card_transaction(tx):
 
 def recategorize_stored_transaction(tx):
     """
-    Category for a stored transaction under the current rules. Rows stored before
-    the merchant category code was kept have no code: for card payments the old
-    (code-based) category is kept when the text rules find nothing better.
+    (category, refund_category) for a stored transaction under the current rules.
+    Rows stored before the merchant category code was kept have no code: for card
+    payments the old (code-based) category is kept when the text rules find nothing better.
     """
     old_category = tx.get('category')
     if tx.get('is_internal_transfer'):
-        return 'Internal Transfer'
-    new_category = categorize_transaction(
-        tx.get('description'),
-        tx.get('counterparty_name') or tx.get('counterparty'),
-        merchant_category_code=tx.get('merchant_category_code'),
-        amount=tx.get('amount'),
+        return 'Internal Transfer', None
+    counterparty = tx.get('counterparty_name') or tx.get('counterparty')
+    mcc = tx.get('merchant_category_code')
+    new_category = categorize_transaction(tx.get('description'), counterparty, merchant_category_code=mcc, amount=tx.get('amount'))
+    refund_category = (
+        refund_source_category(tx.get('description'), counterparty, merchant_category_code=mcc)
+        if new_category == 'Refund' else None
     )
     legacy_row = 'merchant_category_code' not in tx
     if (
         legacy_row
         and new_category == 'Overig'
         and _is_card_transaction(tx)
-        and old_category not in (None, '', 'Overig', 'Internal Transfer')
+        and old_category not in (None, '', 'Overig', 'Internal Transfer', 'Refund')
     ):
         if _safe_tx_amount(tx) > 0 and old_category not in _INCOMING_KEEP_CATEGORIES:
-            return 'Refund'
-        return old_category
-    return new_category
+            return 'Refund', old_category
+        return old_category, None
+    if legacy_row and new_category == 'Refund' and refund_category is None and old_category not in (
+        None, '', 'Overig', 'Internal Transfer', 'Refund'
+    ) and old_category not in _INCOMING_KEEP_CATEGORIES:
+        refund_category = old_category
+    return new_category, refund_category
 
 
 def migrate_stored_categories():
@@ -6268,10 +6287,14 @@ def migrate_stored_categories():
                 ).fetchall()
                 for row in rows:
                     tx = json.loads(row['payload_json'])
-                    category = recategorize_stored_transaction(tx)
-                    if category == tx.get('category') and category == row['category']:
+                    category, refund_category = recategorize_stored_transaction(tx)
+                    if (
+                        category == tx.get('category') and category == row['category']
+                        and refund_category == tx.get('refund_category')
+                    ):
                         continue
                     tx['category'] = category
+                    tx['refund_category'] = refund_category
                     connection.execute(
                         """
                         UPDATE bunq_transactions SET category = ?, payload_json = ?, content_hash = ?

@@ -78,7 +78,7 @@ Raw fallback only if SDK result lacks savings. Uses only official routes:
 
 ## Categorisation
 
-- `categorize_transaction` (backend): internal → MCC (`_MCC_CATEGORIES`) → text rules (`_TEXT_RULES`, first match wins; `words` whole-word only, `stems` may sit inside Dutch compounds). Incoming money in a spending category becomes `Refund`.
+- `categorize_transaction` (backend): internal → MCC (`_MCC_CATEGORIES`) → text rules (`_TEXT_RULES`, first match wins; `words` whole-word only, `stems` may sit inside Dutch compounds). Incoming money in a spending category becomes `Refund`, with `refund_category` = the purchase's category (budget buckets use it).
 - After changing rules, bump `CATEGORIZATION_VERSION`: stored rows are recategorised once at startup (`migrate_stored_categories`).
 - Frontend shows Dutch names via `CATEGORY_DISPLAY_NAMES`; frontend category sets use those Dutch names.
 

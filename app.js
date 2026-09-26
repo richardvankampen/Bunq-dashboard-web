@@ -1763,7 +1763,8 @@ function normalizeTransactions(data) {
             : (String(t.currency || 'EUR').toUpperCase() === 'EUR' ? Number(t.amount) || 0 : null),
         amount_conversion_missing: String(t.currency || 'EUR').toUpperCase() !== 'EUR'
             && !Number.isFinite(Number(t.amount_eur)),
-        category: resolveCategoryLabel(t)
+        category: resolveCategoryLabel(t),
+        refund_category: t.refund_category ? (CATEGORY_DISPLAY_NAMES[t.refund_category] || t.refund_category) : null
     }));
 }
 
@@ -2929,6 +2930,10 @@ function showTransactionDetail(detailType) {
                 label: 'Vrij besteedbaar totaal',
                 value: `${formatCurrency(summary.discretionaryTotal)} (${((summary.discretionaryTotal / total) * 100).toFixed(1)}%)`
             },
+            ...(summary.refunds > 0.004 ? [{
+                label: 'Terugbetalingen (al afgetrokken van de totalen)',
+                value: formatCurrency(summary.refunds)
+            }] : []),
             ...topDiscretionary.map(([category, amount]) => ({
                 label: `Vrij besteedbaar · ${category}`,
                 value: formatCurrency(amount)
@@ -3250,6 +3255,11 @@ function showTransactionDetail(detailType) {
         const avgDiscretionary = avgBase.reduce((sum, row) => sum + row.discretionaryPct, 0) / avgBase.length;
         const avgSavings = avgBase.reduce((sum, row) => sum + row.savingsPct, 0) / avgBase.length;
         const latest = latestCompleteBudgetMonth(monthly);
+        const baseDiscretionary = avgBase.reduce((sum, row) => sum + row.discretionary, 0);
+        const baseUncategorized = avgBase.reduce((sum, row) => sum + row.uncategorized, 0);
+        const uncategorizedNote = baseUncategorized > 0.004
+            ? ` Ongecategoriseerde uitgaven (Overig) tellen als vrij besteedbaar: ${formatCurrency(baseUncategorized / avgBase.length)} per maand (${((baseUncategorized / Math.max(baseDiscretionary, 0.01)) * 100).toFixed(0)}% van vrij besteedbaar).`
+            : '';
 
         const traces = [
             {
@@ -3302,9 +3312,11 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-scale-balanced"></i> Budgetdiscipline (50/30/20)',
-            summary: `Gemiddeld${completeMonths.length ? ' (volledige maanden)' : ''}: noodzakelijk ${avgEssentials.toFixed(1)}% (doel 50%), vrij besteedbaar ${avgDiscretionary.toFixed(1)}% (doel 30%), overgehouden ${avgSavings.toFixed(1)}% (doel 20%). ${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`} overgehouden: ${latest.savingsPct.toFixed(1)}%. Overgehouden = inkomen min uitgaven, ook wat op de betaalrekening blijft staan (de tegel Sparen telt alleen stortingen op spaarrekeningen). Terugbetalingen tellen als lagere uitgaven, niet als inkomen.`,
+            summary: `Gemiddeld${completeMonths.length ? ' (volledige maanden)' : ''}: noodzakelijk ${avgEssentials.toFixed(1)}% (doel 50%), vrij besteedbaar ${avgDiscretionary.toFixed(1)}% (doel 30%), overgehouden ${avgSavings.toFixed(1)}% (doel 20%). ${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`} overgehouden: ${latest.savingsPct.toFixed(1)}%. Overgehouden = inkomen min uitgaven, ook wat op de betaalrekening blijft staan (de tegel Sparen telt alleen stortingen op spaarrekeningen). Terugbetalingen verlagen de uitgaven van hun soort (noodzakelijk of vrij), overboekingen tussen eigen rekeningen tellen niet mee.${uncategorizedNote}`,
             rows: monthly.slice().reverse().map((row) => ({
-                label: `${row.monthLabel} · In ${formatCurrency(row.income)} · Noodzakelijk ${formatCurrency(row.essentials)} (${row.essentialsPct.toFixed(1)}%) · Vrij ${formatCurrency(row.discretionary)} (${row.discretionaryPct.toFixed(1)}%)`,
+                label: `${row.monthLabel} · In ${formatCurrency(row.income)} · Noodzakelijk ${formatCurrency(row.essentials)} (${row.essentialsPct.toFixed(1)}%) · Vrij ${formatCurrency(row.discretionary)} (${row.discretionaryPct.toFixed(1)}%)`
+                    + (row.uncategorized > 0.004 ? `, waarvan ongecategoriseerd ${formatCurrency(row.uncategorized)}` : '')
+                    + (row.refunds > 0.004 ? ` · na ${formatCurrency(row.refunds)} terugbetalingen` : ''),
                 value: `Netto ${formatCurrency(row.netSavings)} (${row.savingsPct.toFixed(1)}%)`
             })),
             chart: { trace: traces, layout }
@@ -3655,12 +3667,14 @@ function renderSankeyChart(data) {
     let totalIncome = 0;
     let totalEssentials = 0;
     let totalDiscretionary = 0;
-    let totalRefunds = 0;
+    let refundEssentials = 0;
+    let refundDiscretionary = 0;
 
-    data.forEach((transaction) => {
+    excludeOwnTransfersForBudget(data).forEach((transaction) => {
         const category = transaction.category || 'Overig';
         if (isRefundTransaction(transaction)) {
-            totalRefunds += Number(transaction.amount) || 0;
+            if (refundBudgetBucket(transaction) === 'essentials') refundEssentials += Number(transaction.amount) || 0;
+            else refundDiscretionary += Number(transaction.amount) || 0;
             return;
         }
         if ((transaction.amount || 0) >= 0) {
@@ -3680,15 +3694,18 @@ function renderSankeyChart(data) {
         totalDiscretionary += expense;
     });
 
-    // Refunds are money back on (mostly discretionary) purchases: they flow straight into
-    // `Vrij besteedbaar` instead of counting as income. Only a surplus beyond that is income.
-    const refundsToDiscretionary = Math.min(totalRefunds, totalDiscretionary);
-    const refundSurplus = totalRefunds - refundsToDiscretionary;
+    // Refunds are money back on purchases: they flow straight into the bucket of that purchase
+    // instead of counting as income. Only a surplus beyond all spending is income.
+    const netBuckets = applyBudgetRefunds(totalEssentials, totalDiscretionary, refundEssentials, refundDiscretionary);
+    const refundsToEssentials = totalEssentials - netBuckets.essentials;
+    const refundsToDiscretionary = totalDiscretionary - netBuckets.discretionary;
+    const refundsUsed = refundsToEssentials + refundsToDiscretionary;
+    const refundSurplus = refundEssentials + refundDiscretionary - refundsUsed;
     if (refundSurplus > 0.004) {
         incomeByCategory.Terugbetaling = (incomeByCategory.Terugbetaling || 0) + refundSurplus;
         totalIncome += refundSurplus;
     }
-    const totalExpenses = totalEssentials + totalDiscretionary - refundsToDiscretionary;
+    const totalExpenses = netBuckets.essentials + netBuckets.discretionary;
     if (totalIncome <= 0.01 && totalEssentials + totalDiscretionary <= 0.01) {
         Plotly.react(container, [], {
             paper_bgcolor: 'rgba(0,0,0,0)',
@@ -3746,29 +3763,32 @@ function renderSankeyChart(data) {
         linkSharePct.push(totalIncome > 0 ? (amount / totalIncome) * 100 : 0);
     });
 
-    if (totalEssentials > 0.01) {
+    if (netBuckets.essentials > 0.01) {
         source.push(cashInIndex);
         target.push(essentialsIndex);
-        value.push(totalEssentials);
+        value.push(netBuckets.essentials);
         colors.push('rgba(59,130,246,0.42)');
-        linkSharePct.push(totalIncome > 0 ? (totalEssentials / totalIncome) * 100 : 0);
+        linkSharePct.push(totalIncome > 0 ? (netBuckets.essentials / totalIncome) * 100 : 0);
     }
 
-    const discretionaryFromIncome = totalDiscretionary - refundsToDiscretionary;
-    if (discretionaryFromIncome > 0.01) {
+    if (netBuckets.discretionary > 0.01) {
         source.push(cashInIndex);
         target.push(discretionaryIndex);
-        value.push(discretionaryFromIncome);
+        value.push(netBuckets.discretionary);
         colors.push('rgba(245,158,11,0.42)');
-        linkSharePct.push(totalIncome > 0 ? (discretionaryFromIncome / totalIncome) * 100 : 0);
+        linkSharePct.push(totalIncome > 0 ? (netBuckets.discretionary / totalIncome) * 100 : 0);
     }
-    if (refundsToDiscretionary > 0.01) {
+    if (refundsUsed > 0.01) {
         labels.push(SANKEY_REFUNDS);
-        source.push(labels.length - 1);
-        target.push(discretionaryIndex);
-        value.push(refundsToDiscretionary);
-        colors.push('rgba(20,184,166,0.45)');
-        linkSharePct.push(100);
+        const refundsIndex = labels.length - 1;
+        [[essentialsIndex, refundsToEssentials], [discretionaryIndex, refundsToDiscretionary]].forEach(([targetIndex, amount]) => {
+            if (amount <= 0.01) return;
+            source.push(refundsIndex);
+            target.push(targetIndex);
+            value.push(amount);
+            colors.push('rgba(20,184,166,0.45)');
+            linkSharePct.push((amount / refundsUsed) * 100);
+        });
     }
 
     topEssential.forEach(([, amount], idx) => {
@@ -3809,7 +3829,7 @@ function renderSankeyChart(data) {
     setSankeySummary(
         container,
         `In ${formatCurrency(totalIncome)} · Uit ${formatCurrency(totalExpenses)}`
-            + (refundsToDiscretionary > 0.004 ? ` (na ${formatCurrency(refundsToDiscretionary)} terugbetalingen)` : '')
+            + (refundsUsed > 0.004 ? ` (na ${formatCurrency(refundsUsed)} terugbetalingen)` : '')
             + ` · Netto ${formatCurrency(net)}`
     );
 
@@ -4037,6 +4057,10 @@ function renderTimeTravelChart(data) {
     const discretionary = monthly.map((row) => row.discretionaryPct);
     const savings = monthly.map((row) => row.savingsPct);
     const minPct = Math.min(-20, ...savings.filter((value) => value !== null).map((value) => Number(value) || 0));
+    // Up to the highest value: a month with low income can spend well over 100% of it.
+    const maxPct = Math.max(100, ...[...essentials, ...discretionary, ...savings]
+        .filter((value) => value !== null)
+        .map((value) => Number(value) || 0));
     const latest = latestCompleteBudgetMonth(monthly);
     const noIncomeMonths = monthly.filter((row) => row.essentialsPct === null).map((row) => row.monthLabel);
     const statusText = `${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`}: `
@@ -4061,9 +4085,10 @@ function renderTimeTravelChart(data) {
             name: 'Vrij besteedbaar %',
             x: labels,
             y: discretionary,
+            customdata: monthly.map((row) => row.uncategorized),
             line: { color: '#f59e0b', width: 3 },
             marker: { size: 7 },
-            hovertemplate: '%{x}<br>Vrij besteedbaar: %{y:.1f}%<extra></extra>'
+            hovertemplate: '%{x}<br>Vrij besteedbaar: %{y:.1f}%<br>waarvan ongecategoriseerd (Overig): %{customdata:.2f} EUR<extra></extra>'
         },
         {
             type: 'scatter',
@@ -4113,7 +4138,7 @@ function renderTimeTravelChart(data) {
         yaxis: {
             title: '% van maandinkomen',
             gridcolor: 'rgba(255,255,255,0.08)',
-            range: [Math.floor(minPct / 10) * 10, 100]
+            range: [Math.floor(minPct / 10) * 10, Math.ceil(maxPct / 10) * 10]
         },
         legend: { orientation: 'h', y: -0.22 },
         annotations: [{
@@ -4480,26 +4505,110 @@ function getSelectedPeriodStart() {
  * - Months without income: left out by default; with includeNoIncomeMonths they are kept
  *   with null percentages (shown as gaps).
  */
+// Budget views (50/30/20, Noodzaak vs wens, Geldstromen) never count transfers between own
+// accounts: they are neither income nor spending, whatever the internal-transfer setting.
+function excludeOwnTransfersForBudget(transactions) {
+    const ownIdentity = getOwnBunqAccountIdentitySets();
+    return (transactions || []).filter((transaction) => !isInternalOwnTransfer(transaction, ownIdentity));
+}
+
+// Bucket a refund lowers: that of the purchase it belongs to (backend `refund_category`),
+// discretionary when unknown.
+function refundBudgetBucket(transaction) {
+    return transaction?.refund_category && isEssentialCategory(transaction.refund_category) ? 'essentials' : 'discretionary';
+}
+
+// Subtract refunds from their buckets; what a bucket can't absorb comes off the other one.
+function applyBudgetRefunds(essentials, discretionary, refundEssentials, refundDiscretionary) {
+    let e = essentials - refundEssentials;
+    let d = discretionary - refundDiscretionary;
+    if (e < 0) { d += e; e = 0; }
+    if (d < 0) { e = Math.max(0, e + d); d = 0; }
+    return { essentials: e, discretionary: d };
+}
+
+// Month a salary payment counts for. A salary that lands just across a month boundary (paid
+// on the 30th instead of the 1st because of a weekend) would give one month two salaries
+// and the next none: when a month has 2+ salary payments and the neighbouring month none,
+// the payment within 7 days of that boundary moves to the neighbouring month.
+function assignSalaryMonths(transactions) {
+    const override = new Map();
+    const salaries = (transactions || []).filter((transaction) => (
+        isValidTransactionDate(transaction) && transaction.amount > 0 && transaction.category === 'Salaris'
+    ));
+    if (!salaries.length) return override;
+    const monthsWithData = new Set((transactions || []).filter(isValidTransactionDate).map((transaction) => monthKeyOf(transaction.date)));
+    const currentKey = monthKeyOf(new Date());
+    const byMonth = new Map();
+    salaries.forEach((transaction) => {
+        const key = monthKeyOf(transaction.date);
+        if (!byMonth.has(key)) byMonth.set(key, []);
+        byMonth.get(key).push(transaction);
+    });
+    const shiftKey = (key, delta) => {
+        const [year, month] = key.split('-').map(Number);
+        return monthKeyOf(new Date(year, month - 1 + delta, 1));
+    };
+    Array.from(byMonth.keys()).sort().forEach((key) => {
+        const list = (byMonth.get(key) || []).sort((x, y) => x.date - y.date);
+        if (list.length < 2) return;
+        const next = shiftKey(key, 1);
+        const prev = shiftKey(key, -1);
+        const last = list[list.length - 1];
+        const daysInMonth = new Date(last.date.getFullYear(), last.date.getMonth() + 1, 0).getDate();
+        if (!(byMonth.get(next) || []).length && next <= currentKey && monthsWithData.has(next)
+            && daysInMonth - last.date.getDate() < 7) {
+            list.pop();
+            byMonth.set(next, [last]);
+            override.set(last, next);
+            return;
+        }
+        const first = list[0];
+        if (!(byMonth.get(prev) || []).length && monthsWithData.has(prev) && first.date.getDate() <= 7) {
+            list.shift();
+            byMonth.set(prev, [first]);
+            override.set(first, prev);
+        }
+    });
+    return override;
+}
+
+/**
+ * Monthly 50/30/20 figures (percentages of that month's income).
+ * - Transfers between own accounts are left out (excludeOwnTransfersForBudget).
+ * - Months that only partly fall inside the selected period are left out (a 90-day
+ *   window starts mid-month, so its first month would miss income or spending).
+ * - The running month is kept but flagged `isCurrent` (incomplete).
+ * - Refunds are not income: they lower the bucket of the purchase they belong to.
+ * - A salary just across a month boundary counts for the month it belongs to (assignSalaryMonths).
+ * - Months without income: left out by default; with includeNoIncomeMonths they are kept
+ *   with null percentages (shown as gaps).
+ */
 function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12, options = {}) {
     const { includeNoIncomeMonths = false, periodStart = getSelectedPeriodStart() } = options;
+    const budgetTransactions = excludeOwnTransfersForBudget(transactions);
+    const salaryMonths = assignSalaryMonths(budgetTransactions);
     const byMonth = new Map();
-    const refundsByMonth = new Map();
-    (transactions || []).forEach((transaction) => {
-        if (!(transaction.date instanceof Date) || Number.isNaN(transaction.date.getTime())) return;
-        const monthKey = `${transaction.date.getFullYear()}-${String(transaction.date.getMonth() + 1).padStart(2, '0')}`;
+    budgetTransactions.forEach((transaction) => {
+        if (!isValidTransactionDate(transaction)) return;
+        const monthKey = salaryMonths.get(transaction) || monthKeyOf(transaction.date);
         if (!byMonth.has(monthKey)) {
             byMonth.set(monthKey, {
                 monthKey,
                 income: 0,
                 essentials: 0,
-                discretionary: 0
+                discretionary: 0,
+                uncategorized: 0,
+                refundEssentials: 0,
+                refundDiscretionary: 0
             });
         }
         const bucket = byMonth.get(monthKey);
         const amount = Number(transaction.amount) || 0;
         if (amount >= 0) {
-            if (transaction.category === 'Terugbetaling') {
-                refundsByMonth.set(monthKey, (refundsByMonth.get(monthKey) || 0) + amount);
+            if (isRefundTransaction(transaction)) {
+                if (refundBudgetBucket(transaction) === 'essentials') bucket.refundEssentials += amount;
+                else bucket.refundDiscretionary += amount;
                 return;
             }
             bucket.income += amount;
@@ -4509,6 +4618,7 @@ function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12, options 
             bucket.essentials += Math.abs(amount);
         } else {
             bucket.discretionary += Math.abs(amount);
+            if ((transaction.category || 'Overig') === 'Overig') bucket.uncategorized += Math.abs(amount);
         }
     });
 
@@ -4522,8 +4632,8 @@ function summarizeMonthlyBudgetDiscipline(transactions, maxMonths = 12, options 
             return !(periodStart instanceof Date) || monthStart >= periodStart;
         })
         .map((row) => {
-            const refunds = refundsByMonth.get(row.monthKey) || 0;
-            return { ...row, discretionary: Math.max(0, row.discretionary - refunds), refunds };
+            const refunds = row.refundEssentials + row.refundDiscretionary;
+            return { ...row, ...applyBudgetRefunds(row.essentials, row.discretionary, row.refundEssentials, row.refundDiscretionary), refunds };
         })
         .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
         .filter((row) => includeNoIncomeMonths || row.income > 0.01)
@@ -4738,15 +4848,25 @@ function buildConcreteCostLevers(transactions, options = {}) {
         .sort((a, b) => b.expectedMonthly - a.expectedMonthly);
 }
 
+// Essential vs discretionary spending over the period; own transfers left out, refunds
+// lower the bucket of their purchase (totals; the per-category lists are gross).
 function summarizeNeedsVsWants(transactions) {
     const summary = {
         essentialTotal: 0,
         discretionaryTotal: 0,
+        refunds: 0,
         essentialByCategory: {},
         discretionaryByCategory: {}
     };
+    let refundEssentials = 0;
+    let refundDiscretionary = 0;
 
-    (transactions || []).forEach((transaction) => {
+    excludeOwnTransfersForBudget(transactions).forEach((transaction) => {
+        if (isRefundTransaction(transaction)) {
+            if (refundBudgetBucket(transaction) === 'essentials') refundEssentials += transaction.amount;
+            else refundDiscretionary += transaction.amount;
+            return;
+        }
         if ((transaction.amount || 0) >= 0) return;
         const amount = Math.abs(transaction.amount || 0);
         const category = transaction.category || 'Overig';
@@ -4759,6 +4879,10 @@ function summarizeNeedsVsWants(transactions) {
         summary.discretionaryByCategory[category] = (summary.discretionaryByCategory[category] || 0) + amount;
     });
 
+    const net = applyBudgetRefunds(summary.essentialTotal, summary.discretionaryTotal, refundEssentials, refundDiscretionary);
+    summary.essentialTotal = net.essentials;
+    summary.discretionaryTotal = net.discretionary;
+    summary.refunds = refundEssentials + refundDiscretionary;
     return summary;
 }
 
