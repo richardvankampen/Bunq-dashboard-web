@@ -4,6 +4,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — documentatie bijgewerkt, EN en NL gelijkgetrokken
+
+- Waarom: EN-versies van SECURITY/SYNOLOGY_INSTALL/TROUBLESHOOTING waren samenvattingen ("Dutch (full original)"), NL-versies deels Engels; troubleshooting had per taal andere secties; docs bevatten verouderde knopnamen ("Admin Maintenance (P1)", "Run maintenance now"), placeholder "[your-email]", niet-bestaand backuppad, compose-snippet met variabelen die compose niet doorgeeft, en een README-featurelijst met oude widgets ("3D time-space chart").
+- Wat: SECURITY, SYNOLOGY_INSTALL en TROUBLESHOOTING in beide talen herschreven met identieke opbouw (NL = vertaling van EN); troubleshooting samengevoegd (login, CORS, sessie, performance/truncatie, categorieën, spaarrekeningen + raw debug, handige commando's, diagnostiekpakket, hulp) en hernummerd 1–12; README EN/NL: actuele features en widgets, overzicht van alle taalparen; RELEASE_NOTES EN/NL: sectie Documentatie; installatiegids verwijst naar de meegeleverde `docker-compose.yml` i.p.v. een eigen kopie; `.env`-tabel splitst compose-variabelen en code-only variabelen.
+- Resultaat: alle vijf docparen hebben evenveel koppen en regels (behalve README/RELEASE_NOTES met ±1 regel); feiten gecontroleerd tegen `api_proxy.py`, `index.html` en `docker-compose.yml`.
+
 ### Opgeleverd — opgeslagen gegevens volgen de actuele logica
 
 - Controle: categorieën en `refund_category` worden al per regelversie herberekend; weergavelogica is live en hoeft niet in de database. Twee gaten gedicht:
