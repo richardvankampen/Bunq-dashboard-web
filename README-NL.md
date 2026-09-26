@@ -161,6 +161,23 @@ Wanneer `NO_CACHE=true` gebruiken:
 
 ---
 
+## 🏷️ Eigen categorieregels
+
+Transacties worden automatisch gecategoriseerd. Een afschrijving vanaf een eigen subrekening met een naam die zegt waarvoor die is (bv. "Alimentatie", "Boodschappen") krijgt die categorie als niets anders past. Voor de rest kun je eigen regels zetten in `config/category_rules.json` op de NAS (`/volume1/docker/bunq-dashboard/config/`, niet in git):
+
+```json
+{
+  "rules": [
+    {"category": "Alimentatie", "account": "Alimentatie"},
+    {"category": "Sport", "counterparty": "Tennisclub"},
+    {"category": "Wonen", "iban": "NL00BANK0123456789"},
+    {"category": "Zorg", "account": "Gezamenlijk", "description": "fysio"}
+  ]
+}
+```
+
+Alle velden in een regel moeten kloppen (tekst: hoofdletterongevoelig, komt voor in rekeningnaam / tegenrekening / omschrijving; IBAN: exact). Eigen regels gaan voor de ingebouwde. Na het aanpassen: `sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false`; opgeslagen transacties worden bij de start eenmalig opnieuw ingedeeld.
+
 ## 🧪 Tests (ontwikkeling)
 
 Backend unit- en routetests staan in `tests/` en draaien zonder Bunq, Vaultwarden of Docker (alle externe toegang wordt via omgevingsvariabelen in `tests/conftest.py` uitgeschakeld):

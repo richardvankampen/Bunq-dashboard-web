@@ -4,6 +4,13 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — inzichten opnieuw gecontroleerd + alimentatie + eigen categorieregels
+
+- 7 bevindingen opgelost: Duurste dag (was huur-/alimentatiedag) → alleen variabele uitgaven; Aandeel top-tegenrekening (was verhuurder) → zonder wonen/belastingen/alimentatie; Liquiditeitsrunway: burn over alle rekeningen zoals het saldo, Nederlandse notatie; Verwacht netto en runway-fallback zonder eigen overboekingen; Grootste categorie + grootste variabele; "zekerheid x%" met uitleg; "Last updated" → "Laatst bijgewerkt".
+- Gebruiker: alimentatie gaat vanaf eigen subrekening "Alimentatie" naar een persoon, zonder trefwoord. Nieuwe categorie `Alimentatie` (trefwoorden + hint uit eigen rekeningnaam, noodzakelijk/vast/niet-stuurbaar) en eigen regels in `config/category_rules.json` (niet in git; geen namen in code). `CATEGORIZATION_VERSION` 5 (+ hash eigen regels).
+- Gevonden bij de browsercheck: `isInternalOwnTransfer` zag categorie = eigen rekeningnaam als interne overboeking, waardoor de alimentatie vanaf "Alimentatie" uit alle cijfers verdween → check verwijderd.
+- Verificatie: pytest 305 groen; headless Chromium: alimentatie €800/mnd vanaf subrekening telt als noodzakelijk (N 108% bij €2.000 inkomen), Duurste dag = boodschappendag, top-tegenrekening Albert Heijn (71,4% van stuurbare uitgaven), runway 1.479 dagen ook met alleen de betaalrekening geselecteerd (was ∞), geen JS-fouten.
+
 ### Opgeleverd — trendlogica gecontroleerd en gecorrigeerd
 
 - 6 bevindingen, allemaal opgelost:

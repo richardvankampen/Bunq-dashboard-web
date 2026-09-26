@@ -22,6 +22,12 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Inzichten en categorieën
+- Nieuwe categorie `Alimentatie` (noodzakelijk, vaste last, geen bezuinigingsadvies). Een afschrijving vanaf een eigen subrekening met een naam die zegt waarvoor die is (bv. "Alimentatie") krijgt die categorie; eigen regels kun je zetten in `config/category_rules.json` (zie README).
+- Opgelost: betalingen waarvan de categorie gelijk was aan de naam van een eigen rekening (bv. alimentatie vanaf subrekening "Alimentatie") werden als interne overboeking gezien en vielen uit alle cijfers.
+- `Duurste dag` kijkt alleen naar variabele uitgaven; `Aandeel top-tegenrekening` laat wonen, belastingen en alimentatie weg; `Grootste categorie` toont ook de grootste variabele categorie.
+- `Liquiditeitsrunway` gebruikt de uitgaven van alle rekeningen, net als het saldo; de maandprognose negeert eigen overboekingen; de volgende beste actie toont de zekerheid; "Laatst bijgewerkt" in het Nederlands.
+
 ### Trends
 - Tegeltrends voor `Inkomsten` en `Uitgaven` gebruiken dezelfde maandcijfers als de inzichten (inclusief salarismaand-correctie) en vergelijken de laatste volledige maand met maximaal drie maanden daarvoor.
 - Pijlen volgen de richting van de verandering (geen vaste pijl omhoog/omlaag meer); de kleur toont of dat gunstig is.
