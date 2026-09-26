@@ -22,6 +22,10 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Stored data
+- The "internal transfer" flag of stored transactions is re-checked on every load with your current own accounts and IBANs (and matching opposite bookings between own accounts), and corrected in the database, so backend figures such as data quality agree with the dashboard.
+- The fallback balance history from snapshots uses each account's current type.
+
 ### Categories chart
 - `Verdeling in categorieën` groups shop branches like `Top tegenrekeningen`, and a refund comes off the shop it came from instead of all shops in the category.
 - Hover texts show meaningful shares (spending as % of income, category as % of spending, counterparty as % of the category); clearer labels ("Kleinere categorieën", "Overige tegenrekeningen", "Totaal").

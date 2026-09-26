@@ -719,3 +719,66 @@ def test_data_quality_freshness_follows_the_last_sync(ap, store):
     summary = ap.build_data_quality_summary(days=3650)
     assert summary['metrics']['capture_freshness_hours'] < 1
     assert not any('synchronisatie' in warning for warning in summary['warnings'])
+
+
+# --- stored internal-transfer flags follow the current rules -------------------
+
+ACCOUNT_2 = {'id': 2, 'description': 'Spaarrekening'}
+
+
+def _stored_flag(ap, pid, account_id=1):
+    connection = ap.get_data_db_connection()
+    try:
+        return connection.execute(
+            "SELECT is_internal_transfer, category FROM bunq_transactions WHERE bunq_id = ? AND account_id = ?",
+            (str(pid), str(account_id)),
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def test_load_refreshes_internal_flag_by_current_own_iban(ap, store):
+    store.add(10, 5, amount=-500.0, description='Naar nieuwe pot')
+    store.items[('1', 'payment')][10]['counterparty_alias'] = {'display_name': 'Pot', 'iban': 'NL00BUNQ0000000009'}
+    _sync(ap, days=30)                                   # stored while the IBAN was not known as own
+    assert tuple(_stored_flag(ap, 10)) == (0, 'Overig')
+
+    transactions, _, _ = ap.load_transactions([ACCOUNT], {'1', '9'}, {'NL00BUNQ0000000009'}, NOW - timedelta(days=30))
+    assert transactions[0]['is_internal_transfer'] is True
+    assert tuple(_stored_flag(ap, 10)) == (1, 'Internal Transfer')   # written back
+
+
+def test_load_persists_cross_account_pair_match(ap, store):
+    store.add(20, 5, amount=-75.0, account_id=1)
+    store.add(20, 5, amount=75.0, account_id=2)          # same payment, other own account, no counterparty ids
+    ap.load_transactions([ACCOUNT, ACCOUNT_2], {'1', '2'}, set(), NOW - timedelta(days=30))
+    assert _stored_flag(ap, 20, 1)['is_internal_transfer'] == 1
+    assert _stored_flag(ap, 20, 2)['is_internal_transfer'] == 1
+
+    # A later single-account refetch can't see the pair, but must not undo the flag.
+    _reconcile(ap)
+    assert tuple(_stored_flag(ap, 20, 1)) == (1, 'Internal Transfer')
+
+
+def test_snapshot_history_uses_current_account_type(ap, store, auth_client, monkeypatch):
+    monkeypatch.setattr(ap, '_BUNQ_CONTEXT_INITIALIZED', False)     # forces the snapshot fallback
+    today = datetime.now(timezone.utc).date()
+    connection = ap.get_data_db_connection()
+    try:
+        with connection:
+            for days_ago, account_type in [(2, 'investment'), (1, 'checking')]:   # old wrong type, then fixed
+                connection.execute(
+                    """
+                    INSERT INTO account_snapshots (snapshot_date, account_id, description, account_type,
+                        account_class, status, balance_value, balance_currency, balance_eur_value,
+                        fx_rate_to_eur, captured_at)
+                    VALUES (?, '5', 'Shared household', ?, 'MonetaryAccountBank', 'ACTIVE', 100, 'EUR', 100, 1, ?)
+                    """,
+                    ((today - timedelta(days=days_ago)).isoformat(), account_type, NOW.isoformat()),
+                )
+    finally:
+        connection.close()
+    data = auth_client.get('/api/history/balances?days=7').get_json()['data']
+    assert data['source'] == 'snapshots'
+    assert [point['total'] for point in data['series']['checking']] == [100.0, 100.0]
+    assert all(point['total'] == 0.0 for point in data['series']['investment'])

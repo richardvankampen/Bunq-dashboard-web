@@ -22,6 +22,10 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Opgeslagen gegevens
+- De vlag "interne overboeking" van opgeslagen transacties wordt bij elke keer laden opnieuw gecontroleerd met je huidige eigen rekeningen en IBAN's (en tegengestelde boekingen tussen eigen rekeningen) en in de database gecorrigeerd, zodat backend-cijfers zoals datakwaliteit overeenkomen met het dashboard.
+- De reserve-saldohistorie uit snapshots gebruikt per rekening het huidige type.
+
 ### Categorieëngrafiek
 - `Verdeling in categorieën` groepeert filialen net als `Top tegenrekeningen`, en een terugbetaling gaat af van de winkel waar hij vandaan komt in plaats van van alle winkels in de categorie.
 - Hover-teksten tonen zinvolle aandelen (uitgaven als % van de inkomsten, categorie als % van de uitgaven, tegenrekening als % van de categorie); duidelijkere labels ("Kleinere categorieën", "Overige tegenrekeningen", "Totaal").
