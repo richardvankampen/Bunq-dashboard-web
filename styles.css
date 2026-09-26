@@ -1546,6 +1546,62 @@ body.js-insight-tooltips .insight-card[data-tooltip]::after {
     color: var(--text-secondary);
 }
 
+.admin-situation {
+    border-top: 1px solid var(--glass-border);
+    padding: 0.35rem 0;
+}
+
+.admin-situation summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.35;
+}
+
+.admin-situation[open] summary {
+    color: var(--accent-primary);
+}
+
+.admin-situation ol {
+    margin: 0.4rem 0 0.4rem 0;
+    padding-left: 1.2rem;
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--text-secondary);
+}
+
+.admin-situation code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.74rem;
+}
+
+.admin-situation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    padding-bottom: 0.2rem;
+}
+
+.admin-tools-options .setting-help,
+.admin-tools-inline .setting-help {
+    grid-column: 1 / -1;
+    margin: 0;
+}
+
+.admin-terminal-label {
+    align-self: center;
+    margin: 0;
+}
+
+.admin-terminal-note {
+    margin: 0.2rem 0 0 0;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
 .admin-tool-btn {
     border: 1px solid var(--glass-border);
     background: rgba(148, 163, 184, 0.12);
@@ -1639,7 +1695,7 @@ body.js-insight-tooltips .insight-card[data-tooltip]::after {
     border-radius: var(--radius-sm);
     background: rgba(15, 23, 42, 0.3);
     padding: var(--spacing-sm);
-    max-height: 220px;
+    max-height: 320px;
     overflow-y: auto;
     display: grid;
     gap: 0.35rem;

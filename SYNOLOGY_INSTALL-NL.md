@@ -541,25 +541,36 @@ sudo docker logs vaultwarden
 
 ### Beheeronderhoud via het dashboard
 
-In **Instellingen → Beheeronderhoud** (ingelogd) kun je:
-- `Status controleren`: runtimestatus van Vaultwarden, contextbestand, cookie-/CORS-instellingen
-- `Egress-IP controleren`: het huidige publieke uitgaande IP van de container
-- `Bunq API-whitelist-IP instellen`: veilige flow in 2 stappen (1. doel-IP activeren, 2. na succes andere ACTIVE IP's deactiveren)
-- `Alleen context opnieuw opbouwen (gevorderd)`: de Bunq-context opnieuw opbouwen zonder whitelistwijziging
-- `Volledig onderhoud uitvoeren (aanbevolen)`: voert de gekozen onderhoudsopties in één keer uit
-- `Install/update-commando's tonen`: kant-en-klare terminalstappen voor het install/update-script op de host
-- `Herstart/validatie-commando's tonen`: kant-en-klare terminalstappen voor herstart/startvalidatie
+In **Instellingen → Beheeronderhoud** (ingelogd):
+
+**Welk probleem heb je?** — een gids per situatie, elk met de stappen en knoppen die ze uitvoeren:
+- Het dashboard toont geen Bunq-gegevens of meldt `Incorrect API key or IP address`
+- Je publieke IP-adres is veranderd
+- Je hebt een nieuwe Bunq API key gemaakt
+- Vaultwarden geeft een fout (token mislukt, item niet gevonden)
+- Transacties ontbreken, zijn gewijzigd of in Bunq verwijderd
+- Cijfers lijken verouderd of kloppen niet na een storing
+- Er is een nieuwe versie van het dashboard
+- Het dashboard is traag, hangt of herstart steeds
+
+**Knoppen** (het paneel legt ze ook uit):
+- `Status controleren` (alleen lezen): Bunq-verbinding, laatste Bunq-fout, Vaultwarden, transactieopslag, laatste controle met Bunq, en een **advies** dat naar de passende situatie verwijst
+- `Egress-IP controleren` (alleen lezen): het huidige publieke uitgaande IP van de container (dit IP moet op de Bunq-whitelist staan)
+- `Bunq API-whitelist-IP instellen`: veilige flow in 2 stappen (1. doel-IP activeren, 2. na bevestiging andere ACTIVE IP's deactiveren)
+- `Alleen context opnieuw opbouwen (gevorderd)`: de API key opnieuw ophalen en de Bunq-context opnieuw opbouwen, zonder whitelistwijziging
+- `Volledig onderhoud uitvoeren (aanbevolen)`: cache wissen, Bunq-context opnieuw opbouwen en het whitelist-IP bijwerken, volgens de opties
+- `Controle met Bunq uitvoeren`: alle transacties opnieuw ophalen en de opslag bijwerken (zoals de maandelijkse controle, loopt op de achtergrond)
+
+**Terminal**-knoppen tonen kant-en-klare commando's voor de NAS, elk met wat het doet: `Nieuwe versie installeren` (snelle redeploy of volledige install/update), `Herstarten en controleren`, `Bunq-whitelist via terminal` (`register_bunq_ip.sh`), `Nieuwe API key via terminal`, `Logs bekijken`.
 
 Standaardopties voor `Volledig onderhoud uitvoeren`:
 - whitelistupdate: altijd onderdeel van de flow
-- `Whitelist-IP (egress) automatisch bepalen`: uit (vul handmatig een IP in, of vink aan)
-- API key vernieuwen uit Vaultwarden/direct secret: uit (alleen na key-rotatie)
+- `Whitelist-IP (egress) automatisch bepalen`: uit (vul handmatig een IP in, of vink aan; de gidsknop "Volledig onderhoud met automatisch IP" vinkt het aan)
+- API key vernieuwen uit Vaultwarden/direct secret: uit (alleen na key-rotatie; alleen het proces dat het verzoek afhandelt krijgt de nieuwe key, herstart daarna dus de service)
 - `Bunq-context opnieuw opbouwen`: aan
 - `Runtimecache wissen`: aan
 - status herladen na uitvoering: aan
 - Een handmatig IP moet een publiek IPv4-adres zijn (privé/lokale ranges worden geweigerd)
-
-Gebruik `Volledig onderhoud uitvoeren` (of `Alleen context opnieuw opbouwen`) na een API key-rotatie, een whitelistwijziging of fouten zoals `Incorrect API key or IP address`.
 
 ### Bunq API key roteren
 

@@ -7,6 +7,13 @@
 
 ## 2026-09-26
 
+### Beheeronderhoud
+- Nieuwe gids **Welk probleem heb je?** in Instellingen → Beheeronderhoud: acht situaties (geen Bunq-gegevens / IP- of keyfout, IP-wissel, nieuwe API key, Vaultwarden-fout, ontbrekende of verwijderde transacties, verouderde cijfers, nieuwe versie, traag of herstartend), elk met genummerde stappen en knoppen die de juiste actie uitvoeren (bv. "Volledig onderhoud met automatisch IP") of de juiste terminalcommando's tonen.
+- Elke knop zegt wat hij doet en of hij iets wijzigt; elke optie zegt wat ze doet en welke knoppen haar gebruiken.
+- `Status controleren` toont ook de laatste Bunq-fout, de transactieopslag, de laatste controle met Bunq en een regel **Advies** die naar de passende situatie verwijst.
+- Nieuwe knop `Controle met Bunq uitvoeren` (zelfde als de maandelijkse controle).
+- Terminalcommando's hebben nu uitleg per regel, gebruiken `sudo` zoals de docs, en dekken vijf situaties: nieuwe versie installeren, herstarten en controleren, Bunq-whitelist, nieuwe API key, logs bekijken.
+
 ### Instellingen
 - De rekeningselectie wordt toegepast bij Opslaan (sluiten zonder opslaan laat hem ongewijzigd) en haalt geen nieuwe gegevens meer op: alle rekeningen worden altijd geladen en de selectie wordt in de browser toegepast. Dat lost ook op dat huishoudcijfers (runway, sparen via overboekingen) alleen de geselecteerde rekeningen zagen.
 - "Alle rekeningen" wordt als alle opgeslagen, zodat later geopende rekeningen vanzelf meetellen; rekeningen die niet meer bestaan verdwijnen uit de selectie.

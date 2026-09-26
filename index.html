@@ -659,84 +659,212 @@
                     </div>
                 </div>
                 <div class="setting-group admin-tools-group">
-                    <label>Admin Maintenance</label>
-                    <p class="setting-help">
-                        Runtime maintenance for Bunq/Vaultwarden (no code deploy from the web UI).
+                    <label>Beheeronderhoud</label>
+                    <p class="setting-help" data-i18n-html>
+                        Herstel hier de verbinding met Bunq en Vaultwarden zonder opnieuw te deployen. Nieuwe versies installeren en de service herstarten doe je op de NAS in de terminal; de knoppen onder <strong>Terminal</strong> tonen de commando's.
                     </p>
-                    <p class="setting-help">
-                        For code updates (git pull + build + deploy), use <strong>Show install/update commands</strong> and run those on your NAS shell.
-                    </p>
+
                     <div class="admin-guidance-card">
-                        <div class="admin-guidance-title">When to use what</div>
+                        <div class="admin-guidance-title">Welk probleem heb je?</div>
+                        <p class="setting-help" data-i18n-html>Klik op je situatie voor de stappen. Begin bij twijfel met <strong>Status controleren</strong>: de status geeft ook een advies.</p>
+
+                        <details class="admin-situation">
+                            <summary>Het dashboard toont geen Bunq-gegevens of meldt "Incorrect API key or IP address"</summary>
+                            <ol>
+                                <li data-i18n-html>Klik op <strong>Status controleren</strong>. Staat <em>API-status</em> op <em>Niet geïnitialiseerd</em>, lees dan <em>Laatste Bunq-fout</em> en <em>Advies</em>.</li>
+                                <li data-i18n-html>Noemt de fout het IP-adres of de API key: klik op <strong>Egress-IP controleren</strong> om te zien met welk publiek IP het dashboard Bunq benadert.</li>
+                                <li data-i18n-html>Voer <strong>Volledig onderhoud uitvoeren</strong> uit met <em>Whitelist-IP (egress) automatisch bepalen</em> aan. Dat zet dit IP op de Bunq-whitelist en bouwt de verbinding opnieuw op.</li>
+                                <li data-i18n-html>Werkt het daarna nog niet: gebruik <strong>Bunq-whitelist via terminal</strong>; dat script herstart ook de service.</li>
+                            </ol>
+                            <div class="admin-situation-actions">
+                                <button type="button" class="admin-tool-btn" data-admin-action="status"><i class="fas fa-heartbeat"></i> Status controleren</button>
+                                <button type="button" class="admin-tool-btn" data-admin-action="egress"><i class="fas fa-globe"></i> Egress-IP controleren</button>
+                                <button type="button" class="admin-tool-btn admin-tool-btn-primary" data-admin-action="maintenance-auto-ip"><i class="fas fa-play"></i> Volledig onderhoud met automatisch IP</button>
+                                <button type="button" class="admin-tool-btn" data-admin-action="terminal:ipChange"><i class="fas fa-terminal"></i> Bunq-whitelist via terminal</button>
+                            </div>
+                        </details>
+
+                        <details class="admin-situation">
+                            <summary>Je publieke IP-adres is veranderd (nieuwe provider, router of VPN)</summary>
+                            <ol>
+                                <li>Bunq accepteert de API key alleen vanaf IP-adressen op de whitelist. Na een IP-wissel faalt de verbinding tot het nieuwe IP erop staat.</li>
+                                <li data-i18n-html>Voer <strong>Volledig onderhoud uitvoeren</strong> uit met <em>Whitelist-IP (egress) automatisch bepalen</em> aan.</li>
+                                <li data-i18n-html>Staat het oude IP er nog en gebruik je het niet meer, zet dan <em>Zet andere ACTIVE whitelist IPs op INACTIVE</em> aan, of gebruik <strong>Bunq API-whitelist-IP instellen</strong> (vraagt per stap om bevestiging).</li>
+                            </ol>
+                            <div class="admin-situation-actions">
+                                <button type="button" class="admin-tool-btn admin-tool-btn-primary" data-admin-action="maintenance-auto-ip"><i class="fas fa-play"></i> Volledig onderhoud met automatisch IP</button>
+                                <button type="button" class="admin-tool-btn" data-admin-action="whitelist"><i class="fas fa-network-wired"></i> Bunq API-whitelist-IP instellen</button>
+                            </div>
+                        </details>
+
+                        <details class="admin-situation">
+                            <summary>Je hebt een nieuwe Bunq API key gemaakt</summary>
+                            <ol>
+                                <li data-i18n-html>Zet de nieuwe key in het Vaultwarden-item (of, zonder Vaultwarden, in het Docker secret <code>bunq_api_key</code>).</li>
+                                <li data-i18n-html>Voer de commando's van <strong>Nieuwe API key via terminal</strong> uit. Het script haalt de nieuwe key op, zet het IP op de whitelist en herstart de service, zodat alle processen van het dashboard de nieuwe key gebruiken.</li>
+                                <li data-i18n-html>Geen toegang tot de terminal? Gebruik <strong>Volledig onderhoud uitvoeren</strong> met <em>API key vernieuwen</em> aan. Dat vernieuwt de key alleen in het proces dat het verzoek afhandelt; herstart de service later alsnog.</li>
+                            </ol>
+                            <div class="admin-situation-actions">
+                                <button type="button" class="admin-tool-btn admin-tool-btn-primary" data-admin-action="terminal:keyRotation"><i class="fas fa-terminal"></i> Nieuwe API key via terminal</button>
+                                <button type="button" class="admin-tool-btn" data-admin-action="maintenance-refresh-key"><i class="fas fa-play"></i> Volledig onderhoud met nieuwe API key</button>
+                            </div>
+                        </details>
+
+                        <details class="admin-situation">
+                            <summary>Vaultwarden geeft een fout (token mislukt, item niet gevonden)</summary>
+                            <ol>
+                                <li data-i18n-html>Klik op <strong>Status controleren</strong> en kijk naar de Vault-regels.</li>
+                                <li data-i18n-html><em>Vault-token: Mislukt</em>: de client_id/client_secret-secrets kloppen niet of Vaultwarden is niet bereikbaar via HTTPS.</li>
+                                <li data-i18n-html><em>Vault-item: Niet gevonden</em>: de naam in <code>VAULTWARDEN_ITEM_NAME</code> (.env) moet precies gelijk zijn aan de naam van het item (hoofdlettergevoelig).</li>
+                                <li data-i18n-html>Na het aanpassen van .env of secrets is een volledige deploy nodig: zie <strong>Nieuwe versie installeren</strong> (de regel met install_or_update_synology.sh). Bekijk de details in de logs.</li>
+                            </ol>
+                            <div class="admin-situation-actions">
+                                <button type="button" class="admin-tool-btn" data-admin-action="status"><i class="fas fa-heartbeat"></i> Status controleren</button>
+                                <button type="button" class="admin-tool-btn" data-admin-action="terminal:logs"><i class="fas fa-terminal"></i> Logs bekijken</button>
+                            </div>
+                        </details>
+
+                        <details class="admin-situation">
+                            <summary>Transacties ontbreken, zijn gewijzigd of in Bunq verwijderd</summary>
+                            <ol>
+                                <li data-i18n-html>Nieuwe transacties komen binnen bij het vernieuwen; wacht een minuut en klik op <strong>Vernieuwen</strong>.</li>
+                                <li data-i18n-html>Klopt het daarna nog niet, voer dan <strong>Controle met Bunq uitvoeren</strong> uit. Dat haalt alle transacties opnieuw op en werkt de opslag bij (toevoegen, bijwerken, verwijderde verbergen). Dit gebeurt ook elke maand automatisch.</li>
+                                <li data-i18n-html>Het resultaat zie je daarna bij <em>Laatste controle met Bunq</em> in de status.</li>
+                            </ol>
+                            <div class="admin-situation-actions">
+                                <button type="button" class="admin-tool-btn admin-tool-btn-primary" data-admin-action="reconcile"><i class="fas fa-rotate"></i> Controle met Bunq uitvoeren</button>
+                            </div>
+                        </details>
+
+                        <details class="admin-situation">
+                            <summary>Cijfers lijken verouderd of kloppen niet na een storing</summary>
+                            <ol>
+                                <li data-i18n-html>Klik op <strong>Vernieuwen</strong> in de header.</li>
+                                <li data-i18n-html>Helpt dat niet, voer dan <strong>Volledig onderhoud uitvoeren</strong> uit met <em>Runtimecache wissen</em> aan: dat gooit tijdelijk bewaarde antwoorden en wisselkoersen weg.</li>
+                                <li>Ontbreken er transacties, zie dan de situatie hierboven.</li>
+                            </ol>
+                            <div class="admin-situation-actions">
+                                <button type="button" class="admin-tool-btn" data-admin-action="maintenance"><i class="fas fa-play"></i> Volledig onderhoud uitvoeren</button>
+                            </div>
+                        </details>
+
+                        <details class="admin-situation">
+                            <summary>Er is een nieuwe versie van het dashboard</summary>
+                            <ol>
+                                <li>Code-updates installeer je op de NAS, niet vanuit het dashboard.</li>
+                                <li>Alleen code gewijzigd: gebruik de snelle redeploy. Heb je .env, docker-compose.yml, secrets of het netwerk aangepast: gebruik de volledige install/update.</li>
+                                <li>Herlaad daarna de pagina geforceerd (Ctrl+F5 / Cmd+Shift+R).</li>
+                            </ol>
+                            <div class="admin-situation-actions">
+                                <button type="button" class="admin-tool-btn admin-tool-btn-primary" data-admin-action="terminal:installUpdate"><i class="fas fa-terminal"></i> Nieuwe versie installeren</button>
+                            </div>
+                        </details>
+
+                        <details class="admin-situation">
+                            <summary>Het dashboard is traag, hangt of herstart steeds</summary>
+                            <ol>
+                                <li>Bekijk de logs op fouten (Vaultwarden, API key, whitelist).</li>
+                                <li data-i18n-html>Herstart de service met <strong>Herstarten en controleren</strong>: het script wacht tot de start gelukt is en meldt wat er misgaat.</li>
+                                <li>Zie ook TROUBLESHOOTING (secties 1 en 5).</li>
+                            </ol>
+                            <div class="admin-situation-actions">
+                                <button type="button" class="admin-tool-btn" data-admin-action="terminal:logs"><i class="fas fa-terminal"></i> Logs bekijken</button>
+                                <button type="button" class="admin-tool-btn admin-tool-btn-primary" data-admin-action="terminal:restartValidate"><i class="fas fa-terminal"></i> Herstarten en controleren</button>
+                            </div>
+                        </details>
+                    </div>
+
+                    <div class="admin-guidance-card">
+                        <div class="admin-guidance-title">Wat doet elke knop?</div>
                         <ul class="admin-guidance-list">
-                            <li><strong>Run full maintenance (recommended):</strong> refresh runtime state, (optionally) refresh API key, recreate Bunq context, and update whitelist IP.</li>
-                            <li><strong>Reinit context only (advanced):</strong> recreate Bunq context without whitelist changes.</li>
-                            <li><strong>Set Bunq API whitelist IP:</strong> safe 2-step whitelist update only.</li>
-                            <li><strong>Show install/update commands:</strong> host-level deploy for new code versions.</li>
+                            <li data-i18n-html><strong>Status controleren</strong> (alleen lezen): toont de toestand van de Bunq-verbinding, Vaultwarden, de transactieopslag en de laatste controle met Bunq, met een advies.</li>
+                            <li data-i18n-html><strong>Egress-IP controleren</strong> (alleen lezen): toont het publieke IP waarmee het dashboard Bunq benadert. Dit IP moet op de Bunq-whitelist staan.</li>
+                            <li data-i18n-html><strong>Bunq API-whitelist-IP instellen</strong> (wijzigt de whitelist bij Bunq): zet één IP op de whitelist in 2 stappen, elk met bevestiging: eerst het IP toevoegen of activeren, daarna desgewenst de andere IP's deactiveren. Gebruikt het IP-veld; leeg = het huidige egress-IP.</li>
+                            <li data-i18n-html><strong>Alleen context opnieuw opbouwen</strong> (gevorderd): haalt de API key opnieuw op en registreert het dashboard opnieuw bij Bunq (installation + device). Wijzigt de whitelist niet en negeert de opties hieronder.</li>
+                            <li data-i18n-html><strong>Volledig onderhoud uitvoeren</strong> (aanbevolen herstel): wist desgewenst de cache, bouwt de Bunq-verbinding opnieuw op en zet het IP op de whitelist, volgens de opties hieronder. Vraagt eerst om bevestiging.</li>
+                            <li data-i18n-html><strong>Controle met Bunq uitvoeren</strong>: haalt alle transacties opnieuw op en werkt de opslag bij, zoals de maandelijkse controle. Loopt op de achtergrond (enkele minuten).</li>
+                            <li data-i18n-html><strong>Terminal</strong>-knoppen: tonen kant-en-klare commando's met uitleg voor de NAS (installeren, herstarten, whitelist, nieuwe API key, logs).</li>
                         </ul>
                     </div>
+
                     <div class="admin-tools-actions">
                         <button type="button" class="admin-tool-btn" id="adminLoadStatus">
-                            <i class="fas fa-heartbeat"></i> Check status
+                            <i class="fas fa-heartbeat"></i> Status controleren
                         </button>
                         <button type="button" class="admin-tool-btn" id="adminCheckEgressIp">
-                            <i class="fas fa-globe"></i> Check egress IP
+                            <i class="fas fa-globe"></i> Egress-IP controleren
                         </button>
                         <button type="button" class="admin-tool-btn" id="adminSetWhitelistIp">
-                            <i class="fas fa-network-wired"></i> Set Bunq API whitelist IP
+                            <i class="fas fa-network-wired"></i> Bunq API-whitelist-IP instellen
                         </button>
                         <button type="button" class="admin-tool-btn admin-tool-btn-warn" id="adminReinitBunq">
-                            <i class="fas fa-sync-alt"></i> Reinit context only (advanced)
+                            <i class="fas fa-sync-alt"></i> Alleen context opnieuw opbouwen (gevorderd)
                         </button>
                         <button type="button" class="admin-tool-btn admin-tool-btn-primary" id="adminRunMaintenance">
-                            <i class="fas fa-play"></i> Run full maintenance (recommended)
+                            <i class="fas fa-play"></i> Volledig onderhoud uitvoeren (aanbevolen)
                         </button>
-                        <button type="button" class="admin-tool-btn" id="adminShowInstallUpdateCmd">
-                            <i class="fas fa-terminal"></i> Show install/update commands
-                        </button>
-                        <button type="button" class="admin-tool-btn" id="adminShowRestartCmd">
-                            <i class="fas fa-terminal"></i> Show restart/validate commands
+                        <button type="button" class="admin-tool-btn" id="adminRunReconcile">
+                            <i class="fas fa-rotate"></i> Controle met Bunq uitvoeren
                         </button>
                     </div>
-                    <p class="setting-help admin-options-scope">
-                        <strong>Scope:</strong> The IP field and checkboxes below are used by <strong>Run full maintenance</strong>.
-                        The whitelist button uses IP + deactivate option only. The reinit-only button ignores these options.
-                    </p>
+
                     <div class="admin-tools-inline">
-                        <label for="adminWhitelistIp">Target IP for Bunq API whitelist (public IPv4)</label>
-                        <input type="text" id="adminWhitelistIp" inputmode="numeric" placeholder="Public IPv4 (bijv. 8.8.8.8)">
+                        <p class="setting-help admin-options-heading" data-i18n-html><strong>Whitelist-opties</strong> (voor <strong>Volledig onderhoud uitvoeren</strong> en <strong>Bunq API-whitelist-IP instellen</strong>)</p>
+                        <label for="adminWhitelistIp">Doel-IP voor de Bunq API-whitelist (publiek IPv4)</label>
+                        <input type="text" id="adminWhitelistIp" inputmode="numeric" placeholder="Publiek IPv4 (bijv. 8.8.8.8)">
                         <label>
                             <input type="checkbox" id="adminOptionAutoTargetIp">
-                            Try to determine whitelist IP (egress) automatically
+                            Whitelist-IP (egress) automatisch bepalen
                         </label>
+                        <p class="setting-help">Aan: het dashboard gebruikt het publieke IP waarmee het nu Bunq benadert (meestal wat je wilt). Uit: vul zelf een publiek IP in, bijvoorbeeld als het dashboard via een VPN naar buiten gaat.</p>
                         <label>
                             <input type="checkbox" id="adminDeactivateOtherIps">
                             Zet andere ACTIVE whitelist IPs op INACTIVE
                         </label>
+                        <p class="setting-help">Aan: alleen het doel-IP blijft actief, oude IP's verliezen toegang. Laat uit als nog een ander systeem met dezelfde API key werkt.</p>
                     </div>
                     <div class="admin-tools-options">
-                        <p class="setting-help admin-options-heading">
-                            Options for <strong>Run full maintenance</strong>
-                        </p>
+                        <p class="setting-help admin-options-heading" data-i18n-html><strong>Opties voor Volledig onderhoud uitvoeren</strong></p>
                         <label>
                             <input type="checkbox" id="adminOptionRefreshKey">
-                            Vernieuw API key uit Vaultwarden/direct secret (alleen nodig na key-rotatie)
+                            API key vernieuwen uit Vaultwarden/direct secret (alleen nodig na key-rotatie)
                         </label>
                         <label>
                             <input type="checkbox" id="adminOptionForceRecreate" checked>
-                            Recreate Bunq context (installation + device registration)
+                            Bunq-context opnieuw opbouwen (installation + device-registratie)
                         </label>
                         <label>
                             <input type="checkbox" id="adminOptionClearRuntimeCache" checked>
-                            Clear runtime cache
+                            Runtimecache wissen
                         </label>
                         <label>
                             <input type="checkbox" id="adminOptionLoadStatusAfter" checked>
-                            Herlaad status na uitvoering
+                            Status herladen na uitvoering
                         </label>
+                        <p class="setting-help">API key vernieuwen: haalt de key opnieuw uit Vaultwarden. Context opnieuw opbouwen: nieuwe registratie bij Bunq, lost verlopen of ongeldige sessies op. Cache wissen: gooit tijdelijk bewaarde antwoorden en wisselkoersen weg (je gegevens blijven bewaard).</p>
                     </div>
+
+                    <div class="admin-tools-actions">
+                        <span class="setting-help admin-terminal-label" data-i18n-html><strong>Terminal</strong> (commando's voor de NAS):</span>
+                        <button type="button" class="admin-tool-btn" id="adminShowInstallUpdateCmd">
+                            <i class="fas fa-terminal"></i> Nieuwe versie installeren
+                        </button>
+                        <button type="button" class="admin-tool-btn" id="adminShowRestartCmd">
+                            <i class="fas fa-terminal"></i> Herstarten en controleren
+                        </button>
+                        <button type="button" class="admin-tool-btn" data-admin-action="terminal:ipChange">
+                            <i class="fas fa-terminal"></i> Bunq-whitelist via terminal
+                        </button>
+                        <button type="button" class="admin-tool-btn" data-admin-action="terminal:keyRotation">
+                            <i class="fas fa-terminal"></i> Nieuwe API key via terminal
+                        </button>
+                        <button type="button" class="admin-tool-btn" data-admin-action="terminal:logs">
+                            <i class="fas fa-terminal"></i> Logs bekijken
+                        </button>
+                    </div>
+
                     <div id="adminStatusPanel" class="admin-status-panel">
-                        <p class="setting-help">Klik op <strong>Check status</strong>.</p>
+                        <p class="setting-help" data-i18n-html>Klik op <strong>Status controleren</strong>.</p>
                     </div>
                     <div id="adminTerminalPanel" class="admin-terminal-panel" style="display: none;"></div>
                 </div>

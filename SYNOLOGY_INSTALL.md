@@ -541,25 +541,36 @@ sudo docker logs vaultwarden
 
 ### Admin maintenance via the dashboard
 
-In **Settings → Admin Maintenance** (logged in) you can:
-- `Check status`: runtime state of Vaultwarden, context file, cookie/CORS settings
-- `Check egress IP`: the container's current public outbound IP
-- `Set Bunq API whitelist IP`: safe 2-step flow (1. activate target IP, 2. deactivate other ACTIVE IPs after step 1 succeeded)
-- `Reinit context only (advanced)`: recreate the Bunq context without whitelist changes
-- `Run full maintenance (recommended)`: runs the selected maintenance options in one go
-- `Show install/update commands`: copy-ready terminal steps for the host-level install/update script
-- `Show restart/validate commands`: copy-ready terminal steps for restart/startup validation
+In **Settings → Admin maintenance** (logged in):
+
+**What problem do you have?** — a guide per situation, each with the steps and buttons that do them:
+- The dashboard shows no Bunq data or reports `Incorrect API key or IP address`
+- Your public IP address has changed
+- You created a new Bunq API key
+- Vaultwarden reports an error (token failed, item not found)
+- Transactions are missing, changed or deleted in Bunq
+- Figures look outdated or wrong after an outage
+- There is a new version of the dashboard
+- The dashboard is slow, hangs or keeps restarting
+
+**Buttons** (the panel also explains each one):
+- `Check status` (read-only): Bunq connection, last Bunq error, Vaultwarden, transaction store, last reconcile with Bunq, and an **advice** line pointing to the matching situation
+- `Check egress IP` (read-only): the container's current public outbound IP (this IP must be on the Bunq whitelist)
+- `Set Bunq API whitelist IP`: safe 2-step flow (1. activate the target IP, 2. after confirmation deactivate other ACTIVE IPs)
+- `Reinit context only (advanced)`: fetch the API key again and recreate the Bunq context, without whitelist changes
+- `Run full maintenance (recommended)`: clear the cache, recreate the Bunq context and update the whitelist IP, following the options
+- `Reconcile with Bunq`: refetch all transactions and update the store (same as the monthly reconcile, runs in the background)
+
+**Terminal** buttons show copy-ready commands for the NAS, each with what it does: `Install new version` (quick redeploy or full install/update), `Restart and validate`, `Bunq whitelist via terminal` (`register_bunq_ip.sh`), `New API key via terminal`, `View logs`.
 
 Defaults for `Run full maintenance`:
 - whitelist update: always part of the flow
-- `Try to determine whitelist IP (egress) automatically`: off (enter an IP manually, or tick it)
-- API key refresh from Vaultwarden/direct secret: off (only after key rotation)
+- `Try to determine whitelist IP (egress) automatically`: off (enter an IP manually, or tick it; the guide button "Full maintenance with automatic IP" ticks it)
+- API key refresh from Vaultwarden/direct secret: off (only after key rotation; only the process handling the request gets the new key, so restart the service afterwards)
 - `Recreate Bunq context`: on
 - `Clear runtime cache`: on
 - reload status afterwards: on
 - A manual IP must be a public IPv4 address (private/local ranges are rejected)
-
-Use `Run full maintenance` (or `Reinit context only`) after an API key rotation, a whitelist change, or errors such as `Incorrect API key or IP address`.
 
 ### Rotate the Bunq API key
 

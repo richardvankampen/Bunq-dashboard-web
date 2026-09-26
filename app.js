@@ -850,6 +850,14 @@ function setupEventListeners() {
     document.getElementById('adminShowRestartCmd')?.addEventListener('click', () => {
         renderAdminTerminalPanel('restartValidate');
     });
+    document.getElementById('adminRunReconcile')?.addEventListener('click', runAdminReconcile);
+    // Buttons in the problem guide and the terminal row (data-admin-action).
+    document.getElementById('settingsModal')?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-admin-action]');
+        if (!button) return;
+        event.preventDefault();
+        runAdminGuideAction(button.getAttribute('data-admin-action'));
+    });
     document.getElementById('adminOptionAutoTargetIp')?.addEventListener('change', handleAdminMaintenanceOptionChange);
     document.getElementById('adminOptionRefreshKey')?.addEventListener('change', handleAdminMaintenanceOptionChange);
     document.getElementById('adminOptionForceRecreate')?.addEventListener('change', handleAdminMaintenanceOptionChange);
@@ -5962,6 +5970,12 @@ function renderLastUpdateTime() {
 function handleUiLanguageChange() {
     renderLastUpdateTime();
     applyAdminMaintenanceOptionsToUI();
+    if (document.getElementById('settingsModal')?.classList.contains('active')) {
+        if (adminStatusData) {
+            renderAdminStatusPanel(adminStatusData, t(adminStatusNotice.notice), adminStatusNotice.isError, adminStatusNotice.egressIp);
+        }
+        if (adminTerminalMode) renderAdminTerminalPanel(adminTerminalMode);
+    }
     if (Array.isArray(transactionsData)) {
         processAndRenderData(transactionsData);
     }
@@ -6114,25 +6128,58 @@ function validatePublicIpv4Input(inputValue) {
     return { valid: true, normalized: octets.join('.') };
 }
 
+// Terminal command sets for the NAS, each command with what it does. Keys are used by the
+// terminal buttons and the problem guide (data-admin-action="terminal:<key>").
 function getTerminalCommandSets() {
     const workdir = DEFAULT_NAS_WORKDIR;
+    const cd = { command: `cd ${workdir}`, note: t('Ga naar de installatiemap van het dashboard.') };
+    const health = { command: 'curl -s http://127.0.0.1:5000/api/health', note: t('Controleert of de verbinding met Bunq werkt (status "ok"; 503 = Bunq nog niet bereikbaar).') };
     return {
         installUpdate: {
-            title: 'Install/Update via Terminal',
-            help: 'Gebruik dit voor veilige host-level update (build/deploy) zonder Docker host-control vanuit de webapp.',
+            title: t('Nieuwe versie installeren'),
+            help: t('Voer uit op de NAS (SSH). Alleen code gewijzigd: regels 1 t/m 3. Na een wijziging in .env, docker-compose.yml, secrets of netwerk: regels 1, 2 en 4. Herlaad daarna de pagina geforceerd.'),
             commands: [
-                `cd ${workdir}`,
-                `git -c safe.directory=${workdir} pull --ff-only`,
-                'sh scripts/install_or_update_synology.sh'
+                cd,
+                { command: 'sudo git pull --rebase origin main', note: t('Haalt de nieuwste code op.') },
+                { command: 'sudo sh scripts/quick_redeploy.sh bunq_bunq-dashboard false', note: t('Bouwt een nieuwe image en vervangt de draaiende service (snel; configuratie blijft gelijk).') },
+                { command: 'sudo sh scripts/install_or_update_synology.sh', note: t('Volledige install/update: controleert secrets en netwerk, laadt .env, bouwt, deployt de stack en controleert de Bunq-verbinding en whitelist.') }
             ]
         },
         restartValidate: {
-            title: 'Restart/Validate via Terminal',
-            help: 'Gebruik dit voor startup-validatie en image cleanup op de host.',
+            title: t('Herstarten en controleren'),
+            help: t('Gebruik dit als het dashboard hangt, steeds herstart of na een nieuwe API key. Er wordt geen nieuwe code geïnstalleerd.'),
             commands: [
-                `cd ${workdir}`,
-                'sh scripts/restart_bunq_service.sh',
-                'sudo docker service logs --since 3m bunq_bunq-dashboard | grep -E "Vaultwarden|API key retrieved from vault|No valid API key|whitelist"'
+                cd,
+                { command: 'sudo sh scripts/restart_bunq_service.sh', note: t('Herstart de service met de huidige image, wacht tot de start gelukt is en ruimt oude images op.') },
+                health
+            ]
+        },
+        ipChange: {
+            title: t('Bunq-whitelist via terminal'),
+            help: t('Gebruik dit na een IP-wissel als volledig onderhoud in het dashboard niet helpt, of als het dashboard niet bereikbaar is.'),
+            commands: [
+                cd,
+                { command: 'sudo env NO_PROMPT=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard', note: t('Bepaalt het huidige publieke IP, zet het op de Bunq-whitelist, bouwt de Bunq-context opnieuw op en herstart de service.') },
+                health
+            ]
+        },
+        keyRotation: {
+            title: t('Nieuwe API key via terminal'),
+            help: t('Zet eerst de nieuwe key in het Vaultwarden-item (of in het Docker secret bunq_api_key zonder Vaultwarden). Daarna:'),
+            commands: [
+                cd,
+                { command: 'sudo env NO_PROMPT=true sh scripts/register_bunq_ip.sh bunq_bunq-dashboard', note: t('Haalt de nieuwe key op, zet het IP op de whitelist en registreert het dashboard opnieuw bij Bunq.') },
+                { command: 'sudo sh scripts/restart_bunq_service.sh', note: t('Herstart zodat alle processen van het dashboard de nieuwe key gebruiken, en controleert de start.') },
+                health
+            ]
+        },
+        logs: {
+            title: t('Logs bekijken'),
+            help: t('Toont de status van de service en de laatste logregels, om te zien waar het misgaat.'),
+            commands: [
+                { command: 'sudo docker service ps bunq_bunq-dashboard --no-trunc', note: t('Toont of de service draait en waarom een taak eventueel is gestopt.') },
+                { command: 'sudo docker service logs --since 30m bunq_bunq-dashboard | grep -E "ERROR|WARNING|Vaultwarden|API key|whitelist|Bunq API"', note: t('Laatste fouten en waarschuwingen over Vaultwarden, de API key en de whitelist.') },
+                health
             ]
         }
     };
@@ -6154,9 +6201,14 @@ async function copyTextToClipboard(text) {
     return copied;
 }
 
+// Shown terminal set and last status notice, to rebuild both after a language switch.
+let adminTerminalMode = null;
+let adminStatusNotice = { notice: '', isError: false, egressIp: '' };
+
 function renderAdminTerminalPanel(mode) {
     const panel = document.getElementById('adminTerminalPanel');
     if (!panel) return;
+    adminTerminalMode = mode;
 
     const sets = getTerminalCommandSets();
     const selected = sets[mode];
@@ -6166,9 +6218,10 @@ function renderAdminTerminalPanel(mode) {
         return;
     }
 
-    const rows = selected.commands.map((command, index) => {
+    const rows = selected.commands.map(({ command, note }, index) => {
         const cmdId = `${mode}-cmd-${index}`;
         return `
+            <p class="admin-terminal-note">${index + 1}. ${escapeHtml(note)}</p>
             <pre class="admin-terminal-command" id="${cmdId}">${escapeHtml(command)}</pre>
             <div class="admin-terminal-actions">
                 <button type="button" class="admin-terminal-copy" data-copy-command="${escapeHtml(command)}">
@@ -6184,11 +6237,116 @@ function renderAdminTerminalPanel(mode) {
         ${rows}
     `;
     panel.style.display = 'grid';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Advice for the status panel: the first problem found, pointing to the matching guide entry.
+function buildAdminStatusAdvice(statusData) {
+    const vault = statusData.vaultwarden || {};
+    const lastError = String(statusData.bunq_last_error || '');
+    if (vault.enabled && vault.token_ok === false) {
+        return t('Vaultwarden-token mislukt: controleer de secrets bunq_vaultwarden_client_id/client_secret en of Vaultwarden via HTTPS bereikbaar is (zie "Vaultwarden geeft een fout").');
+    }
+    if (vault.enabled && vault.token_ok && vault.item_found === false) {
+        return t('Vault-item niet gevonden: VAULTWARDEN_ITEM_NAME in .env moet precies gelijk zijn aan de itemnaam (zie "Vaultwarden geeft een fout").');
+    }
+    if (!statusData.api_key_available) {
+        return t('Geen API key beschikbaar: controleer Vaultwarden of het secret bunq_api_key en herstart daarna de service.');
+    }
+    if (!statusData.api_initialized) {
+        if (/ip|whitelist|incorrect api key|allow/i.test(lastError)) {
+            return t('Bunq weigert de verbinding (IP of API key): gebruik "Volledig onderhoud met automatisch IP" (zie "Het dashboard toont geen Bunq-gegevens").');
+        }
+        return t('Bunq is niet verbonden: gebruik "Volledig onderhoud uitvoeren"; bekijk anders de logs (zie "Het dashboard toont geen Bunq-gegevens").');
+    }
+    if (statusData.reconcile?.recent_runs?.[0]?.status === 'failed') {
+        return t('De laatste controle met Bunq is mislukt: bekijk de logs en voer de controle opnieuw uit.');
+    }
+    return t('Alles in orde: de verbinding met Bunq werkt.');
+}
+
+function describeLatestReconcile(reconcile) {
+    const run = reconcile?.recent_runs?.[0];
+    if (!run) return t('Nog niet uitgevoerd');
+    const when = run.started_at ? new Date(run.started_at).toLocaleString(uiLocale()) : '-';
+    const status = t({ running: 'bezig', success: 'gelukt', partial: 'deels gelukt', failed: 'mislukt' }[run.status] || run.status);
+    if (run.status === 'running') return t('{when} · {status}', { when, status });
+    return t('{when} · {status} · {inserted} nieuw, {updated} bijgewerkt, {deleted} verwijderd', {
+        when, status, inserted: run.inserted || 0, updated: run.updated || 0, deleted: run.deleted || 0
+    });
+}
+
+// Buttons in the problem guide: run an admin action, optionally with preset options, or show
+// a terminal command set.
+async function runAdminGuideAction(action) {
+    if (!action) return;
+    if (action.startsWith('terminal:')) {
+        renderAdminTerminalPanel(action.slice('terminal:'.length));
+        return;
+    }
+    const autoTargetEl = document.getElementById('adminOptionAutoTargetIp');
+    const ipInputEl = document.getElementById('adminWhitelistIp');
+    const refreshKeyEl = document.getElementById('adminOptionRefreshKey');
+    switch (action) {
+        case 'status':
+            await loadAdminStatus();
+            break;
+        case 'egress':
+            await checkAdminEgressIp();
+            break;
+        case 'whitelist':
+            await setBunqWhitelistIp();
+            break;
+        case 'reconcile':
+            await runAdminReconcile();
+            break;
+        case 'maintenance-auto-ip':
+            if (autoTargetEl) autoTargetEl.checked = true;
+            if (ipInputEl) ipInputEl.value = '';
+            handleAdminMaintenanceOptionChange();
+            await runBundledAdminMaintenance();
+            break;
+        case 'maintenance-refresh-key':
+            if (refreshKeyEl) refreshKeyEl.checked = true;
+            handleAdminMaintenanceOptionChange();
+            await runBundledAdminMaintenance();
+            break;
+        case 'maintenance':
+            await runBundledAdminMaintenance();
+            break;
+        default:
+            break;
+    }
+    document.getElementById('adminStatusPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function runAdminReconcile() {
+    if (!isAuthenticated) {
+        renderAdminStatusPanel(adminStatusData, 'Log in om de controle met Bunq uit te voeren.', true);
+        return;
+    }
+    if (!window.confirm(t('Controle met Bunq uitvoeren?') + '\n' + t('Alle transacties worden opnieuw bij Bunq opgehaald en de opslag wordt bijgewerkt. Dit loopt op de achtergrond en duurt enkele minuten.'))) {
+        return;
+    }
+    await runAdminAction('adminRunReconcile', `<i class="fas fa-spinner fa-spin"></i> ${t('Bezig...')}`, async () => {
+        const response = await authenticatedFetch(`${CONFIG.apiEndpoint}/admin/reconcile`, { method: 'POST', body: '{}' });
+        if (!response || !response.success) {
+            renderAdminStatusPanel(adminStatusData, response?.error || 'Controle met Bunq starten mislukt.', true);
+            return;
+        }
+        await loadAdminStatus();
+        renderAdminStatusPanel(
+            adminStatusData,
+            t('Controle met Bunq gestart. Klik over een paar minuten op Status controleren voor het resultaat, en daarna op Vernieuwen.'),
+            false
+        );
+    });
 }
 
 function renderAdminStatusPanel(statusData = null, notice = '', isError = false, egressIp = '') {
     const panel = document.getElementById('adminStatusPanel');
     if (!panel) return;
+    adminStatusNotice = { notice, isError, egressIp };
 
     if (!statusData) {
         const cls = isError ? 'admin-status-error' : '';
@@ -6200,8 +6358,13 @@ function renderAdminStatusPanel(statusData = null, notice = '', isError = false,
     const allowedOrigins = Array.isArray(statusData.allowed_origins)
         ? statusData.allowed_origins.join(', ')
         : '';
+    const reconcile = statusData.reconcile || null;
     const rows = [
+        ['Advies', buildAdminStatusAdvice(statusData), !statusData.api_initialized],
         ['API status', statusData.api_initialized ? 'Initialized' : 'Not initialized', !statusData.api_initialized],
+        ['Laatste Bunq-fout', statusData.bunq_last_error || '-', Boolean(statusData.bunq_last_error) && !statusData.api_initialized],
+        ['Omgeving', statusData.environment || '-'],
+        ['API key beschikbaar', statusData.api_key_available ? 'Yes' : 'No', !statusData.api_key_available],
         ['API key source', statusData.api_key_source || '-'],
         ['Vaultwarden enabled', vault.enabled ? 'Yes' : 'No', !vault.enabled],
         ['Vault access method', vault.access_method || '-'],
@@ -6231,7 +6394,11 @@ function renderAdminStatusPanel(statusData = null, notice = '', isError = false,
         ['Context file', statusData.context_exists ? 'Present' : 'Missing', !statusData.context_exists],
         ['Session cookie secure', statusData.session_cookie_secure ? 'True' : 'False', !statusData.session_cookie_secure],
         ['Allowed origins', allowedOrigins || '-', false],
+        ['Transactieopslag', statusData.history_store_enabled ? (statusData.history_db_exists ? 'Present' : 'Missing') : 'Disabled', statusData.history_store_enabled && !statusData.history_db_exists],
     ];
+    if (reconcile && reconcile.enabled !== false) {
+        rows.push(['Laatste controle met Bunq', describeLatestReconcile(reconcile), reconcile.recent_runs?.[0]?.status === 'failed']);
+    }
 
     if (egressIp) {
         rows.push(['Egress IP', egressIp, false]);
@@ -6240,7 +6407,8 @@ function renderAdminStatusPanel(statusData = null, notice = '', isError = false,
         rows.push(['Vaultwarden error', vault.error, true]);
     }
     if (notice) {
-        rows.push(['Action', notice, isError]);
+        // The result of the last action first, so it is seen right away.
+        rows.unshift(['Resultaat', notice, isError]);
     }
 
     panel.innerHTML = rows.map(([label, value, rowError]) => `
@@ -6282,6 +6450,10 @@ async function loadAdminStatus() {
             return;
         }
         adminStatusData = response.data;
+        const reconcileResponse = await authenticatedFetch(`${CONFIG.apiEndpoint}/admin/reconcile`);
+        if (reconcileResponse && reconcileResponse.success) {
+            adminStatusData.reconcile = reconcileResponse.data;
+        }
         renderAdminStatusPanel(adminStatusData);
     });
 }

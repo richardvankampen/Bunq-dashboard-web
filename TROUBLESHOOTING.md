@@ -148,7 +148,7 @@ sudo docker service logs --since 15m bunq_bunq-dashboard | grep -E "Bunq API ini
 Likely causes: wrong Bunq API key, whitelist IP mismatch, Vaultwarden retrieval failure.
 
 Recovery:
-1. In the dashboard: `Settings → Admin Maintenance → Run full maintenance (recommended)`.
+1. In the dashboard: `Settings → Admin maintenance → Run full maintenance (recommended)`. The panel's **What problem do you have?** guide and the **Advice** line in `Check status` point to the right action.
 2. Or in the terminal:
    ```bash
    cd /volume1/docker/bunq-dashboard
