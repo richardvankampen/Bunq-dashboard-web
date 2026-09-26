@@ -4,6 +4,12 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — repo gecontroleerd op geheimen en persoonsgegevens
+
+- Wat: huidige versie en volledige git-geschiedenis doorzocht op sleutels, tokens, wachtwoorden, IBAN's, e-mail, telefoonnummers, IP-adressen, hostnamen en namen. Huidige versie: geen geheimen of persoonlijke gegevens (alleen voorbeeldwaarden en de repo-URL). WORKLOG-entry over de nieuwe categorie generiek gemaakt (geen persoonlijke aanleiding).
+- Bekend: oudere commits bevatten nog persoonlijke hostnaam/IP's en voorbeeldnamen (sindsdien verwijderd); herschrijven van de geschiedenis is bewust niet gedaan.
+- Resultaat: alleen documentatie.
+
 ### Opgeleverd — docs: `tailscale serve` optioneel, eigen domein via reverse proxy
 
 - Aanleiding: `tailscale serve --bg 5000` stuurt al het verkeer op poort 443 van de ts.net-naam naar het dashboard; gebruiker wil liever het eigen domein via de lokale DNS-server en de reverse proxy van DSM (zoals thuis).
@@ -85,10 +91,10 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - 6 bevindingen opgelost: dubbele waarschuwingen (backend + frontend in andere woorden, telling tot 2× te hoog) → één lijst; popup mengde selectie-aantallen met backend-bedragen → alles uit dezelfde set; interne overboekingen telden als goed gecategoriseerde uitgave (en externe bankrekeningen als ongecategoriseerd) → echte uitgaven; "cache ouder dan 24 uur" op rustige dagen → versheid uit laatste sync; vaste drempel 120 in backend → geschaald; Engelse/technische teksten (`Unknown`, `exclude_internal=true`, FX-advies, "non-EUR", "real data") → Nederlands.
 - Verificatie: pytest 307 groen (nieuw: interne overboeking geen uitgave in backend-metrics; versheid volgt laatste sync); headless Chromium met gemockte backend-samenvatting met dubbele waarschuwingen en afwijkend bedrag: één waarschuwing, bedragen gelijk aan aantallen-basis, geen JS-fouten.
 
-### Opgeleverd — inzichten opnieuw gecontroleerd + categorie alimentatie + eigen categorieregels
+### Opgeleverd — inzichten opnieuw gecontroleerd + nieuwe categorie + eigen categorieregels
 
-- 7 bevindingen opgelost: Duurste dag (was de dag van een vaste last) → alleen variabele uitgaven; Aandeel top-tegenrekening (was verhuurder) → zonder wonen/belastingen/alimentatie; Liquiditeitsrunway: burn over alle rekeningen zoals het saldo, Nederlandse notatie; Verwacht netto en runway-fallback zonder eigen overboekingen; Grootste categorie + grootste variabele; "zekerheid x%" met uitleg; "Last updated" → "Laatst bijgewerkt".
-- Aanleiding: een vaste betaling vanaf een eigen subrekening die naar zijn doel is genoemd, zonder trefwoord in de omschrijving. Nieuwe categorie `Alimentatie` (trefwoorden + hint uit eigen rekeningnaam, noodzakelijk/vast/niet-stuurbaar) en eigen regels in `config/category_rules.json` (niet in git; geen namen in code). `CATEGORIZATION_VERSION` 5 (+ hash eigen regels).
+- 7 bevindingen opgelost: Duurste dag (was de dag van een vaste last) → alleen variabele uitgaven; Aandeel top-tegenrekening (was een vaste last) → zonder wonen/belastingen/alimentatie; Liquiditeitsrunway: burn over alle rekeningen zoals het saldo, Nederlandse notatie; Verwacht netto en runway-fallback zonder eigen overboekingen; Grootste categorie + grootste variabele; "zekerheid x%" met uitleg; "Last updated" → "Laatst bijgewerkt".
+- Aanleiding: vaste lasten zonder trefwoord in de omschrijving (bv. vanaf een naar zijn doel genoemde subrekening) werden niet herkend. Nieuwe categorie `Alimentatie` (trefwoorden + hint uit eigen rekeningnaam, noodzakelijk/vast/niet-stuurbaar) en eigen regels in `config/category_rules.json` (niet in git; geen namen in code). `CATEGORIZATION_VERSION` 5 (+ hash eigen regels).
 - Gevonden bij de browsercheck: `isInternalOwnTransfer` zag categorie = eigen rekeningnaam als interne overboeking, waardoor zo'n betaling vanaf een subrekening met een categorienaam uit alle cijfers verdween → check verwijderd.
 - Verificatie: pytest 305 groen; headless Chromium: vaste betaling vanaf een naar zijn doel genoemde subrekening telt als noodzakelijk, Duurste dag = boodschappendag, top-tegenrekening Albert Heijn (71,4% van stuurbare uitgaven), runway 1.479 dagen ook met alleen de betaalrekening geselecteerd (was ∞), geen JS-fouten.
 
