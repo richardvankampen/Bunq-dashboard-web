@@ -5,6 +5,14 @@
 - English (this file): [RELEASE_NOTES.md](RELEASE_NOTES.md)
 - Dutch: [RELEASE_NOTES-NL.md](RELEASE_NOTES-NL.md)
 
+## 2026-09-26
+
+### Documentation
+- English and Dutch documentation now have the same structure and content: `SECURITY`, `SYNOLOGY_INSTALL` and `TROUBLESHOOTING` are full guides in both languages (the English versions were short summaries, the Dutch versions were partly English).
+- Up to date with the app: admin maintenance button names, current widget names and features in the README, the transaction store, personal category rules, and backups of `config/` (`dashboard_data.db`, `category_rules.json`).
+- Settings the code reads but `docker-compose.yml` does not pass (paging, reconcile, sync intervals) are listed separately, with how to enable them.
+- Vulnerabilities are reported via a private GitHub security advisory.
+
 ## 2026-09-25
 
 ### Data and speed

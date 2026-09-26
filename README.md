@@ -8,10 +8,11 @@ Read-only dashboard that fetches data from the Bunq API and presents it clearly.
 - English (this file): [README.md](README.md)
 - Dutch: [README-NL.md](README-NL.md)
 
-Dutch companion docs:
-- [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
-- [SECURITY-NL.md](SECURITY-NL.md)
-- [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
+Every document has an English (`*.md`) and a Dutch (`*-NL.md`) version with the same content:
+- [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md) / [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
+- [SECURITY.md](SECURITY.md) / [SECURITY-NL.md](SECURITY-NL.md)
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) / [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) / [RELEASE_NOTES-NL.md](RELEASE_NOTES-NL.md)
 
 ⚠️ **IMPORTANT:** Access ONLY via VPN. NEVER forward ports to the internet.
 
@@ -19,35 +20,35 @@ Dutch companion docs:
 
 ## ✨ Key Features
 
-- Single-port dashboard (frontend + API) on port 5000
-- Real-time data from the Bunq API (read-only)
-- Vaultwarden-first key management (recommended), with optional direct fallback
-- Vaultwarden decrypt via `bw` CLI (master-password secret) for reliable key retrieval
-  - Intel/amd64: native pinned `bw` binary (with automatic npm fallback if a release asset is temporarily unavailable)
-  - ARM64: pinned `@bitwarden/cli` npm fallback (officially recommended for ARM)
+- Single-port dashboard (frontend + API) on port 5000, Dutch UI
+- Read-only Bunq API access (payments and, where available, card payments; SDK-first account retrieval incl. savings)
+- Local transaction store (SQLite): loads come from the store with an incremental background sync; a monthly reconcile keeps it in line with Bunq and keeps history Bunq no longer serves
+- Balance history rebuilt from stored transactions (falls back to daily snapshots)
+- Automatic categorisation (internal transfers, merchant category codes, text rules, sub-account names) plus your own rules in `config/category_rules.json`; refunds lower the spending of the original category
+- Internal transfers between own accounts are filtered out; transfers to/from own linked external accounts count as neither income nor spending
+- EUR totals for non-EUR accounts (FX conversion with caching)
+- Monthly trends, budget discipline (50/30/20), insight cards and a data quality check, with explanations in tooltips
+- Vaultwarden-first key management (recommended), with an optional direct fallback
+- Vaultwarden decrypt via the `bw` CLI (master-password secret)
+  - Intel/amd64: native pinned `bw` binary (automatic npm fallback if a release asset is temporarily unavailable)
+  - ARM64: pinned `@bitwarden/cli` npm fallback
 - Production runtime via Gunicorn (no Flask development server in the container)
-- Local history storage (SQLite) for longer-term insights
-- EUR totals for non-EUR accounts (with FX conversion and caching)
-- Transaction coverage via Bunq `payment` and (where available) `card-payment` endpoints
-- 11+ visualizations (cashflow, trends, categories)
-- Actionable insight cards (runway, needs-vs-wants, merchant concentration, monthly net projection) with deep-dive details
-- Caching and pagination for performance
-- Synology-ready deployment
-- Admin maintenance tools in Settings (status, egress IP, Bunq context re-init, bundled maintenance run with options)
-- Terminal-helper buttons in the admin panel (copy-ready install/update and restart commands)
+- Synology-ready deployment with install/update, quick-redeploy and IP-whitelist scripts
+- Admin maintenance in Settings (status, egress IP, whitelist update, Bunq context re-init, full maintenance run, copy-ready terminal commands)
 
-**Visualizations:**
-- KPI Cards (income/expenses/savings)
-- Cashflow timeline
-- Sankey diagram (money flow)
-- Sunburst (categories)
-- 3D time-space chart
-- Heatmap (day/hour)
-- Top merchants
-- Ridge plot (distribution)
-- Racing bar chart
-- Insights (automatic)
-- Custom charts
+**Dashboard widgets:**
+- Balance tiles: Betaalrekeningen (totaal), Spaarrekeningen (totaal)
+- KPI tiles with trend vs previous months: Inkomsten, Uitgaven, Sparen, Spaarquote
+- Cashflow (tijdslijn): income/expenses per day, week or month plus cumulative net
+- Geldstromen: Sankey from income sources via needs/wants to spending categories, plus what was saved
+- Verdeling in categorieën: sunburst by category and counterparty
+- Budgetdiscipline (50/30/20)
+- Dagpatroon: heatmap of variable spending by weekday and time of day
+- Top tegenrekeningen: largest counterparties after refunds
+- Maandverdeling: spread of spending amounts per category
+- Categorie-race: animated category race over the period
+- Insight cards: grootste categorie, gemiddelde daguitgaven, uitgavenvolatiliteit, duurste dag, trend, liquiditeitsrunway, noodzaak vs wens, 50/30/20-fit, aandeel top-tegenrekening, terugkerende kosten, volgende beste actie, verwacht netto per maand, datakwaliteit
+- Per-account balance detail with transactions
 
 ## 🔒 Security (Short)
 

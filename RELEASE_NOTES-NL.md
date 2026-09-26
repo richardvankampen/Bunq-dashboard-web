@@ -5,6 +5,14 @@
 - Nederlands (dit bestand): [RELEASE_NOTES-NL.md](RELEASE_NOTES-NL.md)
 - English: [RELEASE_NOTES.md](RELEASE_NOTES.md)
 
+## 2026-09-26
+
+### Documentatie
+- Engelse en Nederlandse documentatie hebben nu dezelfde opbouw en inhoud: `SECURITY`, `SYNOLOGY_INSTALL` en `TROUBLESHOOTING` zijn in beide talen volledige gidsen (de Engelse versies waren korte samenvattingen, de Nederlandse deels Engels).
+- Bijgewerkt naar de huidige app: namen van de knoppen voor beheeronderhoud, actuele widgetnamen en functies in de README, de transactieopslag, eigen categorieregels en back-ups van `config/` (`dashboard_data.db`, `category_rules.json`).
+- Instellingen die de code leest maar `docker-compose.yml` niet doorgeeft (paging, maandelijkse controle, sync-intervallen) staan apart, met hoe je ze aanzet.
+- Beveiligingslekken meld je via een private GitHub security advisory.
+
 ## 2026-09-25
 
 ### Data en snelheid

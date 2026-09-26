@@ -8,41 +8,47 @@ Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseer
 - Nederlands (dit bestand): [README-NL.md](README-NL.md)
 - English: [README.md](README.md)
 
+Elk document heeft een Engelse (`*.md`) en een Nederlandse (`*-NL.md`) versie met dezelfde inhoud:
+- [SYNOLOGY_INSTALL.md](SYNOLOGY_INSTALL.md) / [SYNOLOGY_INSTALL-NL.md](SYNOLOGY_INSTALL-NL.md)
+- [SECURITY.md](SECURITY.md) / [SECURITY-NL.md](SECURITY-NL.md)
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) / [TROUBLESHOOTING-NL.md](TROUBLESHOOTING-NL.md)
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) / [RELEASE_NOTES-NL.md](RELEASE_NOTES-NL.md)
+
 ⚠️ **BELANGRIJK:** Gebruik alleen toegang via VPN. Zet nooit poorten open naar het internet.
 
 ---
 
 ## ✨ Belangrijkste functies
 
-- Single-port dashboard (frontend + API) op poort 5000
-- Real-time data uit de Bunq API (read-only)
-- Vaultwarden-first key management (aanbevolen), met optionele directe fallback
-- Vaultwarden decrypt via `bw` CLI (master-password secret) voor betrouwbare key retrieval
-  - Intel/amd64: native pinned `bw` binary (met automatische npm fallback als release-asset tijdelijk ontbreekt)
-  - ARM64: pinned `@bitwarden/cli` npm fallback (officially recommended for ARM)
-- Productie-runtime via Gunicorn (geen Flask development server in container)
-- Lokale history-opslag (SQLite) voor langere-termijn inzichten
-- EUR-totalen voor niet-EUR rekeningen (met FX conversie en caching)
-- Transactie-dekking via Bunq `payment` én (waar beschikbaar) `card-payment` endpoints
-- 11+ visualisaties (cashflow, trends, categorieën)
-- Actionable insight cards (runway, needs-vs-wants, merchant concentration, monthly net projection) met deep-dive details
-- Caching en pagination voor performance
-- Synology‑ready deployment
-- Beheeronderhoudstools in Instellingen (status, egress IP, Bunq context re-init, bundled maintenance run met opties)
-- Terminal-helper knoppen in admin panel (tonen copy-ready install/update en restart commando's)
+- Dashboard op één poort (frontend + API) op poort 5000, Nederlandstalige UI
+- Alleen-lezen toegang tot de Bunq API (betalingen en, waar beschikbaar, kaartbetalingen; rekeningen SDK-first inclusief sparen)
+- Lokale transactieopslag (SQLite): laden gebeurt uit de opslag met een incrementele sync op de achtergrond; een maandelijkse controle houdt hem gelijk met Bunq en bewaart geschiedenis die Bunq niet meer levert
+- Saldoverloop opgebouwd uit opgeslagen transacties (met dagelijkse snapshots als terugval)
+- Automatische indeling in categorieën (interne overboekingen, merchant-categoriecodes, tekstregels, namen van subrekeningen) plus eigen regels in `config/category_rules.json`; terugbetalingen verlagen de uitgaven van de oorspronkelijke categorie
+- Interne overboekingen tussen eigen rekeningen worden weggefilterd; overboekingen van/naar eigen gekoppelde externe rekeningen tellen niet als inkomsten of uitgaven
+- EUR-totalen voor niet-EUR-rekeningen (omrekening met caching)
+- Maandtrends, budgetdiscipline (50/30/20), inzichtkaarten en een datakwaliteitscontrole, met uitleg in tooltips
+- Sleutelbeheer via Vaultwarden (aanbevolen), met optionele directe fallback
+- Vaultwarden ontsleutelen via de `bw` CLI (secret met hoofdwachtwoord)
+  - Intel/amd64: native vastgepinde `bw`-binary (automatische npm-fallback als een release tijdelijk niet beschikbaar is)
+  - ARM64: vastgepinde `@bitwarden/cli` via npm
+- Productieruntime via Gunicorn (geen Flask-ontwikkelserver in de container)
+- Klaar voor Synology, met scripts voor install/update, snelle redeploy en IP-whitelist
+- Beheeronderhoud in Instellingen (status, egress-IP, whitelistupdate, Bunq-context opnieuw opbouwen, volledige onderhoudsrun, kant-en-klare terminalcommando's)
 
-**Visualisaties:**
-- KPI Cards (inkomsten/uitgaven/sparen)
-- Cashflow timeline
-- Sankey diagram (geldstromen)
-- Sunburst (categorieën)
-- 3D time-space chart
-- Heatmap (dag/uur)
-- Top merchants
-- Ridge plot (distributie)
-- Racing bar chart
-- Insights (automatisch)
-- Custom charts
+**Dashboardwidgets:**
+- Saldotegels: Betaalrekeningen (totaal), Spaarrekeningen (totaal)
+- KPI-tegels met trend t.o.v. vorige maanden: Inkomsten, Uitgaven, Sparen, Spaarquote
+- Cashflow (tijdslijn): inkomsten/uitgaven per dag, week of maand plus cumulatief netto
+- Geldstromen: Sankey van inkomstenbronnen via noodzakelijk/vrij besteedbaar naar uitgavencategorieën, plus wat overbleef
+- Verdeling in categorieën: sunburst per categorie en tegenrekening
+- Budgetdiscipline (50/30/20)
+- Dagpatroon: heatmap van variabele uitgaven per weekdag en dagdeel
+- Top tegenrekeningen: grootste tegenrekeningen na terugbetalingen
+- Maandverdeling: spreiding van uitgavenbedragen per categorie
+- Categorie-race: geanimeerde race van categorieën over de periode
+- Inzichtkaarten: grootste categorie, gemiddelde daguitgaven, uitgavenvolatiliteit, duurste dag, trend, liquiditeitsrunway, noodzaak vs wens, 50/30/20-fit, aandeel top-tegenrekening, terugkerende kosten, volgende beste actie, verwacht netto per maand, datakwaliteit
+- Saldodetail per rekening met transacties
 
 ## 🔒 Beveiliging (kort)
 
@@ -51,7 +57,9 @@ Read-only dashboard dat data uit de Bunq API haalt en overzichtelijk visualiseer
 - Secrets via Vaultwarden + Docker Swarm secrets (Vaultwarden is preferred; `VAULTWARDEN_ACCESS_METHOD=cli`)
 - VPN‑only toegang, geen publieke exposure
 - Rate limiting op login en API
-Meer details: [SECURITY-NL.md](SECURITY-NL.md)
+
+Meer details: [SECURITY-NL.md](SECURITY-NL.md)  
+Engelse versie: [SECURITY.md](SECURITY.md)
 
 ## 🚀 Snelle start (Synology)
 

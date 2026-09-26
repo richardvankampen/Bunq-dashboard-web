@@ -17,21 +17,18 @@ Dit bestand is de actuele bron voor overdracht.
 
 ## Documentatie-talen (actueel)
 
-- User-facing docs hebben nu een Engelse hoofdversie (`*.md`) en een Nederlandse variant (`*-NL.md`).
-- Nederlandstalige docs zijn taalkundig opgeschoond op onnodig Engels in koppen en uitlegzinnen (technische termen behouden waar logisch).
-- Huidige mapping:
-  - `README.md` (EN) / `README-NL.md` (NL)
-  - `SECURITY.md` (EN) / `SECURITY-NL.md` (NL)
-  - `SYNOLOGY_INSTALL.md` (EN) / `SYNOLOGY_INSTALL-NL.md` (NL)
-  - `TROUBLESHOOTING.md` (EN) / `TROUBLESHOOTING-NL.md` (NL)
-- `README.md` bevat expliciete taalkeuze zodat gebruikers EN/NL direct kunnen kiezen.
-- Korte release-samenvatting voor docs-updates is nu tweetalig beschikbaar:
-  - `RELEASE_NOTES.md` (EN)
-  - `RELEASE_NOTES-NL.md` (NL)
-- Operationele markdown-instructies zijn gesynchroniseerd op de huidige updateflow:
-  - `git pull` voorbeelden gebruiken nu `sudo git pull --rebase origin main`;
-  - README EN/NL bevatten nu ook expliciet quick code-only redeploy (`scripts/quick_redeploy.sh`);
-  - troubleshooting/synology NL voorbeelden voor full deploy gebruiken `.env`-load + `docker service update --force --image bunq-dashboard:$TAG ...` in dezelfde shell.
+- User-facing docs: Engelse hoofdversie (`*.md`) + Nederlandse variant (`*-NL.md`) met **dezelfde opbouw en inhoud** (zelfde secties, nummering en voorbeelden; bij elke wijziging beide bijwerken):
+  - `README` / `SECURITY` / `SYNOLOGY_INSTALL` / `TROUBLESHOOTING` / `RELEASE_NOTES` (elk EN + `-NL`).
+- Sinds 2026-09-26 zijn SECURITY, SYNOLOGY_INSTALL en TROUBLESHOOTING in beide talen volledige gidsen (voorheen EN = samenvatting, NL deels Engels).
+- Docs volgen de huidige app:
+  - admin-knoppen: `Check status`, `Check egress IP`, `Set Bunq API whitelist IP`, `Reinit context only (advanced)`, `Run full maintenance (recommended)`, `Show install/update commands`, `Show restart/validate commands` (paneel `Admin Maintenance`);
+  - README-featurelijst met huidige widgetnamen, transactieopslag, categorisatie/eigen regels;
+  - back-ups omvatten `config/` (`dashboard_data.db`, `category_rules.json`, Bunq-context) en `.env`;
+  - `.env`-tabel splitst variabelen die `docker-compose.yml` doorgeeft van variabelen die de code leest maar compose niet doorgeeft (`BUNQ_PAYMENT_*`, `BUNQ_CARD_PAYMENT_*`, `RECONCILE_*`, `SYNC_MIN_INTERVAL_SECONDS`, `ACCOUNTS_CACHE_SECONDS`, `SOURCE_FAILURE_BACKOFF_SECONDS`, `CATEGORY_RULES_PATH`, `VAULTWARDEN_CLI_TIMEOUT_SECONDS`): die werken pas na toevoegen aan compose `environment:` + full deploy;
+  - `/api/transactions` vereist login; diagnose via browser of de widget Datakwaliteit (velden `truncated`, `truncated_accounts`, `amount_eur_missing_count`, `sync_errors` staan top-level);
+  - kwetsbaarheden melden via private GitHub security advisory.
+- Geen persoonlijke namen of gegevens in docs (repo is publiek).
+- Operationele updateflow in docs: `sudo git pull --rebase origin main` + `scripts/quick_redeploy.sh` (code-only), `.env`-load + `docker stack deploy` + `docker service update --force --image bunq-dashboard:$TAG` (config), `install_or_update_synology.sh` (volledig).
 - `scripts/register_bunq_ip.sh` gedrag vereenvoudigd:
   - default non-interactive flow is nu `NO_PROMPT=true sh scripts/register_bunq_ip.sh`;
   - target-IP wordt automatisch bepaald (host `curl -4` first, container egress fallback);
@@ -237,7 +234,7 @@ Dit bestand is de actuele bron voor overdracht.
 - Card-payment endpoint faalt op productie voor alle rekeningen; na een fout wordt die bron per rekening `SOURCE_FAILURE_BACKOFF_SECONDS` (1u) overgeslagen.
 - Sync-bookmark per rekening/bron in `bunq_sync_state` (`newest_bunq_id`, `oldest_bunq_id`, `covered_from`, `history_complete`).
 - Maandelijkse nachtelijke controle (`run_full_reconcile`): 1e van de maand, 03:00–06:00 Europe/Amsterdam (instelbaar via `RECONCILE_*`), 1 worker via file-lock `config/reconcile.lock`, gemiste nacht wordt de volgende nacht ingehaald, retry na 1 uur bij fout. Haalt alles op tot de oudste opgeslagen transactie en: voegt nieuwe toe, werkt gewijzigde bij, herstelt teruggekeerde, markeert ontbrekende als verwijderd **alleen binnen het bereik dat Bunq nog aanlevert** (bij `cutoff_reached` de hele opgeslagen periode, anders vanaf de oudste teruggegeven transactie). Oudere rijen blijven bewaard en zichtbaar. Bij een fout per rekening: geen verwijderingen voor die rekening.
-- Runs worden gelogd in `bunq_reconcile_runs`; status via `GET /api/admin/reconcile`, handmatig starten via `POST /api/admin/reconcile` of `run_reconcile_exclusive('manual')` (TROUBLESHOOTING 5b).
+- Runs worden gelogd in `bunq_reconcile_runs`; status via `GET /api/admin/reconcile`, handmatig starten via `POST /api/admin/reconcile` of `run_reconcile_exclusive('manual')` (TROUBLESHOOTING sectie 7).
 - Wat in de database staat vs. live berekend: categorie/`refund_category` staan opgeslagen en worden bij een regelwijziging eenmalig herberekend (`migrate_stored_categories`); de vlag `is_internal_transfer` wordt bij elke load uit de opslag opnieuw bepaald met de huidige eigen account-id's/IBAN's + koppeling van tegengestelde boekingen (`refresh_internal_flags`) en nieuw herkende interne overboekingen worden teruggeschreven (`write_back_internal_flags`); een vlag wordt nooit weggehaald, ook niet door een latere refetch (`upsert_stored_transactions`). Alle weergavelogica (budget, trends, groeperen, Triodos, vast inkomen, sparen, inzichten, datakwaliteit in de frontend) wordt live berekend en hoeft niet in de database.
 - Saldohistorie (`/api/history/balances`): `build_balance_history_from_store()` reconstrueert per rekening het eindsaldo per Nederlandse kalenderdag = huidig saldo − latere `payment`-rijen (card_payment niet, die staan ook als payment geboekt), met de huidige classificatie; start op de eerste dag die voor alle eigen rekeningen gedekt is (`covered_from`/`history_complete`). Vreemde valuta tegen de huidige koers. Lukt dat niet (geen Bunq-context, rekening nooit gesynct) → fallback op `account_snapshots` (alleen dagen waarop het dashboard open was), met per rekening het type uit de meest recente snapshot (actuele classificatie). Response-veld `source` = `transactions` | `snapshots`.
 - Rekeningclassificatie op naam/typevelden: korte beleggingshints (`stock`, `share`, `etf`, `equity`) alleen als heel woord (`_looks_like_investment`, frontend `looksLikeInvestmentAccount`); frontend volgt de backend-`account_type` als die gezet is.
