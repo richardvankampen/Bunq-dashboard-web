@@ -22,6 +22,12 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Budget
+- 50/30/20, `Noodzaak vs wens` en `Geldstromen` tellen overboekingen tussen je eigen rekeningen nooit mee, ook niet met het filter voor interne overboekingen uit.
+- Een terugbetaling verlaagt het soort uitgaven waar hij bij hoort: een energie-eindafrekening verlaagt noodzakelijk, een Tikkie voor een etentje vrij besteedbaar (opgeslagen transacties worden na de update eenmalig bijgewerkt).
+- Een salaris dat net over de maandgrens valt (weekend) telt voor de maand waar het bij hoort, zodat geen maand twee salarissen toont en de volgende geen.
+- De budgetgrafiek schaalt boven 100% als de uitgaven in een maand hoger zijn dan het inkomen; ongecategoriseerde uitgaven (`Overig`) worden per maand getoond.
+
 ### Cashflow
 - Terugbetalingen (kaartretour, Tikkie voor een gedeeld etentje) verlagen de uitgaven in plaats van als inkomen te tellen, in de tegels, `Spaarquote`, de cashflow-tijdslijn, de detailvensters en `Geldstromen` (aparte stroom "Terugbetalingen" naar vrij besteedbaar).
 - `Cashflow (tijdslijn)` toont staven voor inkomsten en uitgaven per dag (tot 3 maanden), week (tot een jaar) of maand, en het cumulatieve netto sinds het begin van de periode; de grafiek beslaat altijd de hele gekozen periode.

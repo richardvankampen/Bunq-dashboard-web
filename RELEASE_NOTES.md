@@ -22,6 +22,12 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Budget
+- 50/30/20, `Noodzaak vs wens` and `Geldstromen` never count transfers between your own accounts, even with the internal-transfer filter off.
+- A refund lowers the kind of spending it belongs to: an energy settlement lowers essential spending, a Tikkie for dinner discretionary spending (stored transactions are updated once after the update).
+- A salary that lands just across a month boundary (weekend) counts for the month it belongs to, so no month shows two salaries and the next none.
+- The budget chart scales beyond 100% when a month's spending exceeds its income; uncategorised spending (`Overig`) is shown per month.
+
 ### Cashflow
 - Refunds (card reversals, Tikkie for a shared dinner) lower spending instead of counting as income, in the tiles, `Spaarquote`, the cashflow timeline, the popups and `Geldstromen` (a separate "Terugbetalingen" flow into discretionary spending).
 - `Cashflow (tijdslijn)` shows income and spending bars per day (up to 3 months), week (up to a year) or month, and the cumulative net since the start of the period; it always covers the whole selected period.
