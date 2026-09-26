@@ -2073,9 +2073,10 @@ function renderKPIs(kpis, data) {
     const daily = buildDailyTotals(data);
     // `Sparen` shows savings-account mutations, so its trend/sparkline use that same data.
     const savingsDaily = alignDailySeries(buildDailyTotals(kpis.savingsTransactions || []), daily);
-    setTrendIndicator(incomeTrend, calculateTileTrend(daily, 'income'), { higherIsBetter: true });
-    setTrendIndicator(expensesTrend, calculateTileTrend(daily, 'expenses'), { higherIsBetter: false });
-    setTrendIndicator(savingsTrend, calculateTileTrend(savingsDaily, 'net'), { higherIsBetter: true });
+    const trends = calculateTileTrends(data, savingsDaily);
+    setTrendIndicator(incomeTrend, trends.income, { higherIsBetter: true });
+    setTrendIndicator(expensesTrend, trends.expenses, { higherIsBetter: false });
+    setTrendIndicator(savingsTrend, trends.savings, { higherIsBetter: true });
     
     renderMetricMiniChart(
         'incomeSparkline',
@@ -2096,36 +2097,98 @@ function renderKPIs(kpis, data) {
 
 // Change of the second half vs the first half, in % of the first half.
 // null when the first half is ~0 (a percentage would be meaningless).
-// Tile trend. Periods of 60+ days: last complete month vs the average of the earlier complete
-// months in the period (salary and rent are monthly, so a half-period can hold one or two
-// salaries). Shorter periods, or fewer than 2 complete months: second half vs first half.
-function calculateTileTrend(daily, field) {
-    const days = Number(CONFIG.timeRange) || 90;
-    if (days >= 60) {
-        const periodStart = getSelectedPeriodStart();
-        const currentKey = monthKeyOf(new Date());
-        const byMonth = new Map();
-        (daily || []).forEach((point) => {
-            const key = monthKeyOf(point.date);
-            byMonth.set(key, (byMonth.get(key) || 0) + (Number(point[field]) || 0));
-        });
-        const complete = Array.from(byMonth.keys())
-            .sort()
-            .filter((key) => key !== currentKey && dateFromKey(`${key}-01`) >= periodStart);
-        if (complete.length >= 2) {
-            const latestKey = complete[complete.length - 1];
-            const previous = complete.slice(0, -1).slice(-3);
-            const baseline = previous.reduce((sum, key) => sum + byMonth.get(key), 0) / previous.length;
-            const monthLabel = (key) => dateFromKey(`${key}-01`).toLocaleDateString('nl-NL', { month: 'short', year: '2-digit' });
-            const title = `${monthLabel(latestKey)} t.o.v. gemiddelde van ${previous.map(monthLabel).join(', ')} (volledige maanden).`;
-            if (Math.abs(baseline) < 0.01) return { change: null, title };
-            return { change: ((byMonth.get(latestKey) - baseline) / Math.abs(baseline)) * 100, title };
-        }
-    }
+const TREND_MIN_PERIOD_DAYS = 60;
+// Below this comparison base a percentage is meaningless (+5900% on €5): show the € difference.
+const TREND_MIN_BASE_EUR = 50;
+const TREND_MONTHS_BACK = 3;
+
+function trendMonthLabel(key) {
+    return dateFromKey(`${key}-01`).toLocaleDateString('nl-NL', { month: 'short', year: '2-digit' });
+}
+
+// Last complete month vs the average of up to 3 complete months before it.
+// `months`: [{ monthKey, value }] of complete months, oldest first.
+function compareMonthlyValues(months) {
+    if (!months || months.length < 2) return null;
+    const latest = months[months.length - 1];
+    const previous = months.slice(0, -1).slice(-TREND_MONTHS_BACK);
+    const baseline = previous.reduce((sum, row) => sum + row.value, 0) / previous.length;
+    const delta = latest.value - baseline;
     return {
-        change: calculateHalfPeriodChange((daily || []).map((point) => Number(point[field]) || 0)),
-        title: 'Tweede helft van de periode t.o.v. de eerste helft.'
+        change: Math.abs(baseline) > 0.01 ? (delta / Math.abs(baseline)) * 100 : null,
+        delta,
+        baseline,
+        title: `${trendMonthLabel(latest.monthKey)} t.o.v. gemiddelde van ${previous.map((row) => trendMonthLabel(row.monthKey)).join(', ')} (volledige maanden).`
     };
+}
+
+// Complete months (inside the period, before the running month) from daily points.
+function completeMonthsFromDaily(daily, field) {
+    const periodStart = getSelectedPeriodStart();
+    const currentKey = monthKeyOf(new Date());
+    const byMonth = new Map();
+    (daily || []).forEach((point) => {
+        const key = monthKeyOf(point.date);
+        byMonth.set(key, (byMonth.get(key) || 0) + (Number(point[field]) || 0));
+    });
+    return Array.from(byMonth.keys())
+        .sort()
+        .filter((key) => key !== currentKey && dateFromKey(`${key}-01`) >= periodStart)
+        .map((monthKey) => ({ monthKey, value: byMonth.get(monthKey) }));
+}
+
+/**
+ * Tile trends.
+ * - Periods of 60+ days: last complete month vs the average of up to 3 earlier complete months.
+ *   Income and spending use the same monthly figures as the insights (compareLatestCompleteMonth:
+ *   salary-month correction, own transfers left out); savings its own monthly deposits.
+ * - Shorter periods: income and savings are monthly, so half-periods would compare one salary
+ *   or deposit with none: n.v.t. Spending compares variable spending (no fixed costs) between
+ *   the second and the first half of the period.
+ */
+function calculateTileTrends(data, savingsDaily) {
+    const days = Number(CONFIG.timeRange) || 90;
+    const unavailable = (title) => ({ change: null, delta: null, baseline: null, title });
+    if (days < TREND_MIN_PERIOD_DAYS) {
+        const variableDaily = buildDailyTotals((data || []).filter((transaction) => (
+            !FIXED_COST_CATEGORIES.has(isRefundTransaction(transaction) ? transaction.refund_category : transaction.category)
+        )));
+        const series = variableDaily.map((point) => point.expenses);
+        const mid = Math.floor(series.length / 2);
+        const prior = series.slice(0, mid).reduce((sum, value) => sum + value, 0);
+        const recent = series.slice(mid).reduce((sum, value) => sum + value, 0);
+        return {
+            income: unavailable('Periode te kort voor een trend in maandinkomen (kies 60 dagen of meer).'),
+            expenses: {
+                change: calculateHalfPeriodChange(series),
+                delta: recent - prior,
+                baseline: prior,
+                title: 'Variabele uitgaven (zonder vaste lasten): tweede helft van de periode t.o.v. de eerste helft.'
+            },
+            savings: unavailable('Periode te kort voor een trend in maandelijks sparen (kies 60 dagen of meer).')
+        };
+    }
+    const months = summarizeCompleteMonths(data, TREND_MONTHS_BACK + 1);
+    const noData = 'Minder dan 2 volledige maanden in de periode.';
+    return {
+        income: compareMonthlyValues(months.map((row) => ({ monthKey: row.monthKey, value: row.income }))) || unavailable(noData),
+        expenses: compareMonthlyValues(months.map((row) => ({ monthKey: row.monthKey, value: row.expenses }))) || unavailable(noData),
+        savings: compareMonthlyValues(completeMonthsFromDaily(savingsDaily, 'net')) || unavailable(noData)
+    };
+}
+
+function setTrendArrow(parent, direction) {
+    const icon = parent?.querySelector('i');
+    if (!icon) return;
+    icon.className = `fas ${direction > 0 ? 'fa-arrow-up' : direction < 0 ? 'fa-arrow-down' : 'fa-arrow-right'}`;
+}
+
+function formatSignedPercent(value) {
+    return `${value > 0 ? '+' : ''}${formatPercent(value)}`;
+}
+
+function formatSignedCurrency(value) {
+    return `${value >= 0 ? '+' : '−'}${formatCurrency(Math.abs(value))}`;
 }
 
 function calculateHalfPeriodChange(series) {
@@ -2137,23 +2200,27 @@ function calculateHalfPeriodChange(series) {
     return ((recent - prior) / Math.abs(prior)) * 100;
 }
 
-// `trend`: a number, or { change, title } from calculateTileTrend.
+// `trend`: { change, delta, baseline, title } from calculateTileTrends. The arrow follows the
+// direction, the colour whether that direction is good. Small base: € difference.
 function setTrendIndicator(element, trend, { higherIsBetter = true } = {}) {
     if (!element) return;
     const parent = element.parentElement;
-    const change = trend !== null && typeof trend === 'object' ? trend.change : trend;
-    const basis = trend !== null && typeof trend === 'object' ? trend.title : 'Tweede helft van de periode t.o.v. de eerste helft.';
-    if (change === null || !Number.isFinite(change)) {
+    const { change = null, delta = null, baseline = null, title = '' } = trend || {};
+    const useEuro = Number.isFinite(delta) && Number.isFinite(baseline) && Math.abs(baseline) < TREND_MIN_BASE_EUR;
+    if (!useEuro && (change === null || !Number.isFinite(change))) {
         element.textContent = 'n.v.t.';
-        element.title = `Niet te berekenen: de vergelijkingsbasis is (bijna) nul. ${basis}`;
+        element.title = title || 'Niet te berekenen.';
         parent?.classList.remove('positive', 'negative');
+        setTrendArrow(parent, 0);
         return;
     }
-    element.textContent = `${change.toFixed(1)}%`;
-    element.title = basis;
-    const good = higherIsBetter ? change >= 0 : change <= 0;
+    const direction = useEuro ? delta : change;
+    element.textContent = useEuro ? formatSignedCurrency(delta) : formatSignedPercent(change);
+    element.title = useEuro ? `${title} Verschil in euro: de vergelijkingsbasis is kleiner dan ${formatCurrency(TREND_MIN_BASE_EUR)}.` : title;
+    const good = higherIsBetter ? direction >= 0 : direction <= 0;
     parent?.classList.toggle('positive', good);
     parent?.classList.toggle('negative', !good);
+    setTrendArrow(parent, Math.abs(direction) < 0.05 ? 0 : direction);
 }
 
 // Map a (possibly shorter) daily series onto the date range of `reference`, filling gaps with 0.
@@ -2174,21 +2241,25 @@ function calculateSeriesChange(series) {
     return ((last - first) / Math.abs(first)) * 100;
 }
 
-function setBalanceTrend(element, change) {
+function setBalanceTrend(element, change, startDate = null) {
     if (!element) return;
     const parent = element.parentElement;
     if (change === null || !Number.isFinite(change)) {
         element.textContent = 'n.v.t.';
-        element.title = 'Niet te berekenen: geen saldo aan het begin van de periode.';
+        element.title = 'Niet te berekenen: geen saldo aan het begin van de reeks.';
         parent?.classList.remove('positive', 'negative');
         parent?.classList.add('neutral');
+        setTrendArrow(parent, 0);
         return;
     }
-    element.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
-    element.title = 'Saldo nu t.o.v. het begin van de gekozen periode.';
+    element.textContent = formatSignedPercent(change);
+    element.title = startDate instanceof Date && !Number.isNaN(startDate.getTime())
+        ? `Saldo nu t.o.v. ${startDate.toLocaleDateString('nl-NL')} (begin van de beschikbare saldohistorie in de periode).`
+        : 'Saldo nu t.o.v. het begin van de beschikbare saldohistorie.';
     parent?.classList.toggle('positive', change >= 0);
     parent?.classList.toggle('negative', change < 0);
     parent?.classList.remove('neutral');
+    setTrendArrow(parent, Math.abs(change) < 0.05 ? 0 : change);
 }
 
 function formatShortDate(date) {
@@ -2307,8 +2378,8 @@ function renderBalanceKPIs(metrics) {
     const checkingChange = calculateSeriesChange(checkingSeries);
     const savingsChange = calculateSeriesChange(savingsSeries);
 
-    setBalanceTrend(checkingTrendEl, checkingChange);
-    setBalanceTrend(savingsTrendEl, savingsChange);
+    setBalanceTrend(checkingTrendEl, checkingChange, checkingPoints[0]?.date);
+    setBalanceTrend(savingsTrendEl, savingsChange, savingsPoints[0]?.date);
 
     renderMetricMiniChart('checkingSparkline', checkingPoints, '#38bdf8');
     renderMetricMiniChart('savingsBalanceSparkline', savingsPoints, '#22c55e');
@@ -2987,7 +3058,7 @@ function showTransactionDetail(detailType) {
         const rows = [
             {
                 label: 'Noodzakelijk totaal',
-                value: `${formatCurrency(summary.essentialTotal)} (${((summary.essentialTotal / total) * 100).toFixed(1)}%)`
+                value: `${formatCurrency(summary.essentialTotal)} (${formatPercent(((summary.essentialTotal / total) * 100))})`
             },
             ...topEssential.map(([category, amount]) => ({
                 label: `Noodzakelijk · ${category}`,
@@ -2995,7 +3066,7 @@ function showTransactionDetail(detailType) {
             })),
             {
                 label: 'Vrij besteedbaar totaal',
-                value: `${formatCurrency(summary.discretionaryTotal)} (${((summary.discretionaryTotal / total) * 100).toFixed(1)}%)`
+                value: `${formatCurrency(summary.discretionaryTotal)} (${formatPercent(((summary.discretionaryTotal / total) * 100))})`
             },
             ...(summary.refunds > 0.004 ? [{
                 label: 'Terugbetalingen (al afgetrokken van de totalen)',
@@ -3061,7 +3132,7 @@ function showTransactionDetail(detailType) {
             x: chartRows.map((row) => row.amount),
             y: chartRows.map((row) => row.merchant),
             marker: { color: '#60a5fa' },
-            text: chartRows.map((row) => `${((row.amount / totalExpenses) * 100).toFixed(1)}%`),
+            text: chartRows.map((row) => `${formatPercent(((row.amount / totalExpenses) * 100))}`),
             textposition: 'outside',
             hovertemplate: '%{y}<br>%{x:.2f} EUR<extra></extra>'
         };
@@ -3076,10 +3147,10 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-store"></i> Aandeel top-tegenrekening',
-            summary: `Top merchant: ${top.merchant} (${topShare.toFixed(1)}% van uitgaven)`,
+            summary: `Top merchant: ${top.merchant} (${formatPercent(topShare)} van uitgaven)`,
             rows: rows.slice(0, 20).map((row) => ({
                 label: row.merchant,
-                value: `${formatCurrency(row.amount)} (${((row.amount / totalExpenses) * 100).toFixed(1)}%)`
+                value: `${formatCurrency(row.amount)} (${formatPercent(((row.amount / totalExpenses) * 100))})`
             })),
             chart: { trace, layout },
             transactionRows,
@@ -3089,8 +3160,8 @@ function showTransactionDetail(detailType) {
     }
 
     if (detailType === 'expense-momentum') {
-        // Latest complete month vs the average of the complete month(s) before it.
-        const months = summarizeCompleteMonths(transactions, 3);
+        // Latest complete month vs the average of up to 3 complete months before it (as the tile trends).
+        const months = summarizeCompleteMonths(transactions, TREND_MONTHS_BACK + 1);
         if (months.length < 2) {
             openDetailModal({
                 title: '<i class="fas fa-chart-line"></i> Uitgavenmomentum',
@@ -3138,7 +3209,7 @@ function showTransactionDetail(detailType) {
         const recentTotal = rows.reduce((sum, row) => sum + row.recent, 0);
         const priorTotal = rows.reduce((sum, row) => sum + row.prior, 0);
         const totalChangePct = priorTotal > 0 ? ((recentTotal - priorTotal) / priorTotal) * 100 : null;
-        const formatPct = (value) => (value === null ? 'n.v.t.' : `${value.toFixed(1)}%`);
+        const formatPct = (value) => (value === null ? 'n.v.t.' : `${formatPercent(value)}`);
 
         const chartRows = [...rows]
             .sort((a, b) => (b.recent + b.prior) - (a.recent + a.prior))
@@ -3372,12 +3443,12 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: '<i class="fas fa-scale-balanced"></i> Budgetdiscipline (50/30/20)',
-            summary: `Gemiddeld${completeMonths.length ? ' (volledige maanden)' : ''}: noodzakelijk ${avgEssentials.toFixed(1)}% (doel 50%), vrij besteedbaar ${avgDiscretionary.toFixed(1)}% (doel 30%), overgehouden ${avgSavings.toFixed(1)}% (doel 20%). ${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`} overgehouden: ${latest.savingsPct.toFixed(1)}%. Overgehouden = inkomen min uitgaven, ook wat op de betaalrekening blijft staan (de tegel Sparen telt alleen stortingen op spaarrekeningen). Terugbetalingen verlagen de uitgaven van hun soort (noodzakelijk of vrij), overboekingen tussen eigen rekeningen tellen niet mee.${uncategorizedNote}`,
+            summary: `Gemiddeld${completeMonths.length ? ' (volledige maanden)' : ''}: noodzakelijk ${formatPercent(avgEssentials)} (doel 50%), vrij besteedbaar ${formatPercent(avgDiscretionary)} (doel 30%), overgehouden ${formatPercent(avgSavings)} (doel 20%). ${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`} overgehouden: ${formatPercent(latest.savingsPct)}. Overgehouden = inkomen min uitgaven, ook wat op de betaalrekening blijft staan (de tegel Sparen telt alleen stortingen op spaarrekeningen). Terugbetalingen verlagen de uitgaven van hun soort (noodzakelijk of vrij), overboekingen tussen eigen rekeningen tellen niet mee.${uncategorizedNote}`,
             rows: monthly.slice().reverse().map((row) => ({
-                label: `${row.monthLabel} · In ${formatCurrency(row.income)} · Noodzakelijk ${formatCurrency(row.essentials)} (${row.essentialsPct.toFixed(1)}%) · Vrij ${formatCurrency(row.discretionary)} (${row.discretionaryPct.toFixed(1)}%)`
+                label: `${row.monthLabel} · In ${formatCurrency(row.income)} · Noodzakelijk ${formatCurrency(row.essentials)} (${formatPercent(row.essentialsPct)}) · Vrij ${formatCurrency(row.discretionary)} (${formatPercent(row.discretionaryPct)})`
                     + (row.uncategorized > 0.004 ? `, waarvan ongecategoriseerd ${formatCurrency(row.uncategorized)}` : '')
                     + (row.refunds > 0.004 ? ` · na ${formatCurrency(row.refunds)} terugbetalingen` : ''),
-                value: `Netto ${formatCurrency(row.netSavings)} (${row.savingsPct.toFixed(1)}%)`
+                value: `Netto ${formatCurrency(row.netSavings)} (${formatPercent(row.savingsPct)})`
             })),
             chart: { trace: traces, layout }
         });
@@ -4146,8 +4217,8 @@ function renderTimeTravelChart(data) {
     const latest = latestCompleteBudgetMonth(monthly);
     const noIncomeMonths = monthly.filter((row) => row.essentialsPct === null).map((row) => row.monthLabel);
     const statusText = `${latest.isCurrent ? 'Lopende maand' : `Laatste volledige maand (${latest.monthLabel})`}: `
-        + `noodzakelijk ${latest.essentialsPct.toFixed(1)}% (doel 50%), vrij besteedbaar ${latest.discretionaryPct.toFixed(1)}% (doel 30%), `
-        + `overgehouden ${latest.savingsPct.toFixed(1)}% (doel 20%).`
+        + `noodzakelijk ${formatPercent(latest.essentialsPct)} (doel 50%), vrij besteedbaar ${formatPercent(latest.discretionaryPct)} (doel 30%), `
+        + `overgehouden ${formatPercent(latest.savingsPct)} (doel 20%).`
         + (noIncomeMonths.length ? ` Geen inkomen in: ${noIncomeMonths.join(', ')}.` : '');
 
     const traces = [
@@ -4403,7 +4474,7 @@ function renderRidgePlot(data) {
                     callbacks: {
                         label: (context) => {
                             const count = context.dataset.counts?.[context.dataIndex] ?? 0;
-                            return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}% (${count} betalingen)`;
+                            return `${context.dataset.label}: ${formatPercent(context.parsed.y)} (${count} betalingen)`;
                         }
                     }
                 }
@@ -4831,7 +4902,8 @@ function transactionsInMonths(transactions, monthKeys) {
 }
 
 // Latest complete month vs the average of up to `compareMonths` complete months before it.
-function compareLatestCompleteMonth(transactions, pick, compareMonths = 2) {
+// Same basis as the tile trends (calculateTileTrends): up to 3 earlier complete months.
+function compareLatestCompleteMonth(transactions, pick, compareMonths = TREND_MONTHS_BACK) {
     const months = summarizeCompleteMonths(transactions, compareMonths + 1);
     if (months.length < 2) return null;
     const latest = months[months.length - 1];
@@ -5291,7 +5363,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Vergroot inkomensruimte naast besparen',
-                summary: `Noodzakelijke uitgaven nemen ${latest.essentialsPct.toFixed(1)}% in van inkomen; extra inkomsten hebben nu meer effect dan extra kleine cuts.`,
+                summary: `Noodzakelijke uitgaven nemen ${formatPercent(latest.essentialsPct)} in van inkomen; extra inkomsten hebben nu meer effect dan extra kleine cuts.`,
                 impact: Math.max((latest.essentialsPct - 50) * (latest.income / 100), baseImpactFloor * 0.7),
                 confidence: 0.76 * baselineConfidence,
                 reason: 'income-side'
@@ -5306,7 +5378,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Stop uitgavengroei',
-                summary: `Uitgaven in ${expenseCompare.latest.monthLabel} ${increasePct.toFixed(1)}% hoger dan ${expenseCompare.previousLabel} (${formatCurrency(expenseDelta)}).`,
+                summary: `Uitgaven in ${expenseCompare.latest.monthLabel} ${formatPercent(increasePct)} hoger dan ${expenseCompare.previousLabel} (${formatCurrency(expenseDelta)}).`,
                 impact: Math.max(expenseDelta, 0),
                 confidence: 0.79,
                 reason: 'expense-trend'
@@ -5321,7 +5393,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 1,
                 title: 'Anticipeer op lagere inkomensstroom',
-                summary: `Inkomen in ${incomeCompare.latest.monthLabel} ${Math.abs(incomeDeltaPct).toFixed(1)}% lager dan ${incomeCompare.previousLabel} (${formatCurrency(incomeDelta)}).`,
+                summary: `Inkomen in ${incomeCompare.latest.monthLabel} ${formatPercent(Math.abs(incomeDeltaPct))} lager dan ${incomeCompare.previousLabel} (${formatCurrency(incomeDelta)}).`,
                 impact: Math.max(incomeDelta * 0.2, 0),
                 confidence: 0.83,
                 reason: 'income-trend'
@@ -5341,7 +5413,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 2,
                 title: 'Verminder categorie-concentratie',
-                summary: `${topCategory[0]} is ${topCategoryShare.toFixed(1)}% van alle uitgaven (${formatCurrency(topCategory[1])}).`,
+                summary: `${topCategory[0]} is ${formatPercent(topCategoryShare)} van alle uitgaven (${formatCurrency(topCategory[1])}).`,
                 impact: topCategory[1] * 0.1,
                 confidence: 0.81,
                 reason: 'category-concentration'
@@ -5357,7 +5429,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 3,
                 title: 'Verlaag afhankelijkheid van één tegenrekening',
-                summary: `${topMerchant[0]} is ${share.toFixed(1)}% van alle uitgaven (${formatCurrency(topMerchant[1])}).`,
+                summary: `${topMerchant[0]} is ${formatPercent(share)} van alle uitgaven (${formatCurrency(topMerchant[1])}).`,
                 impact: topMerchant[1] * 0.08,
                 confidence: 0.72,
                 reason: 'merchant-concentration'
@@ -5385,7 +5457,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: 1,
                 title: 'Verlaag structurele vaste lasten',
-                summary: `Terugkerende kosten (excl. wonen/belastingen) zijn circa ${(recurringShare * 100).toFixed(1)}% van de gemiddelde maanduitgaven (${formatCurrency(recurringMonthlyTotal)}).`,
+                summary: `Terugkerende kosten (excl. wonen/belastingen) zijn circa ${formatPercent((recurringShare * 100))} van de gemiddelde maanduitgaven (${formatCurrency(recurringMonthlyTotal)}).`,
                 impact: recurringMonthlyTotal * 0.1,
                 confidence: 0.86,
                 reason: 'recurring-structure'
@@ -5404,7 +5476,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
             pushAction({
                 priority: lever.share > 0.22 ? 2 : 3,
                 title: `Verlaag ${lever.label} uitgaven`,
-                summary: `${lever.label} is ${((lever.share || 0) * 100).toFixed(1)}% van de uitgaven (gem. ${formatCurrency(lever.baselineMonthly)}/mnd). Richt op ~${(lever.targetCutPct * 100).toFixed(0)}% reductie.`,
+                summary: `${lever.label} is ${formatPercent(((lever.share || 0) * 100))} van de uitgaven (gem. ${formatCurrency(lever.baselineMonthly)}/mnd). Richt op ~${(lever.targetCutPct * 100).toFixed(0)}% reductie.`,
                 impact: lever.expectedMonthly,
                 confidence: 0.82,
                 reason: 'lever-category',
@@ -5415,7 +5487,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         pushAction({
             priority: lever.share > 0.12 ? 2 : 3,
             title: `Optimaliseer uitgaven bij ${lever.label}`,
-            summary: `${lever.label} vertegenwoordigt ${(lever.share * 100).toFixed(1)}% van de uitgaven (gem. ${formatCurrency(lever.baselineMonthly)}/mnd). Doel: ~${(lever.targetCutPct * 100).toFixed(0)}% lager.`,
+            summary: `${lever.label} vertegenwoordigt ${formatPercent((lever.share * 100))} van de uitgaven (gem. ${formatCurrency(lever.baselineMonthly)}/mnd). Doel: ~${(lever.targetCutPct * 100).toFixed(0)}% lager.`,
             impact: lever.expectedMonthly,
             confidence: 0.76,
             reason: 'lever-merchant',
@@ -5467,7 +5539,7 @@ function buildActionPlan(transactions, kpis, liquidBalance = null, dailyBurn = 0
         pushAction({
             priority: 1,
             title: 'Herstel negatieve maandelijkse besparing',
-            summary: `Laatste maand is netto negatief (${latest.savingsPct.toFixed(1)}%).`,
+            summary: `Laatste maand is netto negatief (${formatPercent(latest.savingsPct)}).`,
             impact: Math.abs(latest.netSavings),
             confidence: 0.9,
             reason: 'negative-savings'
@@ -5568,7 +5640,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
             const action = change > 10 && biggestActionable
                 ? `Actie: beperk ${biggestActionable[0]} met ~${formatCurrency(biggestActionable[1] * 0.1)}/mnd`
                 : 'Actie: houd dit niveau vast';
-            trendInsight.textContent = `Uitgaven ${expenseCompare.latest.monthLabel} ${Math.abs(change).toFixed(1)}% ${direction} dan ${expenseCompare.previousLabel}. ${action}.`;
+            trendInsight.textContent = `Uitgaven ${expenseCompare.latest.monthLabel} ${formatPercent(Math.abs(change))} ${direction} dan ${expenseCompare.previousLabel}. ${action}.`;
         }
     }
 
@@ -5596,7 +5668,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
             needsVsWants.textContent = NA;
         } else {
             const essentialShare = (needsSummary.essentialTotal / totalNeedsWants) * 100;
-            needsVsWants.textContent = `${essentialShare.toFixed(1)}% noodzakelijk`;
+            needsVsWants.textContent = `${formatPercent(essentialShare)} noodzakelijk`;
         }
     }
 
@@ -5618,7 +5690,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
         } else {
             const [merchantName, merchantTotal] = merchantsSorted[0];
             const share = (merchantTotal / kpis.expenses) * 100;
-            topMerchantShare.textContent = `${merchantName} (${share.toFixed(1)}%)`;
+            topMerchantShare.textContent = `${merchantName} (${formatPercent(share)})`;
         }
     }
 

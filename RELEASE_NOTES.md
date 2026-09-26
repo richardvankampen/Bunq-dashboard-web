@@ -22,6 +22,12 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Trends
+- Tile trends for `Inkomsten` and `Uitgaven` use the same monthly figures as the insights (including the salary-month correction) and compare the last complete month with up to three months before it.
+- Arrows follow the direction of the change (no more fixed up/down arrows); colour shows whether that's good.
+- Periods shorter than 60 days: no income or savings trend (`n.v.t.`, they are monthly); the spending trend compares variable spending between the two halves.
+- A trend with a small comparison base (under €50) shows the euro difference instead of an extreme percentage; percentages use Dutch notation with a sign (`+12,3%`).
+
 ### Savings rate
 - `Spaarquote` shows `n.v.t.` when the selection has no income apart from interest (e.g. only savings accounts selected) instead of `0.0%` or absurd percentages.
 - Transfers between your own Triodos account and your savings accounts no longer count as saving.

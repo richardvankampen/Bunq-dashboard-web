@@ -22,6 +22,12 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Trends
+- Tegeltrends voor `Inkomsten` en `Uitgaven` gebruiken dezelfde maandcijfers als de inzichten (inclusief salarismaand-correctie) en vergelijken de laatste volledige maand met maximaal drie maanden daarvoor.
+- Pijlen volgen de richting van de verandering (geen vaste pijl omhoog/omlaag meer); de kleur toont of dat gunstig is.
+- Periodes korter dan 60 dagen: geen trend voor inkomen of sparen (`n.v.t.`, die zijn maandelijks); de uitgaventrend vergelijkt variabele uitgaven tussen de twee helften.
+- Een trend met een kleine vergelijkingsbasis (onder €50) toont het verschil in euro in plaats van een extreem percentage; percentages in Nederlandse notatie met teken (`+12,3%`).
+
 ### Spaarquote
 - `Spaarquote` toont `n.v.t.` als de selectie geen inkomsten heeft behalve rente (bv. alleen spaarrekeningen geselecteerd), in plaats van `0.0%` of absurde percentages.
 - Overboekingen tussen je eigen Triodos-rekening en je spaarrekeningen tellen niet meer als sparen.
