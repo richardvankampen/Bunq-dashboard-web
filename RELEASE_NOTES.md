@@ -22,6 +22,12 @@
 - Dutch labels throughout the charts and detail popups; € amounts in hover of `Top tegenrekeningen` and `Categorie-race`.
 - Outgoing interest (`Rente`) is no longer categorised as `Wonen`.
 
+### Cashflow
+- Refunds (card reversals, Tikkie for a shared dinner) lower spending instead of counting as income, in the tiles, `Spaarquote`, the cashflow timeline, the popups and `Geldstromen` (a separate "Terugbetalingen" flow into discretionary spending).
+- `Cashflow (tijdslijn)` shows income and spending bars per day (up to 3 months), week (up to a year) or month, and the cumulative net since the start of the period; it always covers the whole selected period.
+- Tile trends compare the last complete month with the months before it for periods of 60+ days (no more jumps from one vs two salaries in a half-period).
+- The period starts at midnight Dutch time, so its first day is complete.
+
 ### Savings
 - Balance history (`Spaarrekeningen (totaal)`, `Betaalrekeningen`) is rebuilt from the stored transactions for every day of the period, instead of snapshots from days the dashboard happened to be opened (no more dips to €0, no more "since first use" trends). Balance trends show `n.v.t.` without a start balance, and a +/− sign and colour.
 - `Sparen` also counts transfers into savings accounts that are not selected, and recognises moves between savings accounts by account, IBAN or name. `Savings Rate` is now `Spaarquote`. Investment accounts are not counted as savings.

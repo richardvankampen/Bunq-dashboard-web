@@ -1767,13 +1767,27 @@ function normalizeTransactions(data) {
     }));
 }
 
+// Money back for a purchase (card reversal, Tikkie for a shared dinner): not income,
+// it lowers spending. Same rule as 50/30/20.
+function isRefundTransaction(transaction) {
+    return (Number(transaction?.amount) || 0) > 0 && transaction?.category === 'Terugbetaling';
+}
+
 function calculateKPIs(data) {
-    const income = data.filter(t => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
-    const expenses = Math.abs(data.filter(t => t.amount < 0).reduce((sum, t) => sum + t.amount, 0));
+    let income = 0;
+    let outflows = 0;
+    let refunds = 0;
+    data.forEach((t) => {
+        const amount = Number(t.amount) || 0;
+        if (isRefundTransaction(t)) refunds += amount;
+        else if (amount > 0) income += amount;
+        else outflows += Math.abs(amount);
+    });
+    const expenses = outflows - refunds;
     const netSavings = income - expenses;
     const savingsRate = income > 0 ? (netSavings / income * 100) : 0;
-    
-    return { income, expenses, netSavings, savingsRate };
+
+    return { income, expenses, refunds, netSavings, savingsRate };
 }
 
 // Transactions behind the `Sparen` tile and `Spaarrekening mutaties`: savings-account
@@ -2008,20 +2022,13 @@ function renderKPIs(kpis, data) {
         circle.style.strokeDashoffset = `${offset}`;
     }
     
-    // Sparklines + trend: second half of the period vs the first half (same number of days).
+    // Sparklines over the whole period; trend per calculateTileTrend.
     const daily = buildDailyTotals(data);
-    const incomeSeries = daily.map(d => d.income);
-    const expenseSeries = daily.map(d => d.expenses);
     // `Sparen` shows savings-account mutations, so its trend/sparkline use that same data.
     const savingsDaily = alignDailySeries(buildDailyTotals(kpis.savingsTransactions || []), daily);
-    const savingsSeries = savingsDaily.map(d => d.net);
-    const incomeChange = calculateHalfPeriodChange(incomeSeries);
-    const expenseChange = calculateHalfPeriodChange(expenseSeries);
-    const savingsChange = calculateHalfPeriodChange(savingsSeries);
-
-    setTrendIndicator(incomeTrend, incomeChange, { higherIsBetter: true });
-    setTrendIndicator(expensesTrend, expenseChange, { higherIsBetter: false });
-    setTrendIndicator(savingsTrend, savingsChange, { higherIsBetter: true });
+    setTrendIndicator(incomeTrend, calculateTileTrend(daily, 'income'), { higherIsBetter: true });
+    setTrendIndicator(expensesTrend, calculateTileTrend(daily, 'expenses'), { higherIsBetter: false });
+    setTrendIndicator(savingsTrend, calculateTileTrend(savingsDaily, 'net'), { higherIsBetter: true });
     
     renderMetricMiniChart(
         'incomeSparkline',
@@ -2042,6 +2049,38 @@ function renderKPIs(kpis, data) {
 
 // Change of the second half vs the first half, in % of the first half.
 // null when the first half is ~0 (a percentage would be meaningless).
+// Tile trend. Periods of 60+ days: last complete month vs the average of the earlier complete
+// months in the period (salary and rent are monthly, so a half-period can hold one or two
+// salaries). Shorter periods, or fewer than 2 complete months: second half vs first half.
+function calculateTileTrend(daily, field) {
+    const days = Number(CONFIG.timeRange) || 90;
+    if (days >= 60) {
+        const periodStart = getSelectedPeriodStart();
+        const currentKey = monthKeyOf(new Date());
+        const byMonth = new Map();
+        (daily || []).forEach((point) => {
+            const key = monthKeyOf(point.date);
+            byMonth.set(key, (byMonth.get(key) || 0) + (Number(point[field]) || 0));
+        });
+        const complete = Array.from(byMonth.keys())
+            .sort()
+            .filter((key) => key !== currentKey && dateFromKey(`${key}-01`) >= periodStart);
+        if (complete.length >= 2) {
+            const latestKey = complete[complete.length - 1];
+            const previous = complete.slice(0, -1).slice(-3);
+            const baseline = previous.reduce((sum, key) => sum + byMonth.get(key), 0) / previous.length;
+            const monthLabel = (key) => dateFromKey(`${key}-01`).toLocaleDateString('nl-NL', { month: 'short', year: '2-digit' });
+            const title = `${monthLabel(latestKey)} t.o.v. gemiddelde van ${previous.map(monthLabel).join(', ')} (volledige maanden).`;
+            if (Math.abs(baseline) < 0.01) return { change: null, title };
+            return { change: ((byMonth.get(latestKey) - baseline) / Math.abs(baseline)) * 100, title };
+        }
+    }
+    return {
+        change: calculateHalfPeriodChange((daily || []).map((point) => Number(point[field]) || 0)),
+        title: 'Tweede helft van de periode t.o.v. de eerste helft.'
+    };
+}
+
 function calculateHalfPeriodChange(series) {
     if (!Array.isArray(series) || series.length < 2) return null;
     const mid = Math.floor(series.length / 2);
@@ -2051,17 +2090,20 @@ function calculateHalfPeriodChange(series) {
     return ((recent - prior) / Math.abs(prior)) * 100;
 }
 
-function setTrendIndicator(element, change, { higherIsBetter = true } = {}) {
+// `trend`: a number, or { change, title } from calculateTileTrend.
+function setTrendIndicator(element, trend, { higherIsBetter = true } = {}) {
     if (!element) return;
     const parent = element.parentElement;
+    const change = trend !== null && typeof trend === 'object' ? trend.change : trend;
+    const basis = trend !== null && typeof trend === 'object' ? trend.title : 'Tweede helft van de periode t.o.v. de eerste helft.';
     if (change === null || !Number.isFinite(change)) {
         element.textContent = 'n.v.t.';
-        element.title = 'Niet te berekenen: de eerste helft van de periode heeft (bijna) geen waarde.';
+        element.title = `Niet te berekenen: de vergelijkingsbasis is (bijna) nul. ${basis}`;
         parent?.classList.remove('positive', 'negative');
         return;
     }
     element.textContent = `${change.toFixed(1)}%`;
-    element.title = 'Tweede helft van de periode t.o.v. de eerste helft.';
+    element.title = basis;
     const good = higherIsBetter ? change >= 0 : change <= 0;
     parent?.classList.toggle('positive', good);
     parent?.classList.toggle('negative', !good);
@@ -2781,9 +2823,12 @@ function showTransactionDetail(detailType) {
 
     if (detailType === 'income' || detailType === 'expenses') {
         const isIncome = detailType === 'income';
-        const subset = transactions.filter((transaction) => isIncome ? transaction.amount > 0 : transaction.amount < 0);
-        const total = subset.reduce((sum, transaction) => sum + (isIncome ? transaction.amount : Math.abs(transaction.amount)), 0);
-        const daily = buildDailySeries(subset, (transaction) => isIncome ? transaction.amount : Math.abs(transaction.amount));
+        // Refunds are not income: they show (negative) under spending.
+        const subset = transactions.filter((transaction) => (isIncome
+            ? transaction.amount > 0 && !isRefundTransaction(transaction)
+            : transaction.amount < 0 || isRefundTransaction(transaction)));
+        const total = subset.reduce((sum, transaction) => sum + (isIncome ? transaction.amount : -transaction.amount), 0);
+        const daily = buildDailySeries(subset, (transaction) => isIncome ? transaction.amount : -transaction.amount);
         const transactionRows = buildTransactionTableRows(subset);
         const trace = {
             type: 'scatter',
@@ -3075,62 +3120,14 @@ function showTransactionDetail(detailType) {
     }
 
     if (detailType === 'cashflow') {
-        const daily = buildDailyTotals(transactions);
-        const incomeTotal = transactions
-            .filter((transaction) => (transaction.amount || 0) > 0)
-            .reduce((sum, transaction) => sum + (transaction.amount || 0), 0);
-        const expenseTotal = Math.abs(
-            transactions
-                .filter((transaction) => (transaction.amount || 0) < 0)
-                .reduce((sum, transaction) => sum + (transaction.amount || 0), 0)
-        );
-        const netTotal = incomeTotal - expenseTotal;
+        const totals = calculateKPIs(transactions);
+        const { traces, layout } = buildCashflowFigure(transactions);
         const transactionRows = buildTransactionTableRows(transactions);
-
-        const traces = [
-            {
-                x: daily.map((point) => point.date),
-                y: daily.map((point) => point.net),
-                type: 'scatter',
-                mode: 'lines',
-                name: 'Netto',
-                line: { color: '#8b5cf6', width: 3 },
-                fill: 'tozeroy',
-                fillcolor: 'rgba(139, 92, 246, 0.15)',
-                hovertemplate: '%{x|%d-%m-%Y}<br>Netto: %{y:.2f} EUR<extra></extra>'
-            },
-            {
-                x: daily.map((point) => point.date),
-                y: daily.map((point) => point.income),
-                type: 'scatter',
-                mode: 'lines',
-                name: 'Inkomsten',
-                line: { color: '#22c55e', width: 2 },
-                hovertemplate: '%{x|%d-%m-%Y}<br>Inkomsten: %{y:.2f} EUR<extra></extra>'
-            },
-            {
-                x: daily.map((point) => point.date),
-                y: daily.map((point) => -point.expenses),
-                type: 'scatter',
-                mode: 'lines',
-                name: 'Uitgaven',
-                line: { color: '#ef4444', width: 2 },
-                hovertemplate: '%{x|%d-%m-%Y}<br>Uitgaven: %{y:.2f} EUR<extra></extra>'
-            }
-        ];
-        const layout = {
-            margin: { t: 20, r: 20, l: 40, b: 40 },
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            font: { color: '#cbd5f5' },
-            xaxis: { showgrid: false },
-            yaxis: { zeroline: true, gridcolor: 'rgba(255,255,255,0.05)' },
-            legend: { orientation: 'h', y: -0.2 }
-        };
-
         openDetailModal({
             title: '<i class="fas fa-chart-line"></i> Cashflow (tijdslijn)',
-            summary: `${transactions.length} transacties · inkomsten ${formatCurrency(incomeTotal)} · uitgaven ${formatCurrency(expenseTotal)} · netto ${formatCurrency(netTotal)}`,
+            summary: `${transactions.length} transacties · inkomsten ${formatCurrency(totals.income)} · uitgaven ${formatCurrency(totals.expenses)}`
+                + (totals.refunds > 0.004 ? ` (na ${formatCurrency(totals.refunds)} terugbetalingen)` : '')
+                + ` · netto ${formatCurrency(totals.netSavings)}`,
             rows: [],
             chart: { trace: traces, layout },
             transactionRows,
@@ -3505,85 +3502,145 @@ function showTransactionDetail(detailType) {
     });
 }
 
-function buildDailyTotals(data) {
-    if (!data.length) return [];
-    
+// One point per calendar day from the start of the selected period up to today (empty
+// days = 0), so charts and trends cover the period, not just the days with data.
+// Refunds lower that day's spending instead of counting as income.
+function buildDailyTotals(data, { periodStart = getSelectedPeriodStart() } = {}) {
     const dayMap = new Map();
+    let minTime = periodStart.getTime();
+    let maxTime = Date.now();
     data.forEach(t => {
+        if (!(t.date instanceof Date) || Number.isNaN(t.date.getTime())) return;
         const key = toDateKey(t.date);
         if (!dayMap.has(key)) {
             dayMap.set(key, { date: dateFromKey(key), income: 0, expenses: 0, net: 0 });
         }
         const entry = dayMap.get(key);
-        if (t.amount >= 0) entry.income += t.amount;
-        else entry.expenses += Math.abs(t.amount);
-        entry.net += t.amount;
+        const amount = Number(t.amount) || 0;
+        if (isRefundTransaction(t)) entry.expenses -= amount;
+        else if (amount >= 0) entry.income += amount;
+        else entry.expenses += Math.abs(amount);
+        entry.net += amount;
+        minTime = Math.min(minTime, t.date.getTime());
+        maxTime = Math.max(maxTime, t.date.getTime());
     });
-    
-    const dates = Array.from(dayMap.values()).map(d => d.date);
-    const minDate = new Date(Math.min(...dates));
-    const maxDate = new Date(Math.max(...dates));
+
     const series = [];
-    for (let d = new Date(minDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
+    const end = dateFromKey(toDateKey(new Date(maxTime)));
+    for (let d = dateFromKey(toDateKey(new Date(minTime))); d <= end; d.setDate(d.getDate() + 1)) {
         const key = toDateKey(d);
         series.push(dayMap.get(key) || { date: dateFromKey(key), income: 0, expenses: 0, net: 0 });
     }
-    
     return series;
+}
+
+// Bars per day up to ~3 months, per week (from Monday) up to a year, per month beyond.
+function cashflowBucketSize(dayCount) {
+    if (dayCount <= 92) return 'day';
+    if (dayCount <= 366) return 'week';
+    return 'month';
+}
+
+function cashflowBucketStart(date, size) {
+    const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if (size === 'week') start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    if (size === 'month') start.setDate(1);
+    return start;
+}
+
+// Axis ranges for two y-axes whose zero lines sit at the same height (bars left, cumulative right).
+function alignedZeroRanges(leftValues, rightValues) {
+    const extent = (values) => {
+        const finite = values.filter(Number.isFinite);
+        return [Math.min(0, ...finite), Math.max(0, ...finite)];
+    };
+    const left = extent(leftValues);
+    const right = extent(rightValues);
+    const negativeShare = ([lo, hi]) => (hi - lo > 0 ? -lo / (hi - lo) : 0);
+    const share = Math.max(negativeShare(left), negativeShare(right));
+    const fit = ([lo, hi]) => {
+        if (share >= 0.999) return [Math.min(lo, -1) * 1.08, 0];
+        if (share <= 0.001) return [0, Math.max(hi, 1) * 1.08];
+        const top = Math.max(hi, -lo * (1 - share) / share, 1);
+        return [-top * share / (1 - share) * 1.08, top * 1.08];
+    };
+    return { left: fit(left), right: fit(right) };
+}
+
+// Cashflow figure for the tile and its detail popup: income/spending bars per day, week or
+// month, and the cumulative net over the period (right axis).
+function buildCashflowFigure(transactions) {
+    const daily = buildDailyTotals(transactions);
+    const size = cashflowBucketSize(daily.length);
+    const buckets = [];
+    let running = 0;
+    daily.forEach((point) => {
+        const start = cashflowBucketStart(point.date, size);
+        let bucket = buckets[buckets.length - 1];
+        if (!bucket || bucket.start.getTime() !== start.getTime()) {
+            bucket = { start, income: 0, expenses: 0, cumulative: 0 };
+            buckets.push(bucket);
+        }
+        bucket.income += point.income;
+        bucket.expenses += point.expenses;
+        running += point.net;
+        bucket.cumulative = running;
+    });
+
+    const unit = { day: 'Dag', week: 'Week van', month: 'Maand' }[size];
+    const dateFormat = size === 'month' ? '%m-%Y' : '%d-%m-%Y';
+    const x = buckets.map((bucket) => bucket.start);
+    const traces = [
+        {
+            x,
+            y: buckets.map((bucket) => bucket.income),
+            type: 'bar',
+            name: 'Inkomsten',
+            marker: { color: 'rgba(34,197,94,0.65)' },
+            hovertemplate: `${unit} %{x|${dateFormat}}<br>Inkomsten: %{y:.2f} EUR<extra></extra>`
+        },
+        {
+            x,
+            y: buckets.map((bucket) => -bucket.expenses),
+            type: 'bar',
+            name: 'Uitgaven',
+            marker: { color: 'rgba(239,68,68,0.65)' },
+            hovertemplate: `${unit} %{x|${dateFormat}}<br>Uitgaven (na terugbetalingen): %{customdata:.2f} EUR<extra></extra>`,
+            customdata: buckets.map((bucket) => bucket.expenses)
+        },
+        {
+            x,
+            y: buckets.map((bucket) => bucket.cumulative),
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Netto cumulatief',
+            yaxis: 'y2',
+            line: { color: '#8b5cf6', width: 3, shape: size === 'day' ? 'linear' : 'hv' },
+            hovertemplate: `t/m ${unit.toLowerCase()} %{x|${dateFormat}}<br>Netto sinds begin periode: %{y:.2f} EUR<extra></extra>`
+        }
+    ];
+    const ranges = alignedZeroRanges(
+        [...buckets.map((bucket) => bucket.income), ...buckets.map((bucket) => -bucket.expenses)],
+        buckets.map((bucket) => bucket.cumulative)
+    );
+    const layout = {
+        barmode: 'relative',
+        margin: { t: 20, r: 50, l: 50, b: 40 },
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#cbd5f5' },
+        xaxis: { showgrid: false },
+        yaxis: { title: `Per ${{ day: 'dag', week: 'week', month: 'maand' }[size]}`, range: ranges.left, zeroline: true, gridcolor: 'rgba(255,255,255,0.05)' },
+        yaxis2: { title: 'Cumulatief', range: ranges.right, overlaying: 'y', side: 'right', zeroline: false, showgrid: false },
+        legend: { orientation: 'h', y: -0.2 }
+    };
+    return { traces, layout, size };
 }
 
 function renderCashflowChart(data) {
     const container = document.getElementById('cashflowChart');
     if (!container) return;
-    
-    const daily = buildDailyTotals(data);
-    const x = daily.map(d => d.date);
-    const net = daily.map(d => d.net);
-    const income = daily.map(d => d.income);
-    const expenses = daily.map(d => d.expenses);
-    
-    const traces = [
-        {
-            x,
-            y: net,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Netto',
-            line: { color: '#8b5cf6', width: 3 },
-            fill: 'tozeroy',
-            fillcolor: 'rgba(139, 92, 246, 0.15)',
-            hovertemplate: '%{x|%d-%m-%Y}<br>Netto: %{y:.2f} EUR<extra></extra>'
-        },
-        {
-            x,
-            y: income,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Inkomsten',
-            line: { color: '#22c55e', width: 2 },
-            hovertemplate: '%{x|%d-%m-%Y}<br>Inkomsten: %{y:.2f} EUR<extra></extra>'
-        },
-        {
-            x,
-            y: expenses.map(v => -v),
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Uitgaven',
-            line: { color: '#ef4444', width: 2 },
-            hovertemplate: '%{x|%d-%m-%Y}<br>Uitgaven: %{y:.2f} EUR<extra></extra>'
-        }
-    ];
-    
-    const layout = {
-        margin: { t: 20, r: 20, l: 40, b: 40 },
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        font: { color: '#cbd5f5' },
-        xaxis: { showgrid: false },
-        yaxis: { zeroline: true, gridcolor: 'rgba(255,255,255,0.05)' },
-        legend: { orientation: 'h', y: -0.2 }
-    };
-    
+    const { traces, layout } = buildCashflowFigure(data);
     Plotly.react(container, traces, layout, { displayModeBar: false, responsive: true });
 }
 
@@ -3598,9 +3655,14 @@ function renderSankeyChart(data) {
     let totalIncome = 0;
     let totalEssentials = 0;
     let totalDiscretionary = 0;
+    let totalRefunds = 0;
 
     data.forEach((transaction) => {
         const category = transaction.category || 'Overig';
+        if (isRefundTransaction(transaction)) {
+            totalRefunds += Number(transaction.amount) || 0;
+            return;
+        }
         if ((transaction.amount || 0) >= 0) {
             const amount = Number(transaction.amount) || 0;
             incomeByCategory[category] = (incomeByCategory[category] || 0) + amount;
@@ -3618,8 +3680,16 @@ function renderSankeyChart(data) {
         totalDiscretionary += expense;
     });
 
-    const totalExpenses = totalEssentials + totalDiscretionary;
-    if (totalIncome <= 0.01 && totalExpenses <= 0.01) {
+    // Refunds are money back on (mostly discretionary) purchases: they flow straight into
+    // `Vrij besteedbaar` instead of counting as income. Only a surplus beyond that is income.
+    const refundsToDiscretionary = Math.min(totalRefunds, totalDiscretionary);
+    const refundSurplus = totalRefunds - refundsToDiscretionary;
+    if (refundSurplus > 0.004) {
+        incomeByCategory.Terugbetaling = (incomeByCategory.Terugbetaling || 0) + refundSurplus;
+        totalIncome += refundSurplus;
+    }
+    const totalExpenses = totalEssentials + totalDiscretionary - refundsToDiscretionary;
+    if (totalIncome <= 0.01 && totalEssentials + totalDiscretionary <= 0.01) {
         Plotly.react(container, [], {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
@@ -3646,6 +3716,7 @@ function renderSankeyChart(data) {
     const SANKEY_DISCRETIONARY = 'Vrij besteedbaar';
     const SANKEY_SAVED = 'Overgehouden';
     const SANKEY_BUFFER = 'Uit buffer';
+    const SANKEY_REFUNDS = 'Terugbetalingen';
     const labels = [
         ...topIncome.map(([name]) => `In: ${name}`),
         SANKEY_TOTAL_IN,
@@ -3683,12 +3754,21 @@ function renderSankeyChart(data) {
         linkSharePct.push(totalIncome > 0 ? (totalEssentials / totalIncome) * 100 : 0);
     }
 
-    if (totalDiscretionary > 0.01) {
+    const discretionaryFromIncome = totalDiscretionary - refundsToDiscretionary;
+    if (discretionaryFromIncome > 0.01) {
         source.push(cashInIndex);
         target.push(discretionaryIndex);
-        value.push(totalDiscretionary);
+        value.push(discretionaryFromIncome);
         colors.push('rgba(245,158,11,0.42)');
-        linkSharePct.push(totalIncome > 0 ? (totalDiscretionary / totalIncome) * 100 : 0);
+        linkSharePct.push(totalIncome > 0 ? (discretionaryFromIncome / totalIncome) * 100 : 0);
+    }
+    if (refundsToDiscretionary > 0.01) {
+        labels.push(SANKEY_REFUNDS);
+        source.push(labels.length - 1);
+        target.push(discretionaryIndex);
+        value.push(refundsToDiscretionary);
+        colors.push('rgba(20,184,166,0.45)');
+        linkSharePct.push(100);
     }
 
     topEssential.forEach(([, amount], idx) => {
@@ -3728,7 +3808,9 @@ function renderSankeyChart(data) {
 
     setSankeySummary(
         container,
-        `In ${formatCurrency(totalIncome)} · Uit ${formatCurrency(totalExpenses)} · Netto ${formatCurrency(net)}`
+        `In ${formatCurrency(totalIncome)} · Uit ${formatCurrency(totalExpenses)}`
+            + (refundsToDiscretionary > 0.004 ? ` (na ${formatCurrency(refundsToDiscretionary)} terugbetalingen)` : '')
+            + ` · Netto ${formatCurrency(net)}`
     );
 
     const trace = {
@@ -3742,6 +3824,7 @@ function renderSankeyChart(data) {
                 if (label === SANKEY_TOTAL_IN) return '#22c55e';
                 if (label === SANKEY_SAVED) return '#38bdf8';
                 if (label === SANKEY_BUFFER) return '#f59e0b';
+                if (label === SANKEY_REFUNDS) return '#14b8a6';
                 if (label === SANKEY_ESSENTIALS) return '#3b82f6';
                 if (label === SANKEY_DISCRETIONARY) return '#f59e0b';
                 if (label.startsWith('Nodig:')) return '#60a5fa';
@@ -5150,7 +5233,7 @@ function renderInsights(data, kpis, qualitySummary = null) {
     }
 
     // Per calendar day over the selected period (from the first transaction if later).
-    const totalExpenses = data.reduce((sum, transaction) => sum + ((transaction.amount || 0) < 0 ? Math.abs(transaction.amount) : 0), 0);
+    const totalExpenses = calculateKPIs(data).expenses;
     if (avgDaily) avgDaily.textContent = data.length ? formatCurrency(totalExpenses / periodDaysCovered(data)) : NA;
 
     const volatility = computeWeeklySpendingVolatility(data);
