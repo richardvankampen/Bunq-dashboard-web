@@ -72,6 +72,31 @@ function isOwnBunqAccount(account) {
     return true;
 }
 
+// The user's own linked external accounts (e.g. Triodos): not Bunq-internal, but transfers
+// with them are neither income nor spending.
+function getOwnExternalAccountSets() {
+    const external = (accountsList || []).filter((account) => !isOwnBunqAccount(account));
+    const ids = new Set(external.map((account) => String(account?.id || '').trim()).filter(Boolean));
+    const ibans = new Set();
+    external.forEach((account) => {
+        (Array.isArray(account?.ibans) ? account.ibans : []).forEach((iban) => {
+            const normalized = normalizeIbanForMatch(iban);
+            if (normalized) ibans.add(normalized);
+        });
+    });
+    return { ids, ibans };
+}
+
+function isOwnExternalTransfer(transaction, externalSets) {
+    const { ids, ibans } = externalSets || getOwnExternalAccountSets();
+    if (!ids.size && !ibans.size) return false;
+    if (ids.has(String(transaction?.account_id ?? ''))) return false;   // mutations on that account itself
+    const counterpartyId = transaction?.counterparty_account_id != null ? String(transaction.counterparty_account_id).trim() : '';
+    if (counterpartyId && ids.has(counterpartyId)) return true;
+    const iban = normalizeIbanForMatch(transaction?.counterparty_iban);
+    return Boolean(iban) && ibans.has(iban);
+}
+
 function getOwnBunqAccountIdentitySets() {
     const ownAccounts = (accountsList || []).filter((account) => isOwnBunqAccount(account));
     const ownIds = new Set(
@@ -1359,6 +1384,7 @@ function getCategoryColor(category) {
         'Reizen': '#2dd4bf',
         'Zorg': '#6366f1',
         'Salaris': '#22c55e',
+        'Uitkeringen & toeslagen': '#4ade80',
         'Terugbetaling': '#14b8a6',
         'Rente': '#0ea5e9',
         'Interne overboeking': '#94a3b8',
@@ -1671,7 +1697,11 @@ function applyClientFilters(data, options = {}) {
     if (excludeInternalTransfers) {
         // One rule for every tile and chart (see isInternalOwnTransfer).
         const ownIdentity = getOwnBunqAccountIdentitySets();
-        filtered = filtered.filter((transaction) => !isInternalOwnTransfer(transaction, ownIdentity));
+        const externalSets = getOwnExternalAccountSets();
+        // Transfers with own linked external accounts (Triodos) go too: not income, not spending.
+        filtered = filtered.filter((transaction) => (
+            !isInternalOwnTransfer(transaction, ownIdentity) && !isOwnExternalTransfer(transaction, externalSets)
+        ));
     }
     const allowed = getAccountSelection();
     if (allowed) {
@@ -1727,7 +1757,8 @@ const CATEGORY_DISPLAY_NAMES = {
     'Refund': 'Terugbetaling',
     'Utilities': 'Energie & telecom',
     'Shopping': 'Winkelen',
-    'Entertainment': 'Vrije tijd'
+    'Entertainment': 'Vrije tijd',
+    'Uitkeringen': 'Uitkeringen & toeslagen'
 };
 
 function resolveCategoryLabel(transaction) {
@@ -2831,6 +2862,26 @@ function showTransactionDetail(detailType) {
         const total = subset.reduce((sum, transaction) => sum + (isIncome ? transaction.amount : -transaction.amount), 0);
         const daily = buildDailySeries(subset, (transaction) => isIncome ? transaction.amount : -transaction.amount);
         const transactionRows = buildTransactionTableRows(subset);
+        // Income: regular (salary, benefits, interest, recurring payers) vs one-off.
+        let incomeRows = [];
+        if (isIncome) {
+            const recurringSources = detectRecurringIncomeSources(transactionsData ? normalizeTransactions(transactionsData) : subset);
+            const regular = subset.filter((transaction) => isRegularIncome(transaction, recurringSources));
+            const oneOff = subset.filter((transaction) => !isRegularIncome(transaction, recurringSources));
+            const sum = (list) => list.reduce((acc, transaction) => acc + transaction.amount, 0);
+            incomeRows = [
+                { label: 'Vast / terugkerend (salaris, uitkeringen, rente, vaste betalers)', value: formatCurrency(sum(regular)) },
+                { label: 'Incidenteel', value: formatCurrency(sum(oneOff)) },
+                ...oneOff
+                    .slice()
+                    .sort((x, y) => y.amount - x.amount)
+                    .slice(0, 5)
+                    .map((transaction) => ({
+                        label: `Incidenteel · ${transaction.date.toLocaleDateString('nl-NL')} · ${resolveMerchantLabel(transaction)} (${transaction.category})`,
+                        value: formatCurrency(transaction.amount)
+                    }))
+            ];
+        }
         const trace = {
             type: 'scatter',
             mode: 'lines+markers',
@@ -2852,8 +2903,9 @@ function showTransactionDetail(detailType) {
 
         openDetailModal({
             title: `<i class="fas ${isIncome ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i> ${isIncome ? 'Inkomsten' : 'Uitgaven'} - geselecteerde periode`,
-            summary: `${subset.length} transacties · totaal ${formatCurrency(total)}`,
-            rows: [],
+            summary: `${subset.length} transacties · totaal ${formatCurrency(total)}`
+                + (isIncome ? ' · terugbetalingen en overboekingen tussen eigen rekeningen (ook Triodos) tellen niet als inkomen' : ''),
+            rows: incomeRows,
             chart: { trace, layout },
             transactionRows,
             transactionsTitle: `Individuele ${isIncome ? 'inkomsten' : 'uitgaven'} (${transactionRows.length})`
@@ -3900,9 +3952,16 @@ function renderSunburstChart(data) {
     const expenseByCategory = new Map();
     const merchantByCategory = new Map();
 
+    // Refunds are not income: they lower the spending category of their purchase.
+    const refundsByCategory = new Map();
     widgetData.forEach((transaction) => {
         const category = transaction.category || 'Overig';
         const merchant = resolveMerchantLabel(transaction);
+        if (isRefundTransaction(transaction)) {
+            const target = transaction.refund_category || 'Overig';
+            refundsByCategory.set(target, (refundsByCategory.get(target) || 0) + transaction.amount);
+            return;
+        }
         if (transaction.amount >= 0) {
             incomeByCategory.set(category, (incomeByCategory.get(category) || 0) + transaction.amount);
             return;
@@ -3914,6 +3973,21 @@ function renderSunburstChart(data) {
         }
         const merchantMap = merchantByCategory.get(category);
         merchantMap.set(merchant, (merchantMap.get(merchant) || 0) + expense);
+    });
+    // Net refunds per category; merchants scale along so the ring still adds up.
+    refundsByCategory.forEach((refund, category) => {
+        const gross = expenseByCategory.get(category);
+        if (!gross) return;
+        const net = Math.max(0, gross - refund);
+        const factor = net / gross;
+        if (net <= 0.004) {
+            expenseByCategory.delete(category);
+            merchantByCategory.delete(category);
+            return;
+        }
+        expenseByCategory.set(category, net);
+        const merchantMap = merchantByCategory.get(category);
+        merchantMap?.forEach((amount, merchant) => merchantMap.set(merchant, amount * factor));
     });
 
     const labels = [];
@@ -4509,7 +4583,49 @@ function getSelectedPeriodStart() {
 // accounts: they are neither income nor spending, whatever the internal-transfer setting.
 function excludeOwnTransfersForBudget(transactions) {
     const ownIdentity = getOwnBunqAccountIdentitySets();
-    return (transactions || []).filter((transaction) => !isInternalOwnTransfer(transaction, ownIdentity));
+    const externalSets = getOwnExternalAccountSets();
+    return (transactions || []).filter((transaction) => (
+        !isInternalOwnTransfer(transaction, ownIdentity) && !isOwnExternalTransfer(transaction, externalSets)
+    ));
+}
+
+// Regular income: salary, benefits and interest, plus any counterparty that paid at least
+// €250 in 3+ months within ±25% of its median monthly amount, e.g. an employer whose
+// description is just "Periode 9".
+const REGULAR_INCOME_CATEGORIES = new Set(['Salaris', 'Uitkeringen & toeslagen', 'Rente']);
+
+function incomeSourceKey(transaction) {
+    return normalizeIbanForMatch(transaction?.counterparty_iban)
+        || normalizePartyNameForMatch(transaction?.counterparty || transaction?.merchant);
+}
+
+function detectRecurringIncomeSources(transactions) {
+    const monthly = new Map();
+    (transactions || []).forEach((transaction) => {
+        if (!isValidTransactionDate(transaction) || transaction.amount <= 0 || isRefundTransaction(transaction)) return;
+        const key = incomeSourceKey(transaction);
+        if (!key) return;
+        if (!monthly.has(key)) monthly.set(key, new Map());
+        const months = monthly.get(key);
+        const month = monthKeyOf(transaction.date);
+        months.set(month, (months.get(month) || 0) + transaction.amount);
+    });
+    const sources = new Set();
+    monthly.forEach((months, key) => {
+        const amounts = Array.from(months.values()).filter((amount) => amount >= 250).sort((x, y) => x - y);
+        if (amounts.length < 3) return;
+        // Median-based, so one month with a shifted (double) salary doesn't disqualify the payer.
+        const median = amounts[Math.floor(amounts.length / 2)];
+        const stable = amounts.filter((amount) => Math.abs(amount - median) <= median * 0.25);
+        if (stable.length >= 3) sources.add(key);
+    });
+    return sources;
+}
+
+function isRegularIncome(transaction, recurringSources) {
+    if (transaction.amount <= 0 || isRefundTransaction(transaction)) return false;
+    return REGULAR_INCOME_CATEGORIES.has(transaction.category)
+        || (recurringSources || new Set()).has(incomeSourceKey(transaction));
 }
 
 // Bucket a refund lowers: that of the purchase it belongs to (backend `refund_category`),
@@ -4533,8 +4649,12 @@ function applyBudgetRefunds(essentials, discretionary, refundEssentials, refundD
 // the payment within 7 days of that boundary moves to the neighbouring month.
 function assignSalaryMonths(transactions) {
     const override = new Map();
+    const recurringSources = detectRecurringIncomeSources(transactions);
     const salaries = (transactions || []).filter((transaction) => (
-        isValidTransactionDate(transaction) && transaction.amount > 0 && transaction.category === 'Salaris'
+        isValidTransactionDate(transaction) && transaction.amount > 0
+        && (transaction.category === 'Salaris'
+            || (transaction.category !== 'Rente' && !isRefundTransaction(transaction)
+                && recurringSources.has(incomeSourceKey(transaction))))
     ));
     if (!salaries.length) return override;
     const monthsWithData = new Set((transactions || []).filter(isValidTransactionDate).map((transaction) => monthKeyOf(transaction.date)));

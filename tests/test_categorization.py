@@ -145,8 +145,9 @@ def test_added_mcc_codes(ap, mcc, expected):
     ('Tikkie pizza', 'Jan', None, 'Refund'),                      # money back for a shared dinner
     ('Albert Heijn', '', '5411', 'Refund'),                       # card reversal
     ('Jaarafrekening', 'Eneco', None, 'Refund'),
-    ('Toeslag', 'Belastingdienst', None, 'Belastingen'),          # allowances stay tax
-    ('Huurtoeslag', 'Belastingdienst', None, 'Belastingen'),
+    ('Toeslag', 'Belastingdienst', None, 'Uitkeringen'),          # allowances are benefits
+    ('Huurtoeslag', 'Belastingdienst', None, 'Uitkeringen'),
+    ('Voorlopige teruggaaf', 'Belastingdienst', None, 'Belastingen'),   # tax refund stays tax
     ('Declaratie', 'Zilveren Kruis', None, 'Verzekering'),
     ('Terugbetaling', 'Wagenaar', None, 'Refund'),
     ('Voor de boodschappen', 'Wagenaar', None, 'Overig'),         # 'wage' is a whole word only
@@ -164,6 +165,31 @@ def test_incoming_money(ap, description, counterparty, mcc, expected):
 ])
 def test_refund_source_category(ap, description, counterparty, mcc, expected):
     assert ap.refund_source_category(description, counterparty, merchant_category_code=mcc) == expected
+
+
+@pytest.mark.parametrize('description, counterparty, expected', [
+    ('Loonbetaling september', 'Werkgever BV', 'Salaris'),
+    ('Maandloon 09', 'ACME', 'Salaris'),
+    ('Vakantiegeld 2026', 'ACME', 'Salaris'),
+    ('Eindejaarsuitkering', 'ACME', 'Salaris'),       # not a benefit
+    ('Bonus Q3', 'ACME', 'Salaris'),
+    ('13e maand', 'ACME', 'Salaris'),
+    ('WW-uitkering', 'UWV', 'Uitkeringen'),
+    ('Kinderbijslag', 'SVB', 'Uitkeringen'),
+    ('AOW', 'SVB', 'Uitkeringen'),
+    ('Pensioen', 'ABP', 'Uitkeringen'),
+    ('Studiefinanciering', 'DUO', 'Uitkeringen'),
+    ('Zorgtoeslag', 'Belastingdienst', 'Uitkeringen'),
+    ('Bijstand', 'Gemeente Utrecht', 'Uitkeringen'),
+    ('Marktplaats verkoop', 'Jan', 'Overig'),
+    ('Ballonvaart', 'Jan', 'Overig'),                 # 'loon' only in salary words/stems
+])
+def test_incoming_income_categories(ap, description, counterparty, expected):
+    assert ap.categorize_transaction(description, counterparty, amount=500) == expected
+
+
+def test_outgoing_duo_repayment_stays_tax(ap):
+    assert ap.categorize_transaction('Aflossing', 'DUO', amount=-100) == 'Belastingen'
 
 
 # --- classify_account_type ---------------------------------------------------

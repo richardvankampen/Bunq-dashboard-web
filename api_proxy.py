@@ -2945,6 +2945,16 @@ def is_own_bunq_account(account):
         return False
     return True
 
+def extract_linked_external_ibans(accounts):
+    """IBANs of the user's linked external accounts (e.g. Triodos): own money, but not Bunq-internal."""
+    ibans = set()
+    for account in accounts or []:
+        if is_own_bunq_account(account):
+            continue
+        ibans.update(normalize_iban(iban) for iban in extract_account_ibans(account))
+    ibans.discard(None)
+    return ibans
+
 def extract_own_account_ids(accounts):
     """Extract own monetary-account ids for deterministic internal transfer matching."""
     ids = set()
@@ -6010,7 +6020,7 @@ def get_account_transactions(
 
 # Bump when the rules below change: stored transactions are recategorised once
 # at startup (migrate_stored_categories), so a rule fix also applies to history.
-CATEGORIZATION_VERSION = '3'
+CATEGORIZATION_VERSION = '4'
 
 
 def _mcc_codes(*items):
@@ -6044,8 +6054,16 @@ _MCC_CATEGORIES = (
 )
 
 _REFUND_WORDS = ('refund', 'refunds', 'terugbetaling', 'chargeback', 'retour', 'reversal', 'terugstorting')
-_SALARY_WORDS = ('salary', 'wage', 'wages', 'loon', 'nettoloon')
-_SALARY_STEMS = ('salaris',)
+_SALARY_WORDS = ('salary', 'wage', 'wages', 'loon', 'bonus', '13e maand', 'dertiende maand', 'vakantietoeslag')
+_SALARY_STEMS = (
+    'salaris', 'loonbetaling', 'maandloon', 'nettoloon', 'weekloon', 'uurloon', 'loonstrook',
+    'vakantiegeld', 'eindejaarsuitkering',
+)
+# Incoming benefits, pensions and allowances (checked after salary: 'eindejaarsuitkering' is salary).
+_BENEFIT_WORDS = ('uwv', 'svb', 'aow', 'abp', 'pfzw', 'pmt', 'pme', 'bpfbouw', 'ww', 'wia', 'wajong', 'anw', 'duo')
+_BENEFIT_STEMS = (
+    'uitkering', 'toeslag', 'kinderbijslag', 'kindgebonden', 'studiefinanciering', 'pensioen', 'bijstand',
+)
 _INTEREST_WORDS = ('interest',)
 _INTEREST_STEMS = ('rente',)
 
@@ -6137,7 +6155,7 @@ _TEXT_RULES = (
 # Incoming money keeps these categories (tax refunds/allowances, insurance payouts,
 # rent received). Incoming money in any other spending category is money back
 # for a purchase (card reversal, Tikkie for a shared dinner) and becomes Refund.
-_INCOMING_KEEP_CATEGORIES = frozenset({'Belastingen', 'Verzekering', 'Wonen', 'Rente', 'Salaris', 'Overig'})
+_INCOMING_KEEP_CATEGORIES = frozenset({'Belastingen', 'Verzekering', 'Wonen', 'Rente', 'Salaris', 'Uitkeringen', 'Overig'})
 
 
 def _normalize_category_text(value):
@@ -6171,6 +6189,7 @@ def _looks_like_investment(text):
 
 _REFUND_PATTERN = _word_pattern(_REFUND_WORDS)
 _SALARY_PATTERN = _word_pattern(_SALARY_WORDS)
+_BENEFIT_PATTERN = _word_pattern(_BENEFIT_WORDS)
 _INTEREST_PATTERN = _word_pattern(_INTEREST_WORDS)
 
 
@@ -6213,6 +6232,8 @@ def categorize_transaction(description, counterparty_name, is_internal=False, me
             return 'Rente'
         if _matches(combined, _SALARY_PATTERN, _SALARY_STEMS):
             return 'Salaris'
+        if _matches(combined, _BENEFIT_PATTERN, _BENEFIT_STEMS):
+            return 'Uitkeringen'
 
     category = _categorize_by_mcc(merchant_category_code) or _categorize_by_text(combined)
     if amount_value > 0 and category not in _INCOMING_KEEP_CATEGORIES:
@@ -6356,6 +6377,13 @@ def get_statistics():
         
         if exclude_internal:
             all_transactions = [t for t in all_transactions if not t.get('is_internal_transfer')]
+        # Transfers with the user's own linked external accounts (e.g. Triodos) are neither
+        # income nor spending (they stay out of the internal-transfer filter).
+        linked_external_ibans = extract_linked_external_ibans(accounts)
+        all_transactions = [
+            t for t in all_transactions
+            if normalize_iban(t.get('counterparty_iban')) not in linked_external_ibans
+        ]
 
         def tx_amount_for_stats(tx):
             """
@@ -6373,8 +6401,10 @@ def get_statistics():
             return native_amount
 
         amounts = [(t, tx_amount_for_stats(t)) for t in all_transactions]
-        income = sum(amount for _, amount in amounts if amount > 0)
-        expenses = abs(sum(amount for _, amount in amounts if amount < 0))
+        # Refunds lower spending instead of counting as income (same rule as the dashboard tiles).
+        refunds = sum(amount for t, amount in amounts if amount > 0 and t.get('category') == 'Refund')
+        income = sum(amount for t, amount in amounts if amount > 0 and t.get('category') != 'Refund')
+        expenses = abs(sum(amount for _, amount in amounts if amount < 0)) - refunds
         net_savings = income - expenses
         savings_rate = (net_savings / income * 100) if income > 0 else 0
         

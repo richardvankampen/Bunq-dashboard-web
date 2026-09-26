@@ -22,6 +22,12 @@
 - Nederlandse labels in alle grafieken en detailvensters; €-bedragen in de hover van `Top tegenrekeningen` en `Categorie-race`.
 - Uitgaande rente (`Rente`) wordt niet meer als `Wonen` gecategoriseerd.
 
+### Inkomen
+- Salaris wordt vaker herkend (loonbetaling, maandloon, vakantiegeld, eindejaarsuitkering, bonus, 13e maand), en een betaler die elke maand ongeveer hetzelfde bedrag betaalt telt als vast inkomen, ook zonder trefwoord (bv. "Periode 9").
+- Nieuwe categorie `Uitkeringen & toeslagen` voor UWV, SVB (kinderbijslag, AOW), pensioenfondsen, DUO-studiefinanciering, toeslagen en gemeentelijke uitkeringen (voorheen `Overig` of `Belastingen`). Opgeslagen transacties worden eenmalig bijgewerkt.
+- Overboekingen met je eigen Triodos-rekening zijn geen inkomen of uitgave meer.
+- Terugbetalingen staan niet meer als inkomen in `Verdeling in categorieën`; het inkomstenvenster splitst vast en incidenteel inkomen.
+
 ### Budget
 - 50/30/20, `Noodzaak vs wens` en `Geldstromen` tellen overboekingen tussen je eigen rekeningen nooit mee, ook niet met het filter voor interne overboekingen uit.
 - Een terugbetaling verlaagt het soort uitgaven waar hij bij hoort: een energie-eindafrekening verlaagt noodzakelijk, een Tikkie voor een etentje vrij besteedbaar (opgeslagen transacties worden na de update eenmalig bijgewerkt).

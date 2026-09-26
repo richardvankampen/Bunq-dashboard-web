@@ -4,6 +4,18 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 
 ## 2026-09-26
 
+### Opgeleverd — inkomenslogica gecontroleerd en gecorrigeerd
+
+- Review van inkomensregels (backend-categorisatie van inkomend geld, tegels, popups, budget, categorieën, `/api/statistics`); 6 bevindingen + gebruikerswens, allemaal opgelost:
+  1. Salaris vaak `Overig` (loonbetaling, maandloon, vakantiegeld, eindejaarsuitkering, bonus) → uitgebreide salarisregels.
+  2. Geen herkenning van vast inkomen zonder trefwoord ("Periode 9") → `detectRecurringIncomeSources` (mediaan ±25%, ≥3 maanden ≥€250), ook in salarismaand-correctie.
+  3. Uitkeringen/pensioen/toeslagen in `Overig`/`Belastingen` → nieuwe categorie `Uitkeringen` (`Uitkeringen & toeslagen`); `CATEGORIZATION_VERSION` 4.
+  4. `Verdeling in categorieën` telde terugbetalingen als inkomen → verlagen nu hun aankoopcategorie.
+  5. `/api/statistics` telde terugbetalingen als inkomen → gelijk aan tegels.
+  6. Geen onderscheid vast/incidenteel → inkomstendetail splitst en toont incidentele posten.
+  - Gebruikerswens: overboekingen met eigen Triodos-rekening zijn geen inkomen (en geen uitgave); Triodos blijft buiten de interne-overboekingsvlag.
+- Verificatie: pytest 298 groen, pyflakes schoon; headless Chromium met gemockte API: inkomen €16.450 (excl. €1.000 van Triodos en €20 terugbetaling), uitgaven €5.180 (excl. €500 naar Triodos), werkgever "Periode x" herkend als vast inkomen en salaris van de 30e naar de juiste maand (elke maand €3.200), popup vast €16.300 / incidenteel €150, categorie-ring zonder terugbetaling als inkomen, geen JS-fouten.
+
 ### Opgeleverd — budgetlogica gecontroleerd en gecorrigeerd
 
 - Review van 50/30/20 (`summarizeMonthlyBudgetDiscipline`), `Noodzaak vs wens`, budgetgrafiek/-detail en `Geldstromen`; 7 bevindingen, allemaal opgelost:

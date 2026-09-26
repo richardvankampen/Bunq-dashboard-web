@@ -87,6 +87,7 @@ Raw fallback only if SDK result lacks savings. Uses only official routes:
 - Deterministic: match on own account-id + IBAN (from full fetched account list).
 - Cross-account reconcile: `payment-id + minute + amount + currency` pair with opposite sign on different own accounts.
 - Triodos `MonetaryAccountExternal` = NOT internal. Bunq `ExternalSavings` = internal.
+- But transfers with own linked external accounts (Triodos) are neither income nor spending: frontend `isOwnExternalTransfer`, backend `extract_linked_external_ibans`.
 - Applied in `/api/transactions` and `/api/statistics`.
 
 ## Documentation conventions
