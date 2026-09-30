@@ -35,7 +35,7 @@ def test_extract_own_account_ids_and_ibans(ap):
     accounts = [
         MonetaryAccountBank(id_=1, alias=_iban_alias('NL91BUNQ0000000001')),
         MonetaryAccountSavings(id_=2, alias=_iban_alias('NL91BUNQ0000000002')),
-        MonetaryAccountExternal(id_=3, alias=_iban_alias('NL91TRIO0000000003')),
+        MonetaryAccountExternal(id_=3, alias=_iban_alias('NL91BANK0000000003')),
     ]
     assert ap.extract_own_account_ids(accounts) == {'1', '2'}
     assert ap.extract_own_ibans(accounts) == {'NL91BUNQ0000000001', 'NL91BUNQ0000000002'}
