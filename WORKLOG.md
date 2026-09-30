@@ -9,6 +9,7 @@ Dit bestand houdt een compacte voortgangshistorie bij, zodat chatcontextverlies 
 - Wat: huidige versie en volledige git-geschiedenis doorzocht op sleutels, tokens, wachtwoorden, IBAN's, e-mail, telefoonnummers, IP-adressen, hostnamen en namen. Huidige versie: geen geheimen of persoonlijke gegevens (alleen voorbeeldwaarden en de repo-URL). WORKLOG-entry over de nieuwe categorie generiek gemaakt (geen persoonlijke aanleiding).
 - Bekend: oudere commits bevatten nog persoonlijke hostnaam/IP's en voorbeeldnamen (sindsdien verwijderd); herschrijven van de geschiedenis is bewust niet gedaan.
 - Resultaat: alleen documentatie.
+- Vervolg: nep-IBAN in de testdata met een algemene bankcode (`NL91BANK…`); openbare PR-beschrijvingen (#3, #17, #19, #21, #22, #24, #27) zonder persoonlijke situatie of banknaam.
 
 ### Opgeleverd — docs: `tailscale serve` optioneel, eigen domein via reverse proxy
 
